@@ -38,7 +38,7 @@ Desktop application for searching and analyzing VoApps DirectDrop Voicemail camp
 
 ### Download
 
-**Latest Version:** [v2.4.0](https://github.com/YOUR_USERNAME/voapps-tools/releases/latest)
+**Latest Version:** [v2.4.0](https://github.com/eiznem/voapps-tools/releases/latest)
 
 Download `VoApps Tools-2.4.0-arm64.dmg`
 
@@ -51,7 +51,7 @@ Download `VoApps Tools-2.4.0-arm64.dmg`
 
 ### Installation Steps
 
-1. **Download** the `.dmg` file from [Releases](https://github.com/YOUR_USERNAME/voapps-tools/releases)
+1. **Download** the `.dmg` file from [Releases](https://github.com/eiznem/voapps-tools/releases)
 2. **Open** the DMG file
 3. **Drag** VoApps Tools to your Applications folder
 4. **Remove Quarantine** - Choose one method:
@@ -257,7 +257,7 @@ VoApps Tools automatically checks for updates once per 24 hours. You'll be notif
 
 ```bash
 # Clone repository
-git clone https://github.com/YOUR_USERNAME/voapps-tools.git
+git clone https://github.com/eiznem/voapps-tools.git
 cd voapps-tools
 
 # Install dependencies
@@ -303,7 +303,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ### Reporting Issues
 
 Found a bug? Have a feature request?
-- [Open an issue](https://github.com/YOUR_USERNAME/voapps-tools/issues)
+- [Open an issue](https://github.com/eiznem/voapps-tools/issues)
 - Include: OS version, VoApps Tools version, steps to reproduce
 
 ## 📄 License
@@ -318,10 +318,10 @@ VoApps™ and DirectDrop™ are trademarks of their respective owners. This soft
 
 ## 👤 Author
 
-**[Your Name]**
+**[Brett Menzie]**
 
-- GitHub: [@YOUR_USERNAME](https://github.com/YOUR_USERNAME)
-- Email: your.email@example.com
+- GitHub: [@eiznem](https://github.com/eiznem)
+- Email: brett _at_ voapps _dot_ _com_
 
 ## 🙏 Acknowledgments
 
@@ -332,13 +332,13 @@ VoApps™ and DirectDrop™ are trademarks of their respective owners. This soft
 ---
 
 **Version:** 2.4.0  
-**Last Updated:** January 2026
+**Last Updated:** January 26, 2026
 
 ---
 
 ## 📊 Quick Links
 
-- [Latest Release](https://github.com/YOUR_USERNAME/voapps-tools/releases/latest)
-- [Changelog](https://github.com/YOUR_USERNAME/voapps-tools/releases)
-- [Issues](https://github.com/YOUR_USERNAME/voapps-tools/issues)
-- [Discussions](https://github.com/YOUR_USERNAME/voapps-tools/discussions)
+- [Latest Release](https://github.com/eiznem/voapps-tools/releases/latest)
+- [Changelog](https://github.com/eiznem/voapps-tools/releases)
+- [Issues](https://github.com/eiznem/voapps-tools/issues)
+- [Discussions](https://github.com/eiznem/voapps-tools/discussions)
