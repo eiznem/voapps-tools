@@ -34,6 +34,94 @@ Desktop application for searching and analyzing VoApps DirectDrop Voicemail camp
 - **💾 Settings Persistence** - All preferences saved locally between sessions
 - **🛡️ Secure Storage** - API keys stored locally on your machine
 
+## 📸 Screenshots
+
+### Main Interface
+Clean, modern two-panel layout with resizable sections and intuitive controls.
+
+![Main Interface](screenshots/main-interface.png)
+
+---
+
+### Search Modes
+
+<table>
+<tr>
+<td width="33%">
+
+**Phone Number Search**
+
+Search all campaigns for specific phone numbers with batch support up to 1,000 numbers.
+
+![Phone Search](screenshots/phone-search.png)
+
+</td>
+<td width="33%">
+
+**Combine Campaigns**
+
+Merge all campaigns into a single CSV with optional Number Trend Analyzer.
+
+![Combine](screenshots/combine.png)
+
+</td>
+<td width="33%">
+
+**Bulk Campaign Export**
+
+Download each campaign separately, organized by year and month.
+
+![Bulk Export](screenshots/bulk-export.png)
+
+</td>
+</tr>
+</table>
+
+---
+
+### Number Trend Analyzer
+
+Generate comprehensive Excel analysis with success rates, cadence patterns, and consecutive unsuccessful detection.
+
+![Trend Analyzer](screenshots/trend-analyzer.png)
+
+---
+
+### Real-Time Progress & Logging
+
+Live progress tracking with detailed API call logging and campaign-by-campaign status updates.
+
+![Running Log](screenshots/running-log.png)
+
+---
+
+### Completion Notifications
+
+Desktop notifications and sound alerts when jobs complete, with direct access to results.
+
+<table>
+<tr>
+<td width="50%">
+
+![Notification](screenshots/notification.png)
+
+</td>
+<td width="50%">
+
+![Completed](screenshots/completed-job.png)
+
+</td>
+</tr>
+</table>
+
+---
+
+### Auto-Update Checker
+
+Automatic update checking every 24 hours with one-click downloads from GitHub releases.
+
+![Update Checker](screenshots/update-checker.png)
+
 ## 📥 Download & Installation
 
 ### Download
