@@ -128,58 +128,118 @@ Automatic update checking every 24 hours with one-click downloads from GitHub re
 
 **Latest Version:** [v2.4.0](https://github.com/eiznem/voapps-tools/releases/latest)
 
-Download `VoApps Tools-2.4.0-arm64.dmg`
+Download: `VoApps Tools-2.4.0-arm64.dmg`
 
 ### System Requirements
 
 - **macOS:** 10.13 (High Sierra) or later
-- **Architecture:** 
+- **Processor:** 
   - Apple Silicon (M1/M2/M3/M4) - Native support
-  - Intel - Via Rosetta 2
+  - Intel - Runs via Rosetta 2 (automatic)
+- **Disk Space:** ~200 MB
+- **Internet:** Required for API access
 
 ### Installation Steps
 
-1. **Download** the `.dmg` file from [Releases](https://github.com/eiznem/voapps-tools/releases)
-2. **Open** the DMG file
-3. **Drag** VoApps Tools to your Applications folder
-4. **Remove Quarantine** - Choose one method:
+#### 1. Download the DMG
+Click the download link above or visit the [Releases page](https://github.com/eiznem/voapps-tools/releases)
 
-#### Method A: Right-Click Open (Simplest)
-1. Open Applications folder
-2. Right-click "VoApps Tools"
-3. Select "Open"
-4. Click "Open" in the dialog
+#### 2. Open the DMG File
+Double-click `VoApps Tools-2.4.0-arm64.dmg` in your Downloads folder
 
-#### Method B: Terminal Command
+#### 3. Drag to Applications
+Drag the VoApps Tools icon to your Applications folder
+
+#### 4. Remove macOS Quarantine (Required)
+macOS Gatekeeper will block the app on first launch. Choose one method:
+
+**Method A: Right-Click Open** ✅ *Recommended - Simplest*
+
+1. Open your Applications folder
+2. **Right-click** (or Control-click) on "VoApps Tools"
+3. Select **"Open"** from the menu
+4. Click **"Open"** in the security dialog
+
+The app will now launch. You only need to do this once.
+
+**Method B: Terminal Command** 🖥️ *For Advanced Users*
+
+Open Terminal and run:
 ```bash
 xattr -d com.apple.quarantine "/Applications/VoApps Tools.app"
 ```
 
-See `FIRST_TIME_SETUP.md` (included in DMG) for detailed instructions.
+Then launch normally from Applications.
 
-## 🚀 Quick Start
+#### 5. First Launch
+The app will:
+- Start a local server automatically
+- Show the main interface
+- Be ready for your API key
+
+### Troubleshooting Installation
+
+#### "Cannot open because developer cannot be verified"
+This is normal for apps distributed outside the Mac App Store. Follow Method A or B above.
+
+#### "The application is damaged"
+This usually means the quarantine attribute is still set. Use Method B (Terminal command).
+
+#### App won't start
+1. Make sure you're on macOS 10.13 or later
+2. Try the Terminal command method
+3. Check Console.app for error messages
+4. [Open an issue](https://github.com/eiznem/voapps-tools/issues) with details
+
+#### Intel Mac Performance
+Intel Macs run the app through Rosetta 2 (automatic). Performance is excellent - you won't notice a difference.
+
+### Updating
+
+VoApps Tools checks for updates automatically every 24 hours. When an update is available:
+1. You'll see a notification
+2. Click "Download Update"
+3. Install the new DMG file
+4. Replace the old version
+
+Or check manually: Click **"🔄 Check for Updates"** in the app header.
+
+### Uninstalling
+
+To remove VoApps Tools:
+1. Quit the app
+2. Drag "VoApps Tools" from Applications to Trash
+3. Empty Trash
+4. (Optional) Remove data: `~/Downloads/VoApps Tools/`
+
+## 🚀 First-Time Setup
+
+After installation, follow these steps to get started:
 
 ### 1. Get Your API Key
-- Log into your VoApps account
-- Navigate to Settings → API
-- Generate or copy your API key
+1. Log into your [VoApps account](https://voapps.com)
+2. Navigate to **Settings → API**
+3. Generate a new API key or copy your existing key
 
 ### 2. Launch VoApps Tools
 - Open from Applications folder
 - The app will start a local server automatically
+- You'll see the main interface
 
-### 3. Configure
-- Paste your API key in the "API Key" field
-- Click "💾 Save"
-- Click "📡 Ping" to verify connection
+### 3. Configure API Connection
+1. Paste your API key in the "API Key" field
+2. Click **💾 Save**
+3. Click **📡 Ping** to verify connection
 
-### 4. Load Accounts
-- Click "⬇ click to load" under Accounts
-- Select the accounts you want to search
-- Or manually enter account IDs (comma-separated)
+You should see "Ping: OK" in the Live Log.
+
+### 4. Load Your Accounts
+1. Click **⬇ click to load** under Accounts
+2. Select the accounts you want to search
+3. Or manually enter account IDs (comma-separated)
 
 ### 5. Set Date Range
-- Use preset dropdown (1 Month, 3 Months, etc.)
+- Use preset dropdown (1 Month, 3 Months, 6 Months, etc.)
 - Or select custom start/end dates
 
 ### 6. Choose Search Type
@@ -187,10 +247,13 @@ See `FIRST_TIME_SETUP.md` (included in DMG) for detailed instructions.
 - **Combine Campaigns** - Merge all campaigns into one CSV
 - **Bulk Campaign Export** - Download campaigns separately
 
-### 7. Run Search
-- Click **▶ Run** / **▶ Combine** / **▶ Export**
-- Monitor progress in Live Log
-- Click **📊 Open CSV** when complete
+### 7. Run Your First Search
+1. Click **▶ Run** / **▶ Combine** / **▶ Export**
+2. Monitor progress in Live Log
+3. Wait for completion notification
+4. Click **📊 Open CSV** to view results
+
+That's it! You're ready to analyze your VoApps campaigns.
 
 ## 📊 Number Trend Analyzer
 
@@ -228,7 +291,6 @@ The Number Trend Analyzer generates a comprehensive Excel workbook with five wor
 ## 📂 Output Locations
 
 All outputs are saved to `~/Downloads/VoApps Tools/`:
-
 ```
 ~/Downloads/VoApps Tools/
 ├── Logs/
@@ -342,7 +404,6 @@ VoApps Tools automatically checks for updates once per 24 hours. You'll be notif
 - macOS for building DMG
 
 ### Setup
-
 ```bash
 # Clone repository
 git clone https://github.com/eiznem/voapps-tools.git
@@ -356,7 +417,6 @@ npm start
 ```
 
 ### Building
-
 ```bash
 # Build DMG for distribution
 npm run build
@@ -365,10 +425,10 @@ npm run build
 ```
 
 ### Project Structure
-
 ```
 voapps-tools/
-├── index.html          # Main UI
+├── public/
+│   └── index.html      # Main UI
 ├── main.js             # Electron main process
 ├── preload.js          # Electron preload bridge
 ├── server.js           # Express server & VoApps API integration
@@ -406,10 +466,10 @@ VoApps™ and DirectDrop™ are trademarks of their respective owners. This soft
 
 ## 👤 Author
 
-**[Brett Menzie]**
+**Brett Menzie**
 
 - GitHub: [@eiznem](https://github.com/eiznem)
-- Email: brett _at_ voapps _dot_ _com_
+- Email: brett@voapps.com
 
 ## 🙏 Acknowledgments
 
@@ -420,7 +480,7 @@ VoApps™ and DirectDrop™ are trademarks of their respective owners. This soft
 ---
 
 **Version:** 2.4.0  
-**Last Updated:** January 26, 2026
+**Last Updated:** January 2026
 
 ---
 
