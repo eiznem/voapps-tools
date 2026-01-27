@@ -1014,7 +1014,7 @@
   <div class="app">
     <div class="header">
       <div class="header-top">
-        <div style="display: flex; align-items: center;">
+        <div style="display: flex; align-items: flex-start;">
           <div class="brand">
             <svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" aria-hidden="true">
               <circle cx="48.53"  cy="63.95"  r="50" fill="#FF4B7D"/>
@@ -1029,15 +1029,20 @@
               <div class="version">2.4.0</div>
             </div>
           </div>
-          <div class="help-toggle" onclick="toggleHelp()">
-            <span class="help-toggle-arrow" id="helpToggle">▶</span>
-            Help / About
-          </div>
-          <div class="help-toggle" onclick="checkForUpdates()" style="margin-left: 8px;">
-            <span style="margin-right: 4px;">🔄</span>
-            Check for Updates
-          </div>
-        </div>
+          <!-- Vertical divider -->
+  <div style="width: 1px; height: 40px; background: #ddd; margin: 0 24px;"></div>
+  
+  <div style="display: flex; flex-direction: column;">
+    <div class="help-toggle" onclick="checkForUpdates()" style="margin: 0; padding: 0px 8px;">
+      <span style="margin-right: 2px;">↺</span>
+      Check for Updates
+    </div>
+    <div class="help-toggle" onclick="toggleHelp()" style="margin: 0; padding: 0px 8px;">
+      <span class="help-toggle-arrow" id="helpToggle">▶</span>
+      Help / About
+    </div>
+  </div>
+</div>
         <button id="quitBtn" class="quit-btn">
   Quit <span style="margin-left:6px;">✕</span>
 </button>

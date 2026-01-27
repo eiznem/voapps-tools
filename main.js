@@ -91,6 +91,8 @@ function checkForUpdates() {
             const release = JSON.parse(data);
             const latestVersion = release.tag_name.replace('v', '');
             const currentVersion = CURRENT_VERSION;
+            console.log('CURRENT_VERSION loaded:', CURRENT_VERSION);
+
 
             // Simple version comparison (works for semantic versioning)
             const isNewer = compareVersions(latestVersion, currentVersion) > 0;
@@ -118,21 +120,21 @@ function checkForUpdates() {
               });
             }
           } else {
-            resolve({ updateAvailable: false, error: `HTTP ${res.statusCode}` });
+            resolve({ updateAvailable: false, currentVersion: CURRENT_VERSION, error: `HTTP ${res.statusCode}` });
           }
         } catch (error) {
-          resolve({ updateAvailable: false, error: error.message });
+          resolve({ updateAvailable: false, currentVersion: CURRENT_VERSION, error: error.message });
         }
       });
     });
 
     req.on('error', (error) => {
-      resolve({ updateAvailable: false, error: error.message });
+      resolve({ updateAvailable: false, currentVersion: CURRENT_VERSION, error: error.message });
     });
 
     req.setTimeout(10000, () => {
       req.destroy();
-      resolve({ updateAvailable: false, error: 'Timeout' });
+      resolve({ updateAvailable: false, currentVersion: CURRENT_VERSION, error: 'Timeout' });
     });
 
     req.end();
