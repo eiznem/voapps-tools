@@ -1,0 +1,2716 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VoApps Tools</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: linear-gradient(135deg, #FFF5F7 0%, #FFF 50%, #F5F9FF 100%);
+      color: #2E2C3E;
+      line-height: 1.6;
+    }
+
+    .app {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 90px 20px 20px 20px;
+    }
+
+    .header {
+      background: white;
+      border-bottom: 2px solid #e0e0e0;
+      padding: 16px 0;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+
+    .header-top {
+      max-width: 1400px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .help-toggle {
+      display: inline-block;
+      margin-left: 16px;
+      cursor: pointer;
+      user-select: none;
+      padding: 4px 8px;
+      border-radius: 4px;
+      transition: background 0.2s;
+      font-size: 12px;
+      color: #999;
+    }
+
+    .help-toggle:hover {
+      background: #f5f5f5;
+    }
+
+    .help-toggle-arrow {
+      display: inline-block;
+      margin-right: 4px;
+      transition: transform 0.2s ease;
+      font-size: 10px;
+    }
+
+    .help-content-header {
+      width: 100%;
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease;
+    }
+
+    .help-content-inner {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 16px 20px 0 20px;
+    }
+
+    .help-content-header.expanded {
+      max-height: 800px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo {
+      width: 32px;
+      height: 32px;
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .brand-text h1 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #FF4B7D;
+      margin-bottom: 0;
+      line-height: 1.2;
+    }
+
+    .brand-text .version {
+      font-size: 11px;
+      color: #666;
+      line-height: 1;
+      align-self: flex-end;
+    }
+
+    .quit-btn {
+      background: #FF4B7D;
+      color: white;
+      border: none;
+      padding: 8px 20px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .quit-btn:hover {
+      background: #E63B6D;
+    }
+
+    /* Run/Cancel action section - sticky footer */
+    .action-section {
+      background: white;
+      border-top: 2px solid #e0e0e0;
+      padding: 16px 20px;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      box-shadow: 0 -2px 8px rgba(0,0,0,0.08);
+      display: flex;
+      justify-content: center;
+    }
+
+    .action-section .btn-row {
+      max-width: 1400px;
+      width: 100%;
+      display: flex;
+      gap: 8px;
+      padding: 0 20px;
+    }
+
+    /* Add padding to main grid to account for sticky footer */
+    .main-grid {
+      display: grid;
+      grid-template-columns: var(--left-width, 744px) 20px 1fr;
+      gap: 0;
+      align-items: start;
+      padding-bottom: 80px;
+      position: relative;
+    }
+
+    .resize-handle {
+      width: 20px;
+      cursor: col-resize;
+      background: transparent;
+      position: relative;
+      user-select: none;
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      min-height: 100vh;
+    }
+
+    .resize-handle::before {
+      content: '';
+      position: absolute;
+      width: 1px;
+      height: 100%;
+      background: #ddd;
+      left: 50%;
+      transform: translateX(-50%);
+      border-radius: 2px;
+    }
+
+    .resize-handle::after {
+      content: '⋮';
+      position: sticky;
+      top: 50vh;
+      color: #bbb;
+      font-size: 20px;
+      line-height: 1;
+      pointer-events: none;
+      transform: translateY(-50%);
+      z-index: 1;
+    }
+
+    .resize-handle:hover::before {
+      background: #FF4B7D;
+      width: 2px;
+    }
+
+    .resize-handle:hover::after {
+      color: #FF4B7D;
+    }
+
+    .resize-handle:active::before {
+      background: #FF4B7D;
+      width: 3px;
+    }
+
+    .panel-left {
+      min-width: 400px;
+      max-width: 1000px;
+      padding-right: 10px;
+    }
+
+    .panel-right {
+      min-width: 400px;
+      padding-left: 10px;
+    }
+
+    .panel {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      padding: 20px;
+    }
+
+    .panel-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #FF4B7D;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .panel-subtitle {
+      font-size: 12px;
+      color: #999;
+      margin-bottom: 16px;
+    }
+
+    .section {
+    }
+
+    .section-header {
+      font-size: 13px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: #666;
+      margin-bottom: 4px;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    input[type="date"],
+    select,
+    textarea {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+      font-family: "SF Mono", Monaco, monospace;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+/* Buttons: default = fit content (no forced wide look) */
+.btn{
+  padding: 8px 14px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #999;
+
+  display: inline-grid;               /* key: inline-grid = shrink-to-content */
+  grid-auto-flow: column;
+  grid-auto-columns: max-content;     /* key: columns size to content */
+  column-gap: 8px;
+  align-items: center;
+
+  white-space: nowrap;
+  width: fit-content;                /* extra safety */
+}
+
+/* icon participates in layout */
+.btn-icon{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* text no longer tries to fill space */
+.btn-text{
+  padding: 0;
+  text-align: left;                  /* better for short labels */
+}
+
+    .btn:hover:not(:disabled) {
+      background: #f5f5f5;
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: #FF4B7D;
+      color: white;
+      border-color: #FF4B7D;
+      padding: 10px 20px;
+      font-size: 14px;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: #E63B6D;
+    }
+
+    .accounts-list {
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid #eee;
+      border-radius: 6px;
+      padding: 8px;
+      margin-top: 8px;
+    }
+
+    .accounts-list-container {
+      display: grid;
+      grid-template-columns: var(--accounts-left-width, 1fr) 12px var(--accounts-right-width, 1fr);
+      gap: 0;
+      max-height: 300px;
+      border: 1px solid #e5e5e5;
+      border-top: none;
+      overflow: hidden;
+      background: white;
+    }
+
+    .accounts-column {
+      overflow-y: auto;
+      padding: 8px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    
+    .accounts-column:first-child {
+      border-radius: 0 0 0 6px;
+    }
+    
+    .accounts-column:last-child {
+      border-radius: 0 0 6px 0;
+    }
+
+    .accounts-resize-handle {
+      cursor: col-resize;
+      background: #f0f0f0;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      transition: background 0.2s ease;
+    }
+
+    .accounts-resize-handle:hover {
+      background: #FF4B7D;
+    }
+
+    .accounts-resize-handle.dragging {
+      background: #FF4B7D;
+    }
+
+    .accounts-resize-handle::before {
+      content: '⋮';
+      color: #999;
+      font-size: 16px;
+      font-weight: bold;
+    }
+
+    .accounts-resize-handle:hover::before {
+      color: white;
+    }
+
+    .accounts-resize-handle.dragging::before {
+      color: white;
+    }
+
+    .accounts-list-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 8px;
+      margin-bottom: 6px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    .accounts-list-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: #666;
+    }
+
+    .accounts-list-actions {
+      display: flex;
+      gap: 4px;
+      font-size: 9px;
+      font-weight: 500;
+    }
+
+    .accounts-list-actions span {
+      cursor: pointer;
+      color: #666;
+      text-decoration: underline;
+    }
+
+    .accounts-list-actions span:hover {
+      color: #FF4B7D;
+    }
+
+    .account-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 2px 6px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .account-item:hover {
+      background: #f5f5f5;
+      border-radius: 4px;
+    }
+
+    .account-item input[type="checkbox"] {
+      width: auto;
+    }
+
+    .checkbox-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .checkbox-label input {
+      width: auto;
+    }
+
+    .columns-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .column-group {
+      border: 1px solid #eee;
+      border-radius: 6px;
+      padding: 10px;
+    }
+
+    .column-group-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #FF4B7D;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .col-group-actions {
+      display: flex;
+      gap: 4px;
+      font-size: 9px;
+      font-weight: 500;
+      text-transform: none;
+    }
+
+    .col-group-actions span {
+      cursor: pointer;
+      color: #666;
+      text-decoration: underline;
+    }
+
+    .col-group-actions span:hover {
+      color: #FF4B7D;
+    }
+
+    .status-panel {
+      border: 1px solid #eee;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+
+    .progress-panel {
+      border: 1px solid #eee;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+      background: #f9fafb;
+    }
+
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #333;
+    }
+
+    .progress-percent {
+      color: #FF4B7D;
+      font-size: 14px;
+    }
+
+    .progress-bar-container {
+      width: 100%;
+      height: 8px;
+      background: #e5e7eb;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #FF4B7D 0%, #FF6B9D 100%);
+      border-radius: 4px;
+      transition: width 0.3s ease;
+      width: 0%;
+    }
+
+    .status-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #22c55e;
+    }
+
+    .status-badge {
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      background: #f0f0f0;
+    }
+
+    .status-badge.idle { background: #e0e7ff; color: #4f46e5; }
+    .status-badge.running { background: #fef3c7; color: #d97706; }
+    .status-badge.done { background: #d1fae5; color: #059669; }
+    .status-badge.error { background: #fee2e2; color: #dc2626; }
+
+    /* Open CSV button next to Idle badge */
+    .btn-csv-status{
+  background: #008000;
+  color: white;
+  border: 1px solid #008000;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.45;
+  height: 27px;
+
+  display: inline-grid;              /* shrink-to-content */
+  grid-auto-flow: column;
+  grid-auto-columns: max-content;
+  column-gap: 6px;
+  align-items: center;
+
+  width: fit-content;
+}
+
+.btn-csv-status .btn-icon{
+  position: static;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-csv-status .btn-text{
+  padding: 0;
+  text-align: left;
+}
+
+    .btn-csv-status:hover:not(:disabled) {
+      background: #006600;
+      border-color: #006600;
+    }
+
+    .btn-csv-status:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .artifact-row {
+      font-size: 11px;
+      color: #666;
+      margin-top: 4px;
+      display: flex;
+      gap: 4px;
+    }
+
+    .artifact-row code {
+      font-family: "SF Mono", Monaco, monospace;
+      background: #f5f5f5;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .log-container {
+      background: #1a1a1a;
+      border-radius: 8px;
+      overflow: hidden;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 300px;
+    }
+
+    .log-header {
+      padding: 10px 12px;
+      background: #2a2a2a;
+      border-bottom: 1px solid #3a3a3a;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .log-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .log-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .log-actions .btn {
+      padding: 4px 12px;
+      font-size: 11px;
+    }
+
+    .log-content {
+      padding: 12px;
+      font-family: "SF Mono", Monaco, monospace;
+      font-size: 11px;
+      color: #e0e0e0;
+      overflow-y: auto;
+      flex: 1;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .footer-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .btn-csv {
+      border: 2px solid #84cc16 !important;
+      color: #65a30d;
+      font-weight: 600;
+    }
+
+    .btn-csv:hover:not(:disabled) {
+      background: #f7fee7;
+    }
+
+    .btn-log {
+      border: 2px solid #a16207 !important;
+      color: #92400e;
+      font-weight: 600;
+    }
+
+    .btn-log:hover:not(:disabled) {
+      background: #fef3c7;
+    }
+
+    .right-panel {
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 180px);
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+    }
+
+    .row > * {
+      flex: 1;
+    }
+
+    .search-type-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+
+    .search-type-left {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .search-type-dropdown {
+      width: 100%;
+      padding: 10px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #2E2C3E;
+      border: 2px solid #e0e0e0;
+      border-radius: 6px;
+      background: white;
+      cursor: pointer;
+      transition: border-color 0.2s ease;
+    }
+
+    .search-type-dropdown:hover {
+      border-color: #FF4B7D;
+    }
+
+    .search-type-dropdown:focus {
+      outline: none;
+      border-color: #FF4B7D;
+    }
+
+    .search-type-description {
+      font-size: 11px;
+      color: #666;
+      line-height: 1.5;
+      padding: 12px;
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      min-height: 60px;
+    }
+
+    .search-type-right {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .phone-input-container {
+      display: none;
+    }
+
+    .phone-input-container.visible {
+      display: block;
+    }
+
+    .phone-input-container textarea {
+      width: 100%;
+      min-height: 120px;
+      padding: 10px;
+      font-size: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 6px;
+      resize: vertical;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    .phone-input-container textarea:focus {
+      outline: none;
+      border-color: #FF4B7D;
+    }
+
+    .trend-analyzer-container {
+      display: none;
+    }
+
+    .trend-analyzer-container.visible {
+      display: block;
+    }
+
+    .trend-analyzer-option {
+      padding: 16px;
+      background: rgba(255, 75, 125, 0.03);
+      border: 2px solid rgba(255, 75, 125, 0.5);
+      border-radius: 6px;
+      transition: border-color 0.2s ease;
+    }
+
+    .trend-analyzer-option.checked {
+      border-color: #FF4B7D;
+    }
+
+    .trend-analyzer-option label {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      cursor: pointer;
+      color: #2E2C3E;
+      font-size: 12px;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .trend-analyzer-option input[type="checkbox"] {
+      margin-top: 2px;
+      cursor: pointer;
+    }
+
+    .trend-analyzer-option .description {
+      font-size: 10px;
+      font-weight: 400;
+      margin-top: 4px;
+      color: #666;
+      line-height: 1.4;
+    }
+
+    .info-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.3);
+      color: white;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-left: 6px;
+      transition: all 0.2s ease;
+      user-select: none;
+    }
+
+    .info-icon:hover {
+      background: rgba(255, 255, 255, 0.5);
+      transform: scale(1.1);
+    }
+
+    .info-icon-dark {
+      background: #f0f0f0;
+      color: #666;
+    }
+
+    .info-icon-dark:hover {
+      background: #e0e0e0;
+    }
+
+    .info-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .info-modal.visible {
+      display: flex;
+    }
+
+    .info-modal-content {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 600px;
+      max-height: 80vh;
+      overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+      position: relative;
+    }
+
+    .info-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #f0f0f0;
+    }
+
+    .info-modal-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #FF4B7D;
+    }
+
+    .info-modal-close {
+      background: #f0f0f0;
+      border: none;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 16px;
+      color: #666;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+    }
+
+    .info-modal-close:hover {
+      background: #FF4B7D;
+      color: white;
+    }
+
+    .info-modal-body {
+      font-size: 13px;
+      line-height: 1.6;
+      color: #2E2C3E;
+    }
+
+    .info-modal-body h4 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #FF4B7D;
+      margin-top: 16px;
+      margin-bottom: 8px;
+    }
+
+    .info-modal-body h4:first-child {
+      margin-top: 0;
+    }
+
+    .info-modal-body ul, .info-modal-body ol {
+      margin-left: 20px;
+      margin-bottom: 12px;
+    }
+
+    .info-modal-body li {
+      margin-bottom: 6px;
+    }
+
+    .info-modal-body code {
+      background: #f5f5f5;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: "SF Mono", Monaco, monospace;
+      font-size: 12px;
+      color: #FF4B7D;
+    }
+
+    .info-modal-body strong {
+      color: #FF4B7D;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="header">
+      <div class="header-top">
+        <div style="display: flex; align-items: center;">
+          <div class="brand">
+            <svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" aria-hidden="true">
+              <circle cx="48.53"  cy="63.95"  r="50" fill="#FF4B7D"/>
+              <circle cx="199.50" cy="63.96"  r="50" fill="#FF4B7D"/>
+              <circle cx="350.46" cy="63.93"  r="50" fill="#FF4B7D"/>
+              <circle cx="199.50" cy="199.58" r="50" fill="#FF4B7D"/>
+              <circle cx="350.48" cy="199.60" r="50" fill="#FF4B7D"/>
+              <circle cx="350.47" cy="335.06" r="50" fill="#FF4B7D"/>
+            </svg>
+            <div class="brand-text">
+              <h1>VoApps Tools</h1>
+              <div class="version">2.4.0</div>
+            </div>
+          </div>
+          <div class="help-toggle" onclick="toggleHelp()">
+            <span class="help-toggle-arrow" id="helpToggle">▶</span>
+            Help / About
+          </div>
+          <div class="help-toggle" onclick="checkForUpdates()" style="margin-left: 8px;">
+            <span style="margin-right: 4px;">🔄</span>
+            Check for Updates
+          </div>
+        </div>
+        <button id="quitBtn" class="quit-btn">
+  Quit <span style="margin-left:6px;">✕</span>
+</button>
+      </div>
+
+      <div class="help-content-header" id="helpContent">
+        <div class="help-content-inner">
+          <div style="padding-top: 16px; font-size: 12px; line-height: 1.6; color: #2E2C3E; border-top: 1px solid #f0f0f0;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px;">
+              <div>
+                <h4 style="font-size: 13px; font-weight: 600; color: #FF4B7D; margin-bottom: 8px;">What is VoApps Tools?</h4>
+                <p style="margin-bottom: 12px;">VoApps Tools is a desktop application that helps you search and analyze campaign data from the VoApps DirectDrop Voicemail platform. It provides three main search modes:</p>
+                
+                <ul style="margin-left: 20px; margin-bottom: 12px;">
+                  <li><strong>Phone Number Search:</strong> Find all campaign interactions for specific phone numbers.</li>
+                  <li><strong>Combine Campaigns:</strong> Export and merge all campaign data into a single CSV file.</li>
+                  <li><strong>Bulk Campaign Export:</strong> Download each campaign as a separate CSV, organized by year and month.</li>
+                </ul>
+              </div>
+
+              <div>
+                <h4 style="font-size: 13px; font-weight: 600; color: #FF4B7D; margin-bottom: 8px;">Key Features</h4>
+                <ul style="margin-left: 20px; margin-bottom: 12px;">
+                  <li>Search across multiple VoApps accounts simultaneously</li>
+                  <li>Flexible date range selection with preset options</li>
+                  <li>Customizable CSV output columns</li>
+                  <li>Real-time progress tracking and logging</li>
+                  <li>Automatic retry logic for failed requests</li>
+                  <li>Statistics reporting and error logging</li>
+                </ul>
+              </div>
+
+              <div>
+                <h4 style="font-size: 13px; font-weight: 600; color: #FF4B7D; margin-bottom: 8px;">Getting Started</h4>
+                <ol style="margin-left: 20px; margin-bottom: 12px;">
+                  <li>Enter your VoApps API key and click Save</li>
+                  <li>Click "click to load" to fetch your accounts</li>
+                  <li>Select the accounts you want to search</li>
+                  <li>Choose your date range</li>
+                  <li>Select your search type</li>
+                  <li>Click Run/Combine/Export to start</li>
+                </ol>
+
+                <p style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #f0f0f0; font-size: 11px; color: #999;">
+                  <strong>VoApps Tools v2.4.0</strong><br>
+                  All outputs are saved to <code>~/Downloads/VoApps Tools/</code>:<br>
+                  • <strong>Logs/</strong> - Log files and error reports<br>
+                  • <strong>Output/Phone Number History/</strong> - Number search results<br>
+                  • <strong>Output/Combine Campaigns/</strong> - Combined campaign exports<br>
+                  • <strong>Output/Bulk Campaign Export/</strong> - Individual campaigns organized by year/month
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="main-grid">
+      <!-- LEFT PANEL -->
+      <div class="panel panel-left">
+        <div class="section" style="background: #FBF7F3; margin: -20px -20px 0 -20px; padding: 20px; border-radius: 12px 12px 0 0;">
+          <div class="panel-title">Search Type</div>
+
+          <div class="search-type-container">
+            <div class="search-type-left">
+              <select id="searchTypeDropdown" class="search-type-dropdown">
+                <option value="phone">Phone Number(s)</option>
+                <option value="combine">Combine Campaigns</option>
+                <option value="bulk-export">Bulk Campaign Export</option>
+              </select>
+              <div id="searchTypeDescription" class="search-type-description">
+                Searches all campaigns for the specified phone numbers and returns detailed interaction history. Supports batch searches (recommended: up to 1,000 numbers for optimal performance).
+              </div>
+            </div>
+
+            <div class="search-type-right">
+              <!-- Phone Number Input -->
+              <div id="phoneInputContainer" class="phone-input-container visible">
+                <textarea id="phoneNumbers" placeholder="one per line or comma-separated"></textarea>
+              </div>
+
+              <!-- Trend Analyzer (for Combine Campaigns) -->
+              <div id="trendAnalyzerContainer" class="trend-analyzer-container">
+                <div class="trend-analyzer-option" id="trendAnalyzerOption">
+                  <label>
+                    <input type="checkbox" id="trendAnalyzerCheckbox">
+                    <div>
+                      <div>+ Number Trend Analyzer</div>
+                      <div class="description">Generates detailed Excel analysis with success rates, cadence patterns, best/worst hours, and consecutive unsuccessful detection</div>
+                    </div>
+                  </label>
+                  <div id="trendAnalyzerConfig" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #e0e0e0; display: none;">
+                    <div style="font-size: 10px; font-weight: 600; margin-bottom: 6px; color: #2E2C3E;">Consecutive Unsuccessful Detection</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px;">
+                      <div>
+                        <label style="font-size: 9px; display: block; margin-bottom: 3px; color: #666;">Min Consecutive</label>
+                        <input type="number" id="minConsecUnsuccessful" min="2" max="20" value="4" style="width: 100%; padding: 4px 6px; font-size: 11px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #2E2C3E;">
+                      </div>
+                      <div>
+                        <label style="font-size: 9px; display: block; margin-bottom: 3px; color: #666;">Min Span (days)</label>
+                        <input type="number" id="minRunSpanDays" min="1" max="365" value="14" style="width: 100%; padding: 4px 6px; font-size: 11px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #2E2C3E;">
+                      </div>
+                    </div>
+                    <div style="font-size: 10px; font-weight: 600; margin-bottom: 6px; color: #2E2C3E; display: flex; align-items: center;">
+                      Or Analyze Existing CSV
+                      <span class="info-icon info-icon-dark" onclick="showInfoModal('csvRequirements')">ⓘ</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <input type="file" id="csvFileUpload" accept=".csv" style="display: none;">
+                      <button id="uploadCsvBtn" type="button" class="btn" style="max-width: 140px;">
+  <span class="btn-icon">⬆</span>
+  <span class="btn-text">Upload CSV</span>
+</button>
+                      <span id="uploadedFileName" style="font-size: 9px; color: #666; flex: 1;"></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="height: 1px; background: #e5e5e5; margin: 0 -20px;"></div>
+
+        <div class="section" style="padding: 20px 0; margin: 0;">
+          <div class="section-header">Accounts <span style="font-weight:400; font-size:11px;">(load → select accounts)</span></div>
+          <div class="btn-row">
+            <button id="loadAccountsBtn" class="btn"><span class="btn-icon">⬇</span><span class="btn-text">click to load</span></button>
+          </div>
+          <div style="margin-top: 8px;">
+            <input 
+              id="manualAccountIds" 
+              type="text" 
+              placeholder="or type account IDs (comma-separated)" 
+              style="width: 100%; padding: 6px 10px; font-size: 11px; border: 1px solid #ddd; border-radius: 4px;"
+            />
+          </div>
+          <div id="accountsHeader" style="display:none; background: #FBF7F3; padding: 8px 12px; font-weight: 600; font-size: 12px; color: #2E2C3E; border: 1px solid #e5e5e5; border-bottom: none; border-radius: 6px 6px 0 0; margin-top: 12px; justify-content: space-between; align-items: center;">
+            <span>Select accounts:</span>
+            <span id="accountCount" style="font-size:11px; color:#2E2C3E;"></span>
+            <div style="font-size: 11px; color: #2E2C3E; display: flex; gap: 8px;">
+              <a href="#" onclick="selectAllAccounts(); return false;" style="color: #2E2C3E; text-decoration: underline;">all</a>
+              <a href="#" onclick="selectActiveAccounts(); return false;" style="color: #2E2C3E; text-decoration: underline;">active</a>
+              <a href="#" onclick="clearAccounts(); return false;" style="color: #2E2C3E; text-decoration: underline;">clear</a>
+            </div>
+          </div>
+          <div id="accountsList" class="accounts-list-container" style="display:none; border-radius: 0 0 6px 6px;">
+            <div class="accounts-column" id="accountsColumnLeft"></div>
+            <div class="accounts-resize-handle" id="accountsResizeHandle"></div>
+            <div class="accounts-column" id="accountsColumnRight"></div>
+          </div>
+        </div>
+
+        <div style="height: 1px; background: #e5e5e5; margin: 0 -20px;"></div>
+
+        <div class="section" style="background: #FBF7F3; margin: 0 -20px 0 -20px; padding: 20px;">
+          <div class="section-header" style="display: flex; align-items: center;">
+            Date Range <span style="font-weight:400; font-size:11px; margin-left: 4px;">(presets)</span>
+            <span class="info-icon info-icon-dark" onclick="showInfoModal('dateRange')" style="margin-left: 8px;">ⓘ</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 200px 1fr 1fr; gap: 12px; align-items: end;">
+            <div>
+              <select id="datePreset" style="width: 100%;">
+                <option value="">Custom range...</option>
+                <option value="months_1">1 Month</option>
+                <option value="months_2">2 Months</option>
+                <option value="months_3">3 Months</option>
+                <option value="months_6">6 Months</option>
+                <option value="years_1">1 Year</option>
+                <option value="years_2">2 Years</option>
+                <option value="years_3">3 Years</option>
+                <option value="years_4">4 Years</option>
+                <option value="years_5">5 Years</option>
+              </select>
+            </div>
+            <div>
+              <label>Start date</label>
+              <input id="startDate" type="date" style="width: 100%;" />
+            </div>
+            <div>
+              <label>End date</label>
+              <input id="endDate" type="date" style="width: 100%;" />
+            </div>
+          </div>
+        </div>
+
+        <div style="height: 1px; background: #e5e5e5; margin: 0 -20px;"></div>
+
+        <div class="section" style="padding: 20px 0; margin: 0;">
+          <div class="section-header" style="cursor: pointer; user-select: none;" onclick="toggleReportOutput()">
+            <span id="reportToggle" style="display: inline-block; margin-right: 8px; transition: transform 0.2s ease;">▶</span>
+            Report Output <span style="font-weight:400; font-size:11px;">(columns to include in CSV)</span>
+          </div>
+          
+          <div id="reportContent" style="max-height: 0; overflow: hidden; transition: max-height 0.3s ease;">
+            <div class="columns-grid">
+              <div class="column-group">
+                <div class="column-group-title">
+                  Core
+                  <div class="col-group-actions">
+                    <span onclick="toggleGroup('core', true)">all</span>
+                    <span onclick="toggleGroup('core', false)">clear</span>
+                  </div>
+                </div>
+                <label class="checkbox-label"><input type="checkbox" class="col-check col-core" value="number" checked> number</label>
+                <label class="checkbox-label"><input type="checkbox" class="col-check col-core" value="account_id" checked> account_id</label>
+                <label class="checkbox-label"><input type="checkbox" class="col-check col-core" value="campaign_id" checked> campaign_id</label>
+                <label class="checkbox-label"><input type="checkbox" class="col-check col-core" value="campaign_name" checked> campaign_name</label>
+              </div>
+
+              <div class="column-group">
+                <div class="column-group-title">
+                  Metadata
+                  <div class="col-group-actions">
+                    <span onclick="toggleGroup('optional', true)">all</span>
+                    <span onclick="toggleGroup('optional', false)">clear</span>
+                  </div>
+                </div>
+                <label class="checkbox-label"><input type="checkbox" class="col-check col-optional" value="caller_number" checked> caller_number</label>
+                <label class="checkbox-label"><input type="checkbox" class="col-check col-optional" value="message_id" checked> message_id</label>
+                <label class="checkbox-label"><input type="checkbox" class="col-check col-optional" value="message_name" checked> message_name</label>
+                <label class="checkbox-label"><input type="checkbox" class="col-check col-optional" value="message_description" checked> message_description</label>
+              </div>
+
+              <div class="column-group">
+                <div class="column-group-title">
+                  Results
+                  <div class="col-group-actions">
+                    <span onclick="toggleGroup('results', true)">all</span>
+                    <span onclick="toggleGroup('results', false)">clear</span>
+                  </div>
+                </div>
+                <label class="checkbox-label"><input type="checkbox" class="col-check col-results" value="voapps_result" checked> voapps_result</label>
+                <label class="checkbox-label"><input type="checkbox" class="col-check col-results" value="voapps_code" checked> voapps_code</label>
+                <label class="checkbox-label"><input type="checkbox" class="col-check col-results" value="voapps_timestamp" checked> voapps_timestamp</label>
+                <label class="checkbox-label"><input type="checkbox" class="col-check col-results" value="campaign_url" checked> campaign_url</label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RESIZE HANDLE -->
+      <div class="resize-handle" id="resizeHandle"></div>
+
+      <!-- RIGHT PANEL -->
+      <div class="panel panel-right right-panel">
+        <div style="background: #FBF7F3; margin: -20px -20px 0 -20px; padding: 20px; border-radius: 12px 12px 0 0;">
+          <div class="section-header">API Key <span style="font-weight:400; font-size:11px;">(stored locally on this machine)</span></div>
+          <input id="apiKey" type="password" placeholder="Paste your API key..." />
+          <div class="btn-row" style="margin-top:8px;">
+            <button id="saveKeyBtn" class="btn"><span class="btn-icon">💾</span><span class="btn-text">Save</span></button>
+            <button id="clearKeyBtn" class="btn"><span class="btn-icon">🗑</span><span class="btn-text">Clear</span></button>
+            <button id="pingBtn" class="btn" style="margin-left: auto;"><span class="btn-icon">📡</span><span class="btn-text">Ping</span></button>
+          </div>
+        </div>
+
+        <div style="height: 1px; background: #e5e5e5; margin: 0 -20px 16px -20px;"></div>
+
+        <div class="status-panel">
+          <div class="status-header">
+            <div class="status-indicator">
+              <div id="statusDot" class="status-dot"></div>
+              <span id="statusTitle">Ready</span>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button id="openCsvBtn" class="btn-csv-status" disabled><span class="btn-icon">📊</span><span class="btn-text">Open CSV</span></button>
+              <button id="openAnalysisBtn" class="btn-csv-status" disabled style="display:none;"><span class="btn-icon">📊</span><span class="btn-text">Open Number Analysis</span></button>
+            </div>
+          </div>
+          <div class="artifact-row">
+            <strong>Last CSV:</strong>
+            <code id="csvPath">—</code>
+          </div>
+          <div class="artifact-row" id="analysisPathRow" style="display:none;">
+            <strong>Last Analysis:</strong>
+            <code id="analysisPath">—</code>
+          </div>
+          <div class="artifact-row">
+            <strong>Last Log:</strong>
+            <code id="logPath">—</code>
+          </div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div id="progressPanel" class="progress-panel" style="display: none;">
+          <div class="progress-header">
+            <span id="progressText">Processing...</span>
+            <span id="progressPercent">0%</span>
+          </div>
+          <div class="progress-bar-container">
+            <div id="progressBar" class="progress-bar"></div>
+          </div>
+        </div>
+
+        <div class="log-container">
+          <div class="log-header">
+            <div class="log-title">Live Log</div>
+            <div class="log-actions">
+              <span style="font-size: 11px; color: #fff; font-weight: 500; margin-right: 4px; display: flex; align-items: center; height: 28px;">Logging:</span>
+              <select id="logLevel" style="padding: 4px 8px; font-size: 11px; background: #1a1a1a; color: #e0e0e0; border: 1px solid #3a3a3a; border-radius: 4px; margin-right: 8px;">
+                <option value="none">None</option>
+                <option value="minimal">Minimal</option>
+                <option value="normal" selected>Normal</option>
+                <option value="verbose">Verbose</option>
+              </select>
+              <button id="openLogBtn" class="btn" disabled style="background: #1a1a1a; color: #e0e0e0; border: 1px solid #3a3a3a;"><span class="btn-icon">📄</span><span class="btn-text">Open Log</span></button>
+              <button id="openErrorsBtn" class="btn" disabled style="background: #1a1a1a; color: #e0e0e0; border: 1px solid #3a3a3a;"><span class="btn-icon">⚠️</span><span class="btn-text">Errors</span></button>
+              <button id="clearLogBtn" class="btn" style="background: #1a1a1a; color: #e0e0e0; border: 1px solid #3a3a3a;"><span class="btn-icon">🗑</span><span class="btn-text">Clear Live Log</span></button>
+            </div>
+          </div>
+          <div id="logContent" class="log-content"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Info Modals -->
+    <div id="csvRequirementsModal" class="info-modal" onclick="if(event.target === this) hideInfoModal('csvRequirements')">
+      <div class="info-modal-content">
+        <div class="info-modal-header">
+          <div class="info-modal-title">CSV Requirements for Number Trend Analyzer</div>
+          <button class="info-modal-close" onclick="hideInfoModal('csvRequirements')">✕</button>
+        </div>
+        <div class="info-modal-body">
+          <h4>Required Columns</h4>
+          <p>Your CSV must contain these columns in any order:</p>
+          <ul>
+            <li><code>number</code> - Phone number (required)</li>
+            <li><code>voapps_result</code> - Result status (required)</li>
+            <li><code>voapps_timestamp</code> - Timestamp in ISO format (required)</li>
+          </ul>
+
+          <h4>Optional but Recommended Columns</h4>
+          <ul>
+            <li><code>caller_number</code> - Caller ID used</li>
+            <li><code>message_id</code> or <code>message_name</code> - Message identifier</li>
+            <li><code>campaign_id</code> or <code>campaign_name</code> - Campaign identifier</li>
+          </ul>
+
+          <h4>Valid Result Values</h4>
+          <p>The <code>voapps_result</code> column must contain one of these exact values:</p>
+          
+          <p><strong>Successful (2xx codes):</strong></p>
+          <ul>
+            <li><code>Successfully delivered</code> (200)</li>
+          </ul>
+
+          <p><strong>Unsuccessful (3xx codes):</strong></p>
+          <ul>
+            <li><code>Expired</code> (300)</li>
+            <li><code>Canceled</code> (301)</li>
+          </ul>
+
+          <p><strong>Unsuccessful (4xx codes):</strong></p>
+          <ul>
+            <li><code>Unsuccessful delivery attempt</code> (400)</li>
+            <li><code>Not a wireless number</code> (401)</li>
+            <li><code>Duplicate number</code> (402)</li>
+            <li><code>Not a valid US number</code> (403)</li>
+            <li><code>Undeliverable</code> (404)</li>
+            <li><code>Not in service</code> (405)</li>
+            <li><code>Voicemail not setup</code> (406)</li>
+            <li><code>Voicemail full</code> (407)</li>
+            <li><code>Invalid caller number</code> (408)</li>
+            <li><code>Invalid message id</code> (409)</li>
+            <li><code>Prohibited self call</code> (410)</li>
+          </ul>
+
+          <p><strong>Restricted (5xx codes):</strong></p>
+          <ul>
+            <li><code>Restricted</code> (500)</li>
+            <li><code>Restricted for frequency</code> (501)</li>
+            <li><code>Restricted geographical region</code> (502)</li>
+            <li><code>Restricted individual number</code> (503)</li>
+            <li><code>Restricted WebRecon</code> (504)</li>
+          </ul>
+
+          <p><strong>In Progress (1xx codes):</strong></p>
+          <ul>
+            <li><code>Pending</code> (100)</li>
+            <li><code>Running</code> (101)</li>
+          </ul>
+
+          <h4>Timestamp Format</h4>
+          <p>Timestamps should be in ISO 8601 format:</p>
+          <ul>
+            <li><code>2026-01-26T14:30:00Z</code> (UTC)</li>
+            <li><code>2026-01-26T14:30:00-08:00</code> (with timezone offset)</li>
+          </ul>
+
+          <h4>Example CSV Structure</h4>
+          <code style="display: block; padding: 8px; background: #f5f5f5; border-radius: 4px; margin-top: 8px; white-space: pre;">number,voapps_result,voapps_timestamp,campaign_name
+5551234567,Successfully delivered,2026-01-26T10:00:00Z,Campaign A
+5559876543,Unsuccessful delivery attempt,2026-01-26T10:05:00Z,Campaign A
+5551112222,Voicemail not setup,2026-01-26T10:10:00Z,Campaign B</code>
+        </div>
+      </div>
+    </div>
+
+    <div id="dateRangeModal" class="info-modal" onclick="if(event.target === this) hideInfoModal('dateRange')">
+      <div class="info-modal-content">
+        <div class="info-modal-header">
+          <div class="info-modal-title">Date Range & Timezone Information</div>
+          <button class="info-modal-close" onclick="hideInfoModal('dateRange')">✕</button>
+        </div>
+        <div class="info-modal-body">
+          <h4>How Date Range Search Works</h4>
+          <p>VoApps Tools uses a two-step filtering process:</p>
+          <ol>
+            <li><strong>Initial API Query:</strong> Searches by <code>created_date</code> with buffers added (−30 days before start, +1 day after end) to capture pre-scheduled campaigns</li>
+            <li><strong>Final Filtering:</strong> Only includes campaigns where <code>target_date</code> falls within your selected date range</li>
+          </ol>
+          <p>The <strong>target_date</strong> is more important because it represents when the campaign actually ran or was scheduled to run. Since campaigns can be created several days in advance, the buffer ensures we don't miss pre-scheduled campaigns.</p>
+
+          <h4>UTC Timezone Conversion</h4>
+          <p>All date selections are interpreted as <strong>UTC midnight (00:00:00Z)</strong>.</p>
+          <p><strong>Example:</strong> If you select <strong>January 26, 2026</strong> as the end date:</p>
+          <ul>
+            <li>UTC: <code>2026-01-26T00:00:00Z</code></li>
+            <li>Pacific Standard Time (PST): <code>2026-01-25T16:00:00-08:00</code></li>
+            <li>Pacific Daylight Time (PDT): <code>2026-01-25T17:00:00-07:00</code></li>
+          </ul>
+          <p><strong>Important:</strong> This means selecting January 26 as an end date captures campaigns up to 4:00 PM (PST) or 5:00 PM (PDT) on January 25 in Pacific time.</p>
+
+          <h4>VoApps Daily Cut Time</h4>
+          <ul>
+            <li><strong>Daily boundary:</strong> VoApps uses a constant <code>-07:00</code> timezone offset for the cut between days</li>
+            <li><strong>Campaign completion:</strong> All campaigns complete 15 minutes before the daily cut at <code>23:45:00-07:00</code> to allow for final reporting</li>
+          </ul>
+
+          <h4>Account Timezone Settings</h4>
+          <p><strong>Important:</strong> Timestamps returned by the VoApps API are in the timezone each account is configured for, not necessarily UTC.</p>
+          <ul>
+            <li><strong>Default:</strong> UTC unless changed</li>
+            <li><strong>Account-specific:</strong> Each account can have its own timezone setting</li>
+            <li><strong>Mixed accounts:</strong> If you search multiple accounts, timestamps may be in different timezones</li>
+          </ul>
+
+          <h4>Preset Options</h4>
+          <p>The preset dropdown automatically calculates date ranges from today (UTC):</p>
+          <ul>
+            <li><strong>1 Month:</strong> Last 30 days</li>
+            <li><strong>3 Months:</strong> Last 90 days</li>
+            <li><strong>6 Months:</strong> Last 180 days</li>
+            <li><strong>1 Year:</strong> Last 365 days</li>
+          </ul>
+
+          <h4>Performance & Pagination</h4>
+          <ul>
+            <li><strong>Pagination:</strong> VoApps Tools automatically handles campaigns across multiple API pages</li>
+            <li><strong>Fallback method:</strong> If the date range API method fails, the tool automatically switches to day-by-day retrieval for reliability</li>
+            <li><strong>Best practice:</strong> Shorter date ranges process faster</li>
+          </ul>
+
+          <h4>Date Range Buffers</h4>
+          <p>To ensure complete data retrieval, VoApps Tools adds buffers to the API query dates (applied to all searches, including single-day ranges):</p>
+          <ul>
+            <li><strong>created_date_start buffer:</strong> Always subtracts 30 days to capture campaigns created in advance of their target_date (campaigns can be pre-scheduled weeks ahead)</li>
+            <li><strong>created_date_end buffer:</strong> Always adds 1 day to account for UTC midnight timezone conversion (since your selected end date is UTC 00:00:00, which is still the previous day in US timezones)</li>
+          </ul>
+          <p><strong>Example:</strong> Searching for January 26, 2026 queries campaigns with created_date from December 27, 2025 to January 27, 2026, then filters to only include campaigns where target_date = January 26, 2026.</p>
+          <p>These buffers ensure no campaigns are missed during the initial API query. Results are then filtered by exact target_date range to give you precisely what you requested.</p>
+
+          <h4>Key Takeaways</h4>
+          <ul>
+            <li>Selected dates are treated as UTC midnight</li>
+            <li>UTC midnight = previous day late afternoon/evening in US timezones</li>
+            <li>Campaigns are filtered by <code>target_date</code>, not <code>created_date</code></li>
+            <li>Each account may return timestamps in its own configured timezone</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Update Notification Modal -->
+    <div id="updateModal" class="info-modal" onclick="if(event.target === this) hideUpdateModal()">
+      <div class="info-modal-content">
+        <div class="info-modal-header">
+          <div class="info-modal-title" id="updateModalTitle">Update Available</div>
+          <button class="info-modal-close" onclick="hideUpdateModal()">✕</button>
+        </div>
+        <div class="info-modal-body" id="updateModalBody">
+          <p>Checking for updates...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Run/Cancel sticky footer -->
+    <div class="action-section">
+      <div class="btn-row">
+        <button id="runBtn" class="btn btn-primary"><span class="btn-icon">▶</span><span class="btn-text">Run</span></button>
+        <button id="pauseBtn" class="btn" disabled style="padding: 10px 20px; font-size: 14px;"><span class="btn-icon">⏸</span><span class="btn-text">Pause</span></button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+const KEY_STORE = 'voapps_api_key';
+const SETTINGS_STORE = 'voapps_settings';
+
+// Notification and sound support
+let notificationPermission = 'default';
+let eventSource = null;
+
+// Request notification permission on load
+(async () => {
+  if ('Notification' in window) {
+    notificationPermission = await Notification.requestPermission();
+  }
+})();
+
+// Resizable panels
+const PANEL_WIDTH_STORE = 'voapps_panel_width';
+let isResizing = false;
+let startX = 0;
+let startWidth = 0;
+
+// Load saved panel width
+const savedWidth = localStorage.getItem(PANEL_WIDTH_STORE);
+if (savedWidth) {
+  document.documentElement.style.setProperty('--left-width', savedWidth);
+}
+
+// Resize handle drag functionality - initialize after DOM is ready
+function initResizeHandle() {
+  const resizeHandle = $('resizeHandle');
+  console.log('Initializing resize handle:', resizeHandle);
+  
+  if (!resizeHandle) {
+    console.error('Resize handle not found!');
+    return;
+  }
+
+  resizeHandle.addEventListener('mousedown', (e) => {
+    console.log('Resize started');
+    isResizing = true;
+    startX = e.clientX;
+    const leftPanel = document.querySelector('.panel-left');
+    if (!leftPanel) {
+      console.error('Left panel not found!');
+      return;
+    }
+    startWidth = leftPanel.offsetWidth;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+    
+    const deltaX = e.clientX - startX;
+    const newWidth = startWidth + deltaX;
+    
+    // Enforce min/max constraints
+    if (newWidth >= 400 && newWidth <= 1000) {
+      const widthValue = `${newWidth}px`;
+      document.documentElement.style.setProperty('--left-width', widthValue);
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (isResizing) {
+      console.log('Resize ended');
+      isResizing = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      
+      // Save the current width
+      const currentWidth = getComputedStyle(document.documentElement).getPropertyValue('--left-width');
+      localStorage.setItem(PANEL_WIDTH_STORE, currentWidth);
+    }
+  });
+}
+
+// Initialize resize handle
+initResizeHandle();
+
+// Play completion sound
+function playCompletionSound() {
+  try {
+    // Create a simple success tone (two ascending notes)
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator1 = audioContext.createOscillator();
+    const oscillator2 = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator1.connect(gainNode);
+    oscillator2.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    oscillator1.frequency.value = 800;
+    oscillator2.frequency.value = 1000;
+    oscillator1.type = 'sine';
+    oscillator2.type = 'sine';
+    
+    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+    
+    oscillator1.start(audioContext.currentTime);
+    oscillator1.stop(audioContext.currentTime + 0.2);
+    
+    oscillator2.start(audioContext.currentTime + 0.15);
+    oscillator2.stop(audioContext.currentTime + 0.5);
+  } catch (e) {
+    console.error('Could not play sound:', e);
+  }
+}
+
+// Show desktop notification
+function showCompletionNotification(title, message) {
+  if (notificationPermission === 'granted') {
+    new Notification(title, {
+      body: message,
+      icon: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0MDAgNDAwIj48Y2lyY2xlIGN4PSI0OC41MyIgY3k9IjYzLjk1IiByPSI1MCIgZmlsbD0iI0ZGNEJGRCI+PC9jaXJjbGU+PGNpcmNsZSBjeD0iMTk5LjUwIiBjeT0iNjMuOTYiIHI9IjUwIiBmaWxsPSIjRkY0QjdEIj48L2NpcmNsZT48Y2lyY2xlIGN4PSIzNTAuNDYiIGN5PSI2My45MyIgcj0iNTAiIGZpbGw9IiNGRjRCN0QiPjwvY2lyY2xlPjxjaXJjbGUgY3g9IjE5OS41MCIgY3k9IjE5OS41OCIgcj0iNTAiIGZpbGw9IiNGRjRCN0QiPjwvY2lyY2xlPjxjaXJjbGUgY3g9IjM1MC40OCIgY3k9IjE5OS42MCIgcj0iNTAiIGZpbGw9IiNGRjRCN0QiPjwvY2lyY2xlPjxjaXJjbGUgY3g9IjM1MC40NyIgY3k9IjMzNS4wNiIgcj0iNTAiIGZpbGw9IiNGRjRCN0QiPjwvY2lyY2xlPjwvc3ZnPg==',
+      tag: 'voapps-completion',
+      requireInteraction: false
+    });
+  }
+}
+
+// Load saved settings
+function loadSettings() {
+  const saved = localStorage.getItem(SETTINGS_STORE);
+  if (!saved) return;
+  
+  try {
+    const settings = JSON.parse(saved);
+    
+    // Restore log level
+    if (settings.logLevel && $('logLevel')) {
+      $('logLevel').value = settings.logLevel;
+    }
+    
+    // Restore date range
+    if (settings.startDate) $('startDate').value = settings.startDate;
+    if (settings.endDate) $('endDate').value = settings.endDate;
+    
+    // Restore search type
+    if (settings.searchType) {
+      $('searchTypeDropdown').value = settings.searchType;
+      
+      // Update description
+      const searchTypeDescriptions = {
+        phone: "Searches all campaigns for the specified phone numbers and returns detailed interaction history. Supports batch searches (recommended: up to 1,000 numbers for optimal performance).",
+        combine: "Downloads every campaign export for the selected account(s) and date range, then merges all results into a single CSV.",
+        "bulk-export": "Downloads each campaign as a separate CSV file, organized by year and month into an Archive folder."
+      };
+      $('searchTypeDescription').textContent = searchTypeDescriptions[settings.searchType] || "";
+      
+      // Show/hide appropriate content
+      $('phoneInputContainer').classList.toggle('visible', settings.searchType === 'phone');
+      $('trendAnalyzerContainer').classList.toggle('visible', settings.searchType === 'combine');
+      
+      // Update button text
+      const runBtn = $('runBtn');
+      const runBtnText = runBtn.querySelector('.btn-text');
+      if (settings.searchType === 'bulk-export') runBtnText.textContent = 'Export';
+      else if (settings.searchType === 'combine') runBtnText.textContent = 'Combine';
+      else runBtnText.textContent = 'Run';
+    }
+    
+    // Restore selected accounts
+    if (settings.selectedAccounts && Array.isArray(settings.selectedAccounts)) {
+      selectedAccounts = new Set(settings.selectedAccounts);
+    }
+    
+    // Restore column selections
+    if (settings.selectedColumns && Array.isArray(settings.selectedColumns)) {
+      document.querySelectorAll('.col-check').forEach(cb => {
+        cb.checked = settings.selectedColumns.includes(cb.value);
+      });
+    }
+    
+    // Restore manual account IDs
+    if (settings.manualAccountIds) {
+      $('manualAccountIds').value = settings.manualAccountIds;
+    }
+    
+    // Restore trend analyzer checkbox
+    if (settings.trendAnalyzer !== undefined) {
+      $('trendAnalyzerCheckbox').checked = settings.trendAnalyzer;
+      $('trendAnalyzerConfig').style.display = settings.trendAnalyzer ? 'block' : 'none';
+      
+      // Toggle checked class
+      const option = $('trendAnalyzerOption');
+      if (settings.trendAnalyzer) {
+        option.classList.add('checked');
+      } else {
+        option.classList.remove('checked');
+      }
+    }
+    
+    // Restore threshold values
+    if (settings.minConsecUnsuccessful !== undefined) {
+      $('minConsecUnsuccessful').value = settings.minConsecUnsuccessful;
+    }
+    if (settings.minRunSpanDays !== undefined) {
+      $('minRunSpanDays').value = settings.minRunSpanDays;
+    }
+    
+    log('Settings restored');
+  } catch (e) {
+    console.error('Failed to load settings:', e);
+  }
+}
+
+// Save current settings
+function saveSettings() {
+  const settings = {
+    logLevel: $('logLevel')?.value || 'normal',
+    startDate: $('startDate').value,
+    endDate: $('endDate').value,
+    searchType: $('searchTypeDropdown').value,
+    selectedAccounts: Array.from(selectedAccounts),
+    selectedColumns: Array.from(document.querySelectorAll('.col-check:checked')).map(cb => cb.value),
+    manualAccountIds: $('manualAccountIds').value,
+    trendAnalyzer: $('trendAnalyzerCheckbox').checked,
+    minConsecUnsuccessful: parseInt($('minConsecUnsuccessful').value) || 4,
+    minRunSpanDays: parseInt($('minRunSpanDays').value) || 14
+  };
+  
+  localStorage.setItem(SETTINGS_STORE, JSON.stringify(settings));
+}
+
+// Auto-save settings on changes
+function attachAutoSave() {
+  // Save on log level change
+  $('logLevel').onchange = () => saveSettings();
+  
+  // Save on date changes
+  $('startDate').onchange = () => saveSettings();
+  $('endDate').onchange = () => saveSettings();
+  
+  // Save on search type dropdown change
+  const oldDropdownHandler = $('searchTypeDropdown').onchange;
+  $('searchTypeDropdown').onchange = () => {
+    if (oldDropdownHandler) oldDropdownHandler();
+    saveSettings();
+  };
+  
+  // Save on column changes
+  document.querySelectorAll('.col-check').forEach(cb => {
+    cb.onchange = () => saveSettings();
+  });
+  
+  // Save on manual account IDs change
+  $('manualAccountIds').oninput = () => saveSettings();
+  
+  // Save on threshold changes
+  $('minConsecUnsuccessful').onchange = () => saveSettings();
+  $('minRunSpanDays').onchange = () => saveSettings();
+}
+    
+    let selectedAccounts = new Set();
+    let allAccounts = [];
+    let hiddenAccountIds = new Set();
+    let currentJobId = null;
+    let isLocked = false;
+    let isPaused = false;
+
+    // Toggle column group checkboxes
+    window.toggleGroup = (group, checked) => {
+      document.querySelectorAll(`.col-${group}`).forEach(cb => cb.checked = checked);
+      saveSettings();
+    };
+
+    // Update progress bar
+    function updateProgress(current, total, text) {
+      const percent = total > 0 ? Math.round((current / total) * 100) : 0;
+      $('progressBar').style.width = `${percent}%`;
+      $('progressPercent').textContent = `${percent}%`;
+      $('progressText').textContent = text || `Processing ${current} of ${total}...`;
+    }
+
+    // Show/hide progress panel
+    function showProgress(show) {
+      $('progressPanel').style.display = show ? 'block' : 'none';
+      if (!show) {
+        $('progressBar').style.width = '0%';
+        $('progressPercent').textContent = '0%';
+        $('progressText').textContent = 'Processing...';
+      }
+    }
+
+    // Toggle Report Output section
+    window.toggleReportOutput = () => {
+      const content = $('reportContent');
+      const toggle = $('reportToggle');
+      const isExpanded = content.style.maxHeight && content.style.maxHeight !== '0px';
+      
+      if (isExpanded) {
+        content.style.maxHeight = '0px';
+        toggle.style.transform = 'rotate(0deg)';
+      } else {
+        content.style.maxHeight = '1000px';
+        toggle.style.transform = 'rotate(90deg)';
+      }
+    };
+
+    // Toggle Help section
+    window.toggleHelp = () => {
+      const content = $('helpContent');
+      const toggle = document.querySelector('.help-toggle-arrow');
+      const isExpanded = content.classList.contains('expanded');
+      
+      if (isExpanded) {
+        content.classList.remove('expanded');
+        toggle.style.transform = 'rotate(0deg)';
+      } else {
+        content.classList.add('expanded');
+        toggle.style.transform = 'rotate(90deg)';
+      }
+    };
+
+    // Info modal functions
+    window.showInfoModal = (modalId) => {
+      const modal = $(`${modalId}Modal`);
+      if (modal) {
+        modal.classList.add('visible');
+      }
+    };
+
+    window.hideInfoModal = (modalId) => {
+      const modal = $(`${modalId}Modal`);
+      if (modal) {
+        modal.classList.remove('visible');
+      }
+    };
+
+    // Close modals on Escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        document.querySelectorAll('.info-modal.visible').forEach(modal => {
+          modal.classList.remove('visible');
+        });
+      }
+    });
+
+    // Update checker functions
+    window.checkForUpdates = async (silent = false) => {
+      if (!window.voapps?.checkForUpdates) {
+        if (!silent) {
+          alert('Update checking is not available in this environment');
+        }
+        return;
+      }
+
+      const modal = $('updateModal');
+      const title = $('updateModalTitle');
+      const body = $('updateModalBody');
+
+      if (!silent) {
+        title.textContent = 'Checking for Updates...';
+        body.innerHTML = '<p style="text-align: center; color: #999;">Please wait...</p>';
+        modal.classList.add('visible');
+      }
+
+      try {
+        const result = await window.voapps.checkForUpdates();
+
+        if (!result.ok) {
+          if (!silent) {
+            title.textContent = 'Update Check Failed';
+            body.innerHTML = `<p>Could not check for updates: ${result.error}</p>`;
+          }
+          return;
+        }
+
+        if (result.updateAvailable) {
+          // Store that we've notified about this version
+          localStorage.setItem('last_update_notified', result.latestVersion);
+          localStorage.setItem('last_update_check', Date.now());
+
+          title.textContent = `Update Available: v${result.latestVersion}`;
+          body.innerHTML = `
+            <p><strong>Current version:</strong> v${result.currentVersion}</p>
+            <p><strong>Latest version:</strong> v${result.latestVersion}</p>
+            
+            <h4 style="margin-top: 16px; margin-bottom: 8px; color: #FF4B7D;">Release Notes:</h4>
+            <div style="background: #f5f5f5; padding: 12px; border-radius: 6px; font-size: 12px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; line-height: 1.5;">
+${result.releaseNotes || 'No release notes available.'}
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-top: 20px;">
+              <button onclick="downloadUpdate('${result.downloadUrl}')" style="flex: 1; padding: 12px; background: #FF4B7D; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 13px;">
+                Download Update
+              </button>
+              <button onclick="hideUpdateModal()" style="flex: 1; padding: 12px; background: #f0f0f0; color: #666; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 13px;">
+                Later
+              </button>
+            </div>
+          `;
+          modal.classList.add('visible');
+        } else {
+          // No update available
+          localStorage.setItem('last_update_check', Date.now());
+
+          if (!silent) {
+            title.textContent = 'No Updates Available';
+            body.innerHTML = `
+              <p style="text-align: center;">You're running the latest version (v${result.currentVersion})! 🎉</p>
+              <button onclick="hideUpdateModal()" style="width: 100%; padding: 12px; background: #FF4B7D; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; margin-top: 16px; font-size: 13px;">
+                Close
+              </button>
+            `;
+            modal.classList.add('visible');
+          }
+        }
+      } catch (error) {
+        if (!silent) {
+          title.textContent = 'Update Check Failed';
+          body.innerHTML = `<p>Error: ${error.message}</p>`;
+        }
+        console.error('Update check error:', error);
+      }
+    };
+
+    window.hideUpdateModal = () => {
+      const modal = $('updateModal');
+      if (modal) {
+        modal.classList.remove('visible');
+      }
+    };
+
+    window.downloadUpdate = async (url) => {
+      if (window.voapps?.openUpdateUrl) {
+        await window.voapps.openUpdateUrl(url);
+        log('Opening download page for update...');
+      } else {
+        window.open(url, '_blank');
+      }
+    };
+
+    // Check for updates on startup (once per day)
+    const checkUpdateOnStartup = () => {
+      const lastCheck = localStorage.getItem('last_update_check');
+      const lastNotified = localStorage.getItem('last_update_notified');
+      const now = Date.now();
+      const oneDayAgo = now - (24 * 60 * 60 * 1000);
+
+      // Only check if:
+      // 1. Never checked before, OR
+      // 2. Last check was more than 24 hours ago
+      if (!lastCheck || parseInt(lastCheck) < oneDayAgo) {
+        // Check silently (don't show modal if no update)
+        setTimeout(() => checkForUpdates(true), 3000); // Wait 3 seconds after app loads
+      }
+    };
+
+    // Load saved API key
+    $('apiKey').value = localStorage.getItem(KEY_STORE) || '';
+
+    function log(msg) {
+      const time = new Date().toLocaleTimeString();
+      $('logContent').textContent += `[${time}] ${msg}\n`;
+      $('logContent').scrollTop = $('logContent').scrollHeight;
+    }
+
+    function setStatus(title, badge, badgeClass) {
+      $('statusTitle').textContent = title;
+      const dot = $('statusDot');
+      if (badgeClass === 'running') {
+        dot.style.background = '#f59e0b';
+      } else if (badgeClass === 'done') {
+        dot.style.background = '#22c55e';
+      } else if (badgeClass === 'error') {
+        dot.style.background = '#ef4444';
+      } else {
+        dot.style.background = '#22c55e';
+      }
+    }
+
+    function setLocked(locked) {
+      isLocked = locked;
+      $('runBtn').disabled = locked;
+      $('pauseBtn').disabled = !locked;
+      
+      if (!locked) {
+        isPaused = false;
+        $('pauseBtn').textContent = 'Pause';
+        showProgress(false);
+      } else {
+        showProgress(true);
+      }
+    }
+
+    // API Key management
+    $('saveKeyBtn').onclick = () => {
+      localStorage.setItem(KEY_STORE, $('apiKey').value);
+      log('API key saved');
+    };
+
+    $('clearKeyBtn').onclick = () => {
+      $('apiKey').value = '';
+      localStorage.removeItem(KEY_STORE);
+      log('API key cleared');
+    };
+
+    // Date presets
+    $('datePreset').onchange = () => {
+      const preset = $('datePreset').value;
+      if (!preset) return;
+
+      const end = new Date();
+      const start = new Date(end);
+
+      if (preset.startsWith('months_')) {
+        start.setMonth(start.getMonth() - parseInt(preset.split('_')[1]));
+      } else if (preset.startsWith('years_')) {
+        start.setFullYear(start.getFullYear() - parseInt(preset.split('_')[1]));
+      }
+
+      $('startDate').value = start.toISOString().slice(0, 10);
+      $('endDate').value = end.toISOString().slice(0, 10);
+      log(`Preset applied: ${preset}`);
+      saveSettings();
+    };
+
+    // Initialize dates (last 2 months)
+    (() => {
+      const today = new Date();
+      const twoMonthsAgo = new Date(today);
+      twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
+      $('startDate').value = twoMonthsAgo.toISOString().slice(0, 10);
+      $('endDate').value = today.toISOString().slice(0, 10);
+    })();
+
+    // Search type dropdown handler
+    const searchTypeDescriptions = {
+      phone: "Searches all campaigns for the specified phone numbers and returns detailed interaction history. Supports batch searches (recommended: up to 1,000 numbers for optimal performance).",
+      combine: "Downloads every campaign export for the selected account(s) and date range, then merges all results into a single CSV.",
+      "bulk-export": "Downloads each campaign as a separate CSV file, organized by year and month into an Archive folder."
+    };
+
+    $('searchTypeDropdown').onchange = () => {
+      const val = $('searchTypeDropdown').value;
+      
+      // Update description
+      $('searchTypeDescription').textContent = searchTypeDescriptions[val] || "";
+      
+      // Show/hide appropriate right-side content
+      $('phoneInputContainer').classList.toggle('visible', val === 'phone');
+      $('trendAnalyzerContainer').classList.toggle('visible', val === 'combine');
+      
+      // Reset trend analyzer if switching away from Combine
+      if (val !== 'combine') {
+        $('trendAnalyzerCheckbox').checked = false;
+        $('trendAnalyzerConfig').style.display = 'none';
+        $('openAnalysisBtn').style.display = 'none';
+        $('analysisPathRow').style.display = 'none';
+      }
+      
+      // Update button text based on mode
+      const runBtn = $('runBtn');
+      const runBtnText = runBtn.querySelector('.btn-text');
+      if (val === 'bulk-export') runBtnText.textContent = 'Export';
+      else if (val === 'combine') runBtnText.textContent = 'Combine';
+      else runBtnText.textContent = 'Run';
+      
+      saveSettings();
+    };
+
+    // Trend Analyzer checkbox handler
+    $('trendAnalyzerCheckbox').onchange = () => {
+      const isChecked = $('trendAnalyzerCheckbox').checked;
+      
+      // Toggle checked class on the option container
+      const option = $('trendAnalyzerOption');
+      if (isChecked) {
+        option.classList.add('checked');
+      } else {
+        option.classList.remove('checked');
+      }
+      
+      // Show/hide configuration section
+      $('trendAnalyzerConfig').style.display = isChecked ? 'block' : 'none';
+      
+      // Analysis button visibility is controlled after job completes
+      if (!isChecked) {
+        $('openAnalysisBtn').style.display = 'none';
+        $('analysisPathRow').style.display = 'none';
+      }
+      saveSettings();
+    };
+
+    // CSV Upload button handler
+    $('uploadCsvBtn').onclick = () => {
+      $('csvFileUpload').click();
+    };
+
+    $('csvFileUpload').onchange = async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      
+      $('uploadedFileName').textContent = file.name;
+      
+      // Read and analyze CSV
+      try {
+        log(`Analyzing uploaded CSV: ${file.name}`);
+        
+        const text = await file.text();
+        const formData = new FormData();
+        formData.append('csv', new Blob([text], { type: 'text/csv' }), file.name);
+        formData.append('min_consec_unsuccessful', $('minConsecUnsuccessful').value);
+        formData.append('min_run_span_days', $('minRunSpanDays').value);
+        
+        const response = await fetch('/api/analyze-csv', {
+          method: 'POST',
+          body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.ok) {
+          log(`Analysis complete: ${result.artifacts.analysisPath}`);
+          $('analysisPath').textContent = result.artifacts.analysisPath;
+          $('analysisPathRow').style.display = 'flex';
+          $('openAnalysisBtn').style.display = 'block';
+          $('openAnalysisBtn').disabled = false;
+          
+          $('openAnalysisBtn').onclick = async () => {
+            log('Opening Number Analysis...');
+            const res = await window.voapps.openPath(result.artifacts.analysisPath);
+            if (!res.ok) log(`Failed: ${res.error}`);
+          };
+        } else {
+          log(`Analysis failed: ${result.error}`);
+        }
+      } catch (err) {
+        log(`Upload error: ${err.message}`);
+      }
+    };
+
+    // Load accounts
+    $('loadAccountsBtn').onclick = async () => {
+      try {
+        log('Loading accounts...');
+        const apiKey = $('apiKey').value || localStorage.getItem(KEY_STORE);
+        if (!apiKey) {
+          log('ERROR: No API key');
+          return;
+        }
+
+        const resp = await fetch('/api/accounts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ api_key: apiKey })
+        });
+        const data = await resp.json();
+        
+        if (!resp.ok || !data.ok) throw new Error(data.error || 'Failed');
+        
+        const activeAccounts = data.accounts || [];
+
+        let hiddenAccounts = [];
+        try {
+          const hiddenResp = await fetch('/api/accounts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_key: apiKey, filter: 'hidden' })
+          });
+          const hiddenData = await hiddenResp.json();
+          if (hiddenResp.ok && hiddenData.ok) {
+            hiddenAccounts = hiddenData.accounts || [];
+            hiddenAccountIds = new Set(hiddenAccounts.map(a => String(a.id)));
+          }
+        } catch(e) {
+          log('Hidden accounts not available');
+        }
+
+        allAccounts = [...activeAccounts, ...hiddenAccounts];
+
+        renderAccounts();
+        log(`Loaded ${activeAccounts.length} active + ${hiddenAccounts.length} hidden accounts`);
+      } catch(e) {
+        log(`ERROR: ${e.message}`);
+      }
+    };
+
+    function renderAccounts() {
+  const list = $('accountsList');
+  const header = $('accountsHeader');
+  const leftColumn = $('accountsColumnLeft');
+  const rightColumn = $('accountsColumnRight');
+  const savedSelections = new Set(selectedAccounts); // Save current selections
+  
+  leftColumn.innerHTML = '';
+  rightColumn.innerHTML = '';
+
+  if (!allAccounts.length) {
+    leftColumn.innerHTML = '<div style="padding:8px; text-align:center; color:#999;">No accounts</div>';
+    list.style.display = 'none';
+    header.style.display = 'none';
+    return;
+  }
+
+  // Split accounts into two columns
+  const midpoint = Math.ceil(allAccounts.length / 2);
+  const leftAccounts = allAccounts.slice(0, midpoint);
+  const rightAccounts = allAccounts.slice(midpoint);
+
+  const renderColumn = (accounts, container) => {
+    accounts.forEach(a => {
+      const id = String(a.id);
+      const name = a.name || '';
+      const isHidden = hiddenAccountIds.has(id);
+
+      const item = document.createElement('label');
+      item.className = 'account-item';
+      item.style.display = 'flex';
+      item.style.alignItems = 'center';
+      item.style.gap = '8px';
+      item.style.padding = '4px 6px';
+      item.style.cursor = 'pointer';
+      item.style.borderRadius = '4px';
+      item.style.fontSize = '12px';
+      item.onmouseenter = () => item.style.background = '#f5f5f5';
+      item.onmouseleave = () => item.style.background = 'transparent';
+      
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.className = 'account-checkbox';
+      cb.dataset.accountId = id;
+      cb.checked = savedSelections.has(id); // Restore selection
+      cb.style.width = 'auto';
+      cb.style.margin = '0';
+      cb.onchange = () => {
+        if (cb.checked) selectedAccounts.add(id);
+        else selectedAccounts.delete(id);
+        saveSettings(); // Auto-save
+      };
+
+      const text = document.createElement('span');
+      text.textContent = `${id} — ${name}${isHidden ? ' (hidden)' : ''}`;
+      text.style.flex = '1';
+
+      item.appendChild(cb);
+      item.appendChild(text);
+      container.appendChild(item);
+    });
+  };
+
+  renderColumn(leftAccounts, leftColumn);
+  renderColumn(rightAccounts, rightColumn);
+
+  list.style.display = 'grid';
+  header.style.display = 'flex';
+  $('accountCount').textContent = `${allAccounts.length} loaded`;
+}
+
+    // Accounts column resize functionality
+    (() => {
+      const handle = $('accountsResizeHandle');
+      const container = $('accountsList');
+      let isResizing = false;
+      let startX = 0;
+      let startLeftWidth = 0;
+      let startRightWidth = 0;
+
+      // Load saved widths from localStorage
+      const savedWidths = localStorage.getItem('accountsColumnWidths');
+      if (savedWidths) {
+        const { left, right } = JSON.parse(savedWidths);
+        container.style.setProperty('--accounts-left-width', left);
+        container.style.setProperty('--accounts-right-width', right);
+      }
+
+      handle.addEventListener('mousedown', (e) => {
+        isResizing = true;
+        startX = e.clientX;
+        
+        const leftCol = $('accountsColumnLeft');
+        const rightCol = $('accountsColumnRight');
+        startLeftWidth = leftCol.offsetWidth;
+        startRightWidth = rightCol.offsetWidth;
+        
+        handle.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+      });
+
+      document.addEventListener('mousemove', (e) => {
+        if (!isResizing) return;
+        
+        const deltaX = e.clientX - startX;
+        const totalWidth = startLeftWidth + startRightWidth;
+        const newLeftWidth = startLeftWidth + deltaX;
+        const newRightWidth = startRightWidth - deltaX;
+        
+        // Enforce minimum widths
+        if (newLeftWidth < 150 || newRightWidth < 150) return;
+        
+        const leftPercent = (newLeftWidth / totalWidth) * 100;
+        const rightPercent = (newRightWidth / totalWidth) * 100;
+        
+        container.style.setProperty('--accounts-left-width', `${leftPercent}%`);
+        container.style.setProperty('--accounts-right-width', `${rightPercent}%`);
+      });
+
+      document.addEventListener('mouseup', () => {
+        if (isResizing) {
+          isResizing = false;
+          handle.classList.remove('dragging');
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+          
+          // Save widths to localStorage
+          const leftWidth = container.style.getPropertyValue('--accounts-left-width') || '1fr';
+          const rightWidth = container.style.getPropertyValue('--accounts-right-width') || '1fr';
+          localStorage.setItem('accountsColumnWidths', JSON.stringify({ left: leftWidth, right: rightWidth }));
+        }
+      });
+    })();
+
+    window.selectAllAccounts = () => {
+      selectedAccounts = new Set(allAccounts.map(a => String(a.id)));
+      document.querySelectorAll('.account-checkbox').forEach(cb => cb.checked = true);
+      log('Selected all accounts');
+      saveSettings();
+    };
+
+    window.selectActiveAccounts = () => {
+      selectedAccounts.clear();
+      document.querySelectorAll('.account-checkbox').forEach(cb => {
+        const id = cb.dataset.accountId;
+        const isActive = !hiddenAccountIds.has(id);
+        cb.checked = isActive;
+        if (isActive) selectedAccounts.add(id);
+      });
+      log('Selected active accounts only');
+      saveSettings();
+    };
+
+    window.clearAccounts = () => {
+      selectedAccounts.clear();
+      document.querySelectorAll('.account-checkbox').forEach(cb => cb.checked = false);
+      log('Cleared selection');
+      saveSettings();
+    };
+
+    // Run
+    $('runBtn').onclick = async () => {
+      if (isLocked) return;
+
+      const apiKey = $('apiKey').value || localStorage.getItem(KEY_STORE);
+      if (!apiKey) {
+        setStatus('Error', 'error');
+        log('ERROR: Missing API key');
+        return;
+      }
+
+      if (!selectedAccounts.size) {
+        // Check if manual account IDs are provided
+        const manualIds = $('manualAccountIds').value.trim();
+        if (!manualIds) {
+          setStatus('No accounts selected', 'error');
+          log('ERROR: No accounts selected');
+          return;
+        }
+      }
+
+      const searchType = $('searchTypeDropdown').value;
+      const isPhoneSearch = searchType === 'phone';
+      const isBulkExport = searchType === 'bulk-export';
+
+      if (isPhoneSearch) {
+        const phones = $('phoneNumbers').value.trim();
+        if (!phones) {
+          setStatus('No phone numbers entered', 'error');
+          log('ERROR: No phone numbers entered');
+          return;
+        }
+      }
+
+      const startDate = $('startDate').value;
+      const endDate = $('endDate').value;
+
+      if (!startDate || !endDate) {
+        setStatus('Missing date range', 'error');
+        log('ERROR: Missing dates');
+        return;
+      }
+
+      const selectedCols = Array.from(document.querySelectorAll('.col-check:checked')).map(cb => cb.value);
+      const includeCaller = selectedCols.includes('caller_number');
+      const includeMessageMeta = selectedCols.includes('message_id') || selectedCols.includes('message_name') || selectedCols.includes('message_description');
+
+      currentJobId = `job_${Date.now()}`;
+      setLocked(true);
+      setStatus('Running...', 'running');
+      
+      const taskName = isPhoneSearch ? 'Number Search' : isBulkExport ? 'Bulk Export' : 'Combine Campaigns';
+      log(`Starting ${taskName}...`);
+      log('');
+
+      // Set up SSE for real-time logging
+      if (eventSource) {
+        eventSource.close();
+      }
+      
+      eventSource = new EventSource(`/api/stream/${currentJobId}`);
+      
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          if (data.type === 'log') {
+            // Real-time log message
+            const time = new Date().toLocaleTimeString();
+            $('logContent').textContent += `[${time}] ${data.message}\n`;
+            $('logContent').scrollTop = $('logContent').scrollHeight;
+          } else if (data.type === 'progress') {
+            // Progress update
+            updateProgress(data.current, data.total, data.text);
+          } else if (data.type === 'complete') {
+            // Job completed
+            eventSource.close();
+            eventSource = null;
+          }
+        } catch (e) {
+          console.error('SSE parse error:', e);
+        }
+      };
+      
+      eventSource.onerror = () => {
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+      };
+
+      // Combine selected accounts with manual account IDs
+      const accountIds = new Set(selectedAccounts);
+      const manualIds = $('manualAccountIds').value.trim();
+      if (manualIds) {
+        manualIds.split(',').forEach(id => {
+          const trimmed = id.trim();
+          if (trimmed) accountIds.add(trimmed);
+        });
+      }
+
+      const payload = {
+        job_id: currentJobId,
+        api_key: apiKey,
+        account_ids: Array.from(accountIds),
+        start_date: startDate,
+        end_date: endDate,
+        include_caller: includeCaller,
+        include_message_meta: includeMessageMeta
+      };
+
+      if (isPhoneSearch) {
+        payload.numbers = $('phoneNumbers').value.trim().split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+      }
+
+      // Add trend analyzer flag for Combine mode
+      if (searchType === 'combine' && $('trendAnalyzerCheckbox').checked) {
+        payload.generate_trend_analysis = true;
+        payload.min_consec_unsuccessful = parseInt($('minConsecUnsuccessful').value) || 4;
+        payload.min_run_span_days = parseInt($('minRunSpanDays').value) || 14;
+      }
+
+      let endpoint = '/api/search';
+      if (searchType === 'combine') endpoint = '/api/combine';
+      if (searchType === 'bulk-export') endpoint = '/api/bulk-export';
+
+      try {
+        const resp = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await resp.json();
+        if (!resp.ok || !data.ok) throw new Error(data.error || 'Request failed');
+
+        setLocked(false);
+        setStatus('Done', 'done');
+        
+        // Show completion alerts
+        playCompletionSound();
+        
+        let summaryMessage = '';
+        if (searchType === 'bulk-export') {
+          const s = data.stats || {};
+          summaryMessage = `${s.successfulDownloads || 0} campaigns downloaded, ${s.totalRecords || 0} total records`;
+          log('');
+          log(`✓ Complete!`);
+          log(`  Campaigns: ${s.successfulDownloads || 0} downloaded, ${s.failedDownloads || 0} failed`);
+          log(`  Total records: ${s.totalRecords || 0}`);
+          log(`  Time: ${s.timeElapsed || 'unknown'}`);
+          if (data.artifacts?.errorPath) {
+            log(`  ⚠️ Errors logged to file`);
+          }
+        } else {
+          const count = data.matches || data.totalRows || 0;
+          summaryMessage = `${count} results found`;
+          log('');
+          log(`✓ Complete! ${count} results`);
+        }
+        
+        showCompletionNotification(`${taskName} Complete!`, summaryMessage);
+        
+        if (window.voapps) await refreshArtifacts();
+      } catch(e) {
+        setLocked(false);
+        setStatus('Error', 'error');
+        log('');
+        log(`ERROR: ${e.message}`);
+        
+        // Show error notification
+        showCompletionNotification(`${taskName} Failed`, e.message);
+      } finally {
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+        currentJobId = null;
+      }
+    };
+
+    // Pause/Resume
+    $('pauseBtn').onclick = async () => {
+      if (!currentJobId) return;
+      
+      if (isPaused) {
+        // Resume
+        log('Resuming...');
+        isPaused = false;
+        $('pauseBtn').textContent = 'Pause';
+        setStatus('Running...', 'running');
+        
+        try {
+          await fetch('/api/resume', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job_id: currentJobId })
+          });
+        } catch(e) {
+          log(`Resume failed: ${e.message}`);
+        }
+      } else {
+        // Pause
+        log('Pausing...');
+        isPaused = true;
+        $('pauseBtn').textContent = 'Resume';
+        setStatus('Paused', 'idle');
+        
+        try {
+          await fetch('/api/pause', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job_id: currentJobId })
+          });
+        } catch(e) {
+          log(`Pause failed: ${e.message}`);
+        }
+      }
+    };
+
+    // Quit
+    $('quitBtn').onclick = async () => {
+      log('Quitting...');
+      try {
+        await fetch('/api/shutdown', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+      } catch(e) {}
+    };
+
+    // Ping
+    $('pingBtn').onclick = async () => {
+      try {
+        const r = await fetch('/api/ping');
+        log(r.ok ? 'Ping: OK' : 'Ping: FAILED');
+      } catch {
+        log('Ping: FAILED');
+      }
+    };
+
+    $('clearLogBtn').onclick = () => {
+      $('logContent').textContent = '';
+      log('Log cleared');
+    };
+
+    // Refresh artifacts from Electron
+    async function refreshArtifacts() {
+      if (!window.voapps?.getLastArtifacts) return;
+      
+      try {
+        const r = await window.voapps.getLastArtifacts();
+        if (!r.ok) return;
+
+        const { csvPath, logPath, errorPath, analysisPath } = r.artifacts || {};
+
+        if (csvPath) {
+          $('csvPath').textContent = csvPath;
+          $('openCsvBtn').disabled = false;
+          
+          $('openCsvBtn').onclick = async () => {
+            log('Opening CSV...');
+            const res = await window.voapps.openPath(csvPath);
+            if (!res.ok) log(`Failed: ${res.error}`);
+          };
+        }
+
+        if (analysisPath) {
+          $('analysisPath').textContent = analysisPath;
+          $('analysisPathRow').style.display = 'flex';
+          $('openAnalysisBtn').style.display = 'block';
+          $('openAnalysisBtn').disabled = false;
+          
+          $('openAnalysisBtn').onclick = async () => {
+            log('Opening Number Analysis...');
+            const res = await window.voapps.openPath(analysisPath);
+            if (!res.ok) log(`Failed: ${res.error}`);
+          };
+        }
+
+        if (logPath) {
+          $('logPath').textContent = logPath;
+          $('openLogBtn').disabled = false;
+          $('openLogBtn').onclick = async () => {
+            log('Opening log...');
+            const res = await window.voapps.openPath(logPath);
+            if (!res.ok) log(`Failed: ${res.error}`);
+          };
+        }
+
+        if (errorPath) {
+          $('openErrorsBtn').disabled = false;
+          $('openErrorsBtn').onclick = async () => {
+            log('Opening errors log...');
+            const res = await window.voapps.openPath(errorPath);
+            if (!res.ok) log(`Failed: ${res.error}`);
+          };
+        } else {
+          $('openErrorsBtn').disabled = true;
+        }
+      } catch(e) {
+        log(`Artifact refresh error: ${e.message}`);
+      }
+    }
+
+    // Initialize
+(async () => {
+  log('VoApps Tools 2.4.0 loaded');
+  
+  // Load saved settings first
+  loadSettings();
+  
+  // Attach auto-save handlers
+  attachAutoSave();
+  
+  try {
+    const r = await fetch('/api/ping');
+    if (r.ok) {
+      log('Server: Connected');
+      await refreshArtifacts();
+    }
+  } catch {
+    log('Server: Offline');
+  }
+
+  // Check for updates on startup
+  checkUpdateOnStartup();
+})();
+  </script>
+</body>
+</html>

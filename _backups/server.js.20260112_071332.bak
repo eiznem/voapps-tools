@@ -1,0 +1,819 @@
+/**
+ * VoApps Tools — In-Process HTTP Server (Electron)
+ * Version: restore-known-good + Electron exports
+ *
+ * WHAT THIS FILE DOES
+ * - Serves /public/index.html
+ * - Provides API routes used by the UI:
+ *     POST /api/accounts
+ *     POST /api/search
+ *     POST /api/combine
+ *     POST /api/cancel
+ *     GET  /api/ping
+ * - Writes CSV + log files to: ~/Downloads/VoApps Tools
+ * - Tracks latest CSV/log paths for Electron ("Open CSV" / "Open Log")
+ *
+ * ELECTRON EXPORTS (required by main.js)
+ *   startServer() -> Promise<{ url, port }>
+ *   getLastArtifacts() -> { csvPath?:string, logPath?:string }
+ */
+
+const http = require("http");
+const https = require("https");
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
+const { URL } = require("url");
+
+// ──────────────────────────────────────────────────────────────
+// Config
+// ──────────────────────────────────────────────────────────────
+
+const PORT = Number(process.env.VOAPPS_TOOLS_PORT || process.env.PORT || 3000);
+
+// ✅ Default API base (what you told me it should be)
+const DEFAULT_API_BASE = "https://directdropvoicemail.voapps.com/api/v1";
+
+// Allow override via env if ever needed (but default is correct)
+const VOAPPS_API_BASE = (process.env.VOAPPS_API_BASE || DEFAULT_API_BASE).replace(/\/+$/, "");
+
+// Folder for outputs
+const LOGS_DIR = path.join(os.homedir(), "Downloads", "VoApps Tools");
+
+// Static UI directory
+const PUBLIC_DIR = path.join(__dirname, "public");
+const INDEX_HTML = path.join(PUBLIC_DIR, "index.html");
+
+// ──────────────────────────────────────────────────────────────
+// Artifact tracking (Electron uses this for Open CSV / Open Log)
+// ──────────────────────────────────────────────────────────────
+
+let lastArtifacts = { csvPath: null, logPath: null };
+
+function setLastArtifacts({ csvPath, logPath }) {
+  if (csvPath) lastArtifacts.csvPath = csvPath;
+  if (logPath) lastArtifacts.logPath = logPath;
+}
+
+function getLastArtifacts() {
+  return { ...lastArtifacts };
+}
+
+// ──────────────────────────────────────────────────────────────
+// Utilities
+// ──────────────────────────────────────────────────────────────
+
+function ensureDir(dir) {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+
+function tsForFilename() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = "";
+    req.on("data", (chunk) => (data += chunk));
+    req.on("end", () => resolve(data));
+    req.on("error", reject);
+  });
+}
+
+function json(res, code, obj) {
+  const body = JSON.stringify(obj);
+  res.writeHead(code, {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store",
+  });
+  res.end(body);
+}
+
+function text(res, code, body) {
+  res.writeHead(code, {
+    "content-type": "text/plain; charset=utf-8",
+    "cache-control": "no-store",
+  });
+  res.end(body);
+}
+
+function csvEscape(v) {
+  if (v === null || v === undefined) return "";
+  const s = String(v);
+  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function normalizeDigits(raw) {
+  if (!raw) return "";
+  const digits = String(raw).replace(/[^\d]/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
+  if (digits.length === 10) return digits;
+  return digits; // allow other lengths for auditing
+}
+
+function parseNumbers(input) {
+  const raw = (input || "").toString();
+  const parts = raw
+    .split(/[\n,]+/g)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return parts.map(normalizeDigits).filter(Boolean);
+}
+
+function safeJsonParse(s) {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+
+function httpRequestJson(method, urlStr, headers = {}, bodyObj = null) {
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(urlStr);
+    const isHttps = urlObj.protocol === "https:";
+    const lib = isHttps ? https : http;
+
+    const body = bodyObj ? JSON.stringify(bodyObj) : null;
+
+    const opts = {
+      method,
+      hostname: urlObj.hostname,
+      port: urlObj.port || (isHttps ? 443 : 80),
+      path: urlObj.pathname + (urlObj.search || ""),
+      headers: {
+        "accept": "application/json",
+        ...headers,
+      },
+    };
+
+    if (body) {
+      opts.headers["content-type"] = "application/json";
+      opts.headers["content-length"] = Buffer.byteLength(body);
+    }
+
+    const req = lib.request(opts, (res) => {
+      let data = "";
+      res.on("data", (d) => (data += d));
+      res.on("end", () => {
+        const status = res.statusCode || 0;
+        const jsonBody = safeJsonParse(data);
+        if (status >= 200 && status < 300) {
+          resolve({ status, data: jsonBody, raw: data });
+        } else {
+          const err = new Error(`API request failed (${status}).`);
+          err.status = status;
+          err.body = jsonBody;
+          err.raw = data;
+          resolve({ status, error: err, data: jsonBody, raw: data });
+        }
+      });
+    });
+
+    req.on("error", reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+function authHeaders(apiKey) {
+  // Keep flexible — your API accepts an Authorization-style token.
+  // If your API expects a different header, we can switch it here in one place.
+  return {
+    "authorization": `Bearer ${apiKey}`,
+  };
+}
+
+function downloadUrlForLocalPath(localPath) {
+  // UI may use download_url in some spots; keep consistent with older tool
+  const base = `http://127.0.0.1:${PORT}`;
+  const file = encodeURIComponent(path.basename(localPath));
+  return `${base}/download?file=${file}`;
+}
+
+// ──────────────────────────────────────────────────────────────
+// Job cancellation (for long runs)
+// ──────────────────────────────────────────────────────────────
+
+let activeJob = null;
+
+function newJob() {
+  const job = { cancelled: false };
+  activeJob = job;
+  return job;
+}
+
+function cancelActiveJob() {
+  if (activeJob) activeJob.cancelled = true;
+}
+
+// ──────────────────────────────────────────────────────────────
+// Core: build CSV rows (caller + message metadata)
+// ──────────────────────────────────────────────────────────────
+
+async function fetchAccounts(apiKey, log) {
+  const url = `${VOAPPS_API_BASE}/accounts`;
+  log(`GET ${url}`);
+  const r = await httpRequestJson("GET", url, authHeaders(apiKey));
+  if (r.error) throw r.error;
+  return r.data;
+}
+
+async function fetchCampaigns(apiKey, accountId, startDate, endDate, log) {
+  /**
+   * Fetch campaigns by CREATED DATE.
+   *
+   * IMPORTANT: VoApps API only accepts a SINGLE created_date per request,
+   * so we must do one call per day:
+   *   GET /accounts/:id/campaigns?created_date=YYYY-MM-DD
+   *
+   * startDate/endDate should be "YYYY-MM-DD".
+   */
+
+  const toISODate = (d) => d.toISOString().slice(0, 10);
+
+  function parseISO(iso) {
+    // Treat as date-only; force midnight UTC so math is stable.
+    // (API expects YYYY-MM-DD, not a timestamp)
+    return new Date(iso + "T00:00:00Z");
+  }
+
+  if (!startDate || !endDate) {
+    throw new Error("Missing start_date || end_date.");
+  }
+
+  const start = parseISO(startDate);
+  const end = parseISO(endDate);
+
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+    throw new Error(`Invalid date(s). start_date=${startDate} end_date=${endDate}`);
+  }
+
+  // Ensure start <= end
+  let cur = start;
+  const last = end;
+
+  const all = [];
+  while (cur <= last) {
+    const day = toISODate(cur);
+
+    const url = `${VOAPPS_API_BASE}/accounts/${accountId}/campaigns?created_date=${encodeURIComponent(day)}`;
+    log(`GET ${url}`);
+
+    const r = await httpRequestJson("GET", url, authHeaders(apiKey));
+    // API shape has historically been { campaigns: [...] } OR { campaigns: { campaigns: [...] } } depending on wrapper
+    const payload = r && r.data ? r.data : r;
+
+    let list = [];
+    if (payload && Array.isArray(payload.campaigns)) list = payload.campaigns;
+    else if (payload && payload.campaigns && Array.isArray(payload.campaigns.campaigns)) list = payload.campaigns.campaigns;
+
+    if (list.length) {
+      log(`Campaigns returned for ${day}: ${list.length}`);
+      all.push(...list);
+    } else {
+      log(`Campaigns returned for ${day}: 0`);
+    }
+
+    // next day
+    cur = new Date(cur.getTime() + 24 * 60 * 60 * 1000);
+  }
+
+  return { campaigns: all };
+}
+
+
+async function fetchCampaignDetail(apiKey, accountId, campaignId, log) {
+  const url = `${VOAPPS_API_BASE}/accounts/${accountId}/campaigns/${campaignId}`;
+  log(`GET ${url}`);
+  const r = await httpRequestJson("GET", url, authHeaders(apiKey));
+  if (r.error) throw r.error;
+  return r.data;
+}
+
+async function fetchMessages(apiKey, accountId, log) {
+  const url = `${VOAPPS_API_BASE}/accounts/${accountId}/messages`;
+  log(`GET ${url}`);
+  const r = await httpRequestJson("GET", url, authHeaders(apiKey));
+  if (r.error) throw r.error;
+  return r.data;
+}
+
+function indexMessages(messages) {
+  const map = new Map();
+  if (Array.isArray(messages)) {
+    for (const m of messages) {
+      if (!m) continue;
+      const id = m.id ?? m.message_id;
+      if (id !== undefined && id !== null) {
+        map.set(String(id), m);
+      }
+    }
+  }
+  return map;
+}
+
+// Prefer voapps_caller_number when present, else fallback to caller_number-ish
+function pickCallerNumber(rowObj) {
+  return (
+    rowObj.voapps_caller_number ||
+    rowObj.caller_number ||
+    rowObj.from_number ||
+    rowObj.source_number ||
+    ""
+  );
+}
+
+function pickMessageId(rowObj) {
+  return rowObj.voapps_message_id || rowObj.message_id || "";
+}
+
+function pickTimestamp(rowObj) {
+  return rowObj.voapps_timestamp || rowObj.timestamp || rowObj.created_at || "";
+}
+
+function pickResult(rowObj) {
+  return rowObj.voapps_result || rowObj.result || rowObj.status || "";
+}
+
+function pickCode(rowObj) {
+  return rowObj.voapps_code || rowObj.code || "";
+}
+
+// Build a unified row object for CSV output
+function buildRowObject({ digits, accountId, campaignId, campaignName, campaignDetail, rowObj, includeCaller, includeMessageMeta, messageIndex }) {
+  const out = {};
+
+  // Core columns in your preferred order
+  out.number = digits;
+  out.account_id = accountId;
+  out.campaign_id = campaignId;
+  out.campaign_name = campaignName || "";
+
+  if (includeCaller) {
+    out.caller_number = pickCallerNumber(rowObj);
+  }
+
+  // message_id always included in original tool output when available
+  out.message_id = pickMessageId(rowObj);
+
+  if (includeMessageMeta) {
+    const msg = messageIndex && out.message_id ? messageIndex.get(String(out.message_id)) : null;
+    out.message_name = msg?.name || "";
+    out.message_description = msg?.description || "";
+  }
+
+  out.voapps_result = pickResult(rowObj);
+  out.voapps_code = pickCode(rowObj);
+  out.voapps_timestamp = pickTimestamp(rowObj);
+
+  // campaign_url (prefer campaignDetail.uri when present)
+  let campaignUrl = "";
+  const uri = campaignDetail?.uri || campaignDetail?.url || "";
+  if (uri && typeof uri === "string") {
+    // If uri is already full, keep it; if it’s path-like, prefix host
+    campaignUrl = uri.startsWith("http") ? uri : `https://directdropvoicemail.voapps.com${uri}`;
+  } else {
+    campaignUrl = `https://directdropvoicemail.voapps.com/accounts/${accountId}/campaigns/${campaignId}`;
+  }
+  out.campaign_url = campaignUrl;
+
+  return out;
+}
+
+function writeCsvRow(stream, columns, rowObj) {
+  const line = columns.map((c) => csvEscape(rowObj[c] ?? "")).join(",") + "\n";
+  stream.write(line);
+}
+
+// ──────────────────────────────────────────────────────────────
+// Runner: Number Search
+// ──────────────────────────────────────────────────────────────
+
+async function runNumberSearch({
+  job,
+  apiKey,
+  startDate,
+  endDate,
+  numbers,
+  includeCaller,
+  includeMessageMeta,
+  logLevel,
+}) {
+  ensureDir(LOGS_DIR);
+
+  const stamp = tsForFilename();
+  const outName = `NumberSearch_${stamp}.csv`;
+  const logName = `NumberSearch_${stamp}.log.txt`;
+
+  const outPath = path.join(LOGS_DIR, outName);
+  const logPath = path.join(LOGS_DIR, logName);
+
+  const outStream = fs.createWriteStream(outPath, { encoding: "utf8" });
+  const logStream = (logLevel && logLevel !== "none") ? fs.createWriteStream(logPath, { encoding: "utf8" }) : null;
+
+  const log = (line) => {
+    if (!logStream) return;
+    logStream.write(line + "\n");
+  };
+
+  // Header
+  log("VoApps Tools — Number Search");
+  log(`Timestamp: ${new Date().toString()}`);
+  log(`VOAPPS_API_BASE: ${VOAPPS_API_BASE}`);
+  log(`Start date: ${startDate}`);
+  log(`End date:   ${endDate}`);
+  log(`API key provided: ${apiKey ? "YES" : "NO"}`);
+  log(`Include caller number: ${includeCaller ? "YES" : "NO"}`);
+  log(`Include message metadata: ${includeMessageMeta ? "YES" : "NO"}`);
+  log(`Numbers submitted: ${numbers.length}`);
+  log(`Numbers: ${numbers.join(", ")}`);
+  log("");
+  log("Attempting API run...");
+
+  // CSV columns (keep consistent)
+  const columns = [
+    "number",
+    "account_id",
+    "campaign_id",
+    "campaign_name",
+    ...(includeCaller ? ["caller_number"] : []),
+    "message_id",
+    ...(includeMessageMeta ? ["message_name", "message_description"] : []),
+    "voapps_result",
+    "voapps_code",
+    "voapps_timestamp",
+    "campaign_url",
+  ];
+
+  outStream.write(columns.map(csvEscape).join(",") + "\n");
+
+  const stats = {
+    matches: 0,
+    accounts_total: 0,
+    accounts_processed: 0,
+    campaigns_total: 0,
+    campaigns_processed: 0,
+    export_rows_total: 0,
+    cancelled: false,
+    warnings: [],
+  };
+
+  // Convert date inputs to Date for filtering (inclusive)
+  const start = startDate ? new Date(startDate + "T00:00:00") : null;
+  const end = endDate ? new Date(endDate + "T23:59:59") : null;
+
+  const numberSet = new Set(numbers.map(String));
+
+  // 1) Accounts
+  const accounts = await fetchAccounts(apiKey, log);
+  const acctList = Array.isArray(accounts) ? accounts : (accounts?.accounts || []);
+  stats.accounts_total = acctList.length;
+
+  for (const a of acctList) {
+    if (job.cancelled) { stats.cancelled = true; break; }
+
+    const accountId = a.id ?? a.account_id;
+    const accountName = a.name || a.account_name || "";
+    stats.accounts_processed++;
+
+    log("");
+    log(`--- Account ${accountId} (${accountName}) ---`);
+
+    // 2) Messages (for metadata)
+    let messageIndex = null;
+    if (includeMessageMeta) {
+      try {
+        const msgs = await fetchMessages(apiKey, accountId, log);
+        messageIndex = indexMessages(Array.isArray(msgs) ? msgs : (msgs?.messages || []));
+      } catch (e) {
+        stats.warnings.push(`Messages failed for account ${accountId}: ${e.message}`);
+        log(`Messages failed for account ${accountId}: ${e.message}`);
+      }
+    }
+
+    // 3) Campaigns (NO start/end query params to avoid the API 500)
+    let campaigns;
+    try {
+      campaigns = await fetchCampaigns(apiKey, accountId, startDate, endDate, log);
+    } catch (e) {
+      stats.warnings.push(`Campaign list failed for account ${accountId}: ${e.message}`);
+      log(`Campaign list failed for account ${accountId}: ${e.message}`);
+      continue;
+    }
+
+    const campList = Array.isArray(campaigns) ? campaigns : (campaigns?.campaigns || []);
+    stats.campaigns_total += campList.length;
+
+    for (const c of campList) {
+      if (job.cancelled) { stats.cancelled = true; break; }
+
+      const campaignId = c.id ?? c.campaign_id;
+      const campaignName = c.name || c.campaign_name || "";
+      stats.campaigns_processed++;
+
+      // 4) Campaign detail (for export CSV URL)
+      let detail;
+      try {
+        detail = await fetchCampaignDetail(apiKey, accountId, campaignId, log);
+      } catch (e) {
+        stats.warnings.push(`Campaign detail failed ${accountId}/${campaignId}: ${e.message}`);
+        log(`Campaign detail failed ${accountId}/${campaignId}: ${e.message}`);
+        continue;
+      }
+
+      const exportUrl = detail?.export || detail?.export_url || detail?.exportCsvUrl || null;
+      if (!exportUrl) {
+        stats.warnings.push(`No export URL for campaign ${campaignId}`);
+        log(`No export URL for campaign ${campaignId}`);
+        continue;
+      }
+
+      // 5) Download export CSV and scan rows
+      log(`GET ${exportUrl}`);
+
+      const exportRes = await httpRequestJson("GET", exportUrl, authHeaders(apiKey));
+      if (exportRes.error) {
+        stats.warnings.push(`Export fetch failed ${campaignId}: ${exportRes.error.message}`);
+        log(`Export fetch failed ${campaignId}: ${exportRes.error.message}`);
+        continue;
+      }
+
+      // Some exports may return raw CSV string; if server returns JSON, handle both.
+      const raw = exportRes.raw || "";
+      const csvText = (typeof exportRes.data === "string") ? exportRes.data : raw;
+      if (!csvText || typeof csvText !== "string") continue;
+
+      const lines = csvText.split(/\r?\n/).filter((x) => x.length);
+      if (lines.length < 2) continue;
+
+      const headers = lines[0].split(",").map((h) => h.trim());
+      const idx = (name) => headers.indexOf(name);
+
+      // Try common column names (phone_number vs number)
+      const idxPhone = idx("phone_number") >= 0 ? idx("phone_number") : idx("number");
+      const idxResult = idx("voapps_result");
+      const idxCode = idx("voapps_code");
+      const idxTs = idx("voapps_timestamp");
+      const idxCaller = idx("voapps_caller_number") >= 0 ? idx("voapps_caller_number") : idx("caller_number");
+      const idxMsg = idx("voapps_message_id") >= 0 ? idx("voapps_message_id") : idx("message_id");
+
+      // Parse each row (simple CSV split; your exports are simple enough for this tool)
+      for (let i = 1; i < lines.length; i++) {
+        if (job.cancelled) { stats.cancelled = true; break; }
+
+        const cols = lines[i].split(",");
+        stats.export_rows_total++;
+
+        const rawNum = idxPhone >= 0 ? cols[idxPhone] : "";
+        const digits = normalizeDigits(rawNum);
+        if (!numberSet.has(digits)) continue;
+
+        // date filter (based on voapps_timestamp when present)
+        const tsVal = idxTs >= 0 ? cols[idxTs] : "";
+        if (tsVal && start && end) {
+          const d = new Date(tsVal);
+          if (!isNaN(d.getTime())) {
+            if (d < start || d > end) continue;
+          }
+        }
+
+        const rowObj = {
+          number: digits,
+          phone_number: digits,
+          voapps_result: idxResult >= 0 ? cols[idxResult] : "",
+          voapps_code: idxCode >= 0 ? cols[idxCode] : "",
+          voapps_timestamp: idxTs >= 0 ? cols[idxTs] : "",
+          voapps_caller_number: idxCaller >= 0 ? cols[idxCaller] : "",
+          voapps_message_id: idxMsg >= 0 ? cols[idxMsg] : "",
+        };
+
+        const outRow = buildRowObject({
+          digits,
+          accountId,
+          campaignId,
+          campaignName,
+          campaignDetail: detail,
+          rowObj,
+          includeCaller,
+          includeMessageMeta,
+          messageIndex
+        });
+
+        writeCsvRow(outStream, columns, outRow);
+        stats.matches++;
+      }
+    }
+  }
+
+  outStream.end();
+  if (logStream) logStream.end();
+
+  // Update Electron artifact pointers
+  setLastArtifacts({ csvPath: outPath, logPath: (logStream ? logPath : null) });
+
+  return {
+    message: stats.cancelled ? "Cancelled" : "Complete",
+    stats,
+    output: { filename: outName, path: outPath, download_url: downloadUrlForLocalPath(outPath) },
+    log: (logStream ? { filename: logName, path: logPath, download_url: downloadUrlForLocalPath(logPath) } : null),
+  };
+}
+
+// ──────────────────────────────────────────────────────────────
+// HTTP router + endpoints
+// ──────────────────────────────────────────────────────────────
+
+function serveStatic(req, res) {
+  // Minimal static server for /public assets
+  const u = new URL(req.url, `http://127.0.0.1:${PORT}`);
+  let p = u.pathname;
+
+  if (p === "/") p = "/index.html";
+  const filePath = path.join(PUBLIC_DIR, p);
+
+  if (!filePath.startsWith(PUBLIC_DIR)) return text(res, 403, "Forbidden");
+
+  if (!fs.existsSync(filePath)) return text(res, 404, "Not found");
+
+  const ext = path.extname(filePath).toLowerCase();
+  const map = {
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+  };
+
+  const ct = map[ext] || "application/octet-stream";
+  res.writeHead(200, { "content-type": ct, "cache-control": "no-store" });
+  fs.createReadStream(filePath).pipe(res);
+}
+
+async function handlePing(_req, res) {
+  json(res, 200, { ok: true, port: PORT, api_base: VOAPPS_API_BASE });
+}
+
+async function handleCancel(_req, res) {
+  cancelActiveJob();
+  json(res, 200, { ok: true });
+}
+
+async function handleAccounts(req, res) {
+  // UI wants this to populate the account list
+  const bodyRaw = await readBody(req);
+  const body = safeJsonParse(bodyRaw) || {};
+  const apiKey = body.api_key || body.apiKey || "";
+
+  if (!apiKey) return json(res, 400, { ok: false, error: "Missing api_key." });
+
+  try {
+    ensureDir(LOGS_DIR);
+    const accounts = await fetchAccounts(apiKey, () => {});
+    json(res, 200, { ok: true, accounts });
+  } catch (e) {
+    json(res, 500, { ok: false, error: e.message || String(e) });
+  }
+}
+
+async function handleSearch(req, res) {
+  const bodyRaw = await readBody(req);
+  const body = safeJsonParse(bodyRaw) || {};
+
+  // These keys match what the UI sends
+  const apiKey = body.api_key || "";
+  const numbers = parseNumbers(body.numbers || "");
+  const startDate = body.start_date || "";
+  const endDate = body.end_date || "";
+  const includeCaller = !!body.include_caller;
+  const includeMessageMeta = !!body.include_message_meta;
+  const logLevel = body.log_level || "verbose";
+
+  ensureDir(LOGS_DIR);
+
+  // Always create a log file so Open Log works (even on failures)
+  const stamp = tsForFilename();
+  const logName = `NumberSearch_${stamp}.log.txt`;
+  const logPath = path.join(LOGS_DIR, logName);
+
+  const logStream = fs.createWriteStream(logPath, { encoding: "utf8" });
+  const writeLog = (line) => logStream.write(line + "\n");
+
+  writeLog("VoApps Tools — Number Search");
+  writeLog(`Timestamp: ${new Date().toString()}`);
+  writeLog(`VOAPPS_API_BASE: ${VOAPPS_API_BASE}`);
+  writeLog(`Request keys: ${Object.keys(body).join(", ")}`);
+  writeLog(`Numbers submitted: ${numbers.length}`);
+  writeLog(`Numbers: ${numbers.join(", ")}`);
+  writeLog("");
+
+  if (!apiKey) {
+    writeLog("FATAL ERROR: Missing api_key.");
+    logStream.end();
+    setLastArtifacts({ csvPath: null, logPath });
+    return json(res, 400, { ok: false, error: "Missing api_key.", log: { path: logPath, download_url: downloadUrlForLocalPath(logPath) } });
+  }
+
+  if (!numbers.length) {
+    writeLog("FATAL ERROR: No numbers provided.");
+    logStream.end();
+    setLastArtifacts({ csvPath: null, logPath });
+    return json(res, 400, { ok: false, error: "No numbers provided.", log: { path: logPath, download_url: downloadUrlForLocalPath(logPath) } });
+  }
+
+  // Close this pre-log; the runner writes its own detailed log file too.
+  logStream.end();
+
+  try {
+    const job = newJob();
+    const result = await runNumberSearch({
+      job,
+      apiKey,
+      startDate,
+      endDate,
+      numbers,
+      includeCaller,
+      includeMessageMeta,
+      logLevel,
+    });
+
+    // Ensure artifacts set (already set in runner)
+    json(res, 200, { ok: true, ...result });
+  } catch (e) {
+    // Still update lastArtifacts to at least point at the log we created
+    setLastArtifacts({ csvPath: null, logPath });
+    json(res, 500, { ok: false, error: e.message || String(e), log: { path: logPath, download_url: downloadUrlForLocalPath(logPath) } });
+  }
+}
+
+// Download endpoint (if UI ever uses direct download)
+async function handleDownload(req, res) {
+  const u = new URL(req.url, `http://127.0.0.1:${PORT}`);
+  const file = u.searchParams.get("file");
+  if (!file) return text(res, 400, "Missing file");
+
+  const p = path.join(LOGS_DIR, file);
+  if (!p.startsWith(LOGS_DIR)) return text(res, 403, "Forbidden");
+  if (!fs.existsSync(p)) return text(res, 404, "Not found");
+
+  res.writeHead(200, {
+    "content-type": "text/plain; charset=utf-8",
+    "content-disposition": `attachment; filename="${path.basename(p)}"`,
+    "cache-control": "no-store",
+  });
+  fs.createReadStream(p).pipe(res);
+}
+
+// ──────────────────────────────────────────────────────────────
+// Server lifecycle (Electron calls startServer())
+// ──────────────────────────────────────────────────────────────
+
+let serverInstance = null;
+
+async function startServer() {
+  if (serverInstance) {
+    return { url: `http://127.0.0.1:${PORT}`, port: PORT };
+  }
+
+  ensureDir(LOGS_DIR);
+
+  serverInstance = http.createServer(async (req, res) => {
+    try {
+      const u = new URL(req.url || "/", `http://127.0.0.1:${PORT}`);
+      const { pathname } = u;
+
+      // API routes
+      if (req.method === "GET" && pathname === "/api/ping") return handlePing(req, res);
+      if (req.method === "POST" && pathname === "/api/cancel") return handleCancel(req, res);
+      if (req.method === "POST" && pathname === "/api/accounts") return handleAccounts(req, res);
+      if (req.method === "POST" && pathname === "/api/search") return handleSearch(req, res);
+
+      if (req.method === "GET" && pathname === "/download") return handleDownload(req, res);
+
+      // Static UI
+      return serveStatic(req, res);
+    } catch (e) {
+      return json(res, 500, { ok: false, error: e.message || String(e) });
+    }
+  });
+
+  await new Promise((resolve) => {
+    serverInstance.listen(PORT, "127.0.0.1", () => {
+      console.log(`[server] Listening on http://127.0.0.1:${PORT}`);
+      resolve();
+    });
+  });
+
+  return { url: `http://127.0.0.1:${PORT}`, port: PORT };
+}
+
+module.exports = {
+  startServer,
+  getLastArtifacts,
+};

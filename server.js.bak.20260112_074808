@@ -1,0 +1,612 @@
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * VoApps Tools — Local Server (Electron)
+ * Version: 1.1.0
+ * Last Updated: 2026-01-12
+ *
+ * FIXES
+ *  - ✅ Export startServer/stopServer/getLastArtifacts (no more {} exports)
+ *  - ✅ Do NOT auto-start when required by Electron main.js
+ *  - ✅ Provide /api/accounts + /api/search endpoints for the Electron UI
+ *
+ * ROUTES
+ *  GET  /api/ping
+ *  POST /api/accounts   { api_key }
+ *  POST /api/search     {
+ *        job_id?, api_key, numbers (string or array), account_ids? (array),
+ *        start_date, end_date,
+ *        include_caller, include_message_meta,
+ *      }
+ *  POST /api/cancel     { job_id }
+ *  POST /api/shutdown   { reason? }
+ *
+ * NOTES
+ *  - VoApps campaigns endpoint supports only ONE created_date per request:
+ *      /accounts/:id/campaigns?created_date=YYYY-MM-DD
+ *    So we iterate day-by-day across the range.
+ */
+
+"use strict";
+
+const http = require("http");
+const fs = require("fs");
+const fsp = require("fs/promises");
+const path = require("path");
+const os = require("os");
+const { parse: parseUrl } = require("url");
+
+const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
+const HOST = "127.0.0.1";
+const VOAPPS_API_BASE =
+  process.env.VOAPPS_API_BASE || "https://directdropvoicemail.voapps.com/api/v1";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Server state + artifacts
+// ─────────────────────────────────────────────────────────────────────────────
+let serverInstance = null;
+let serverUrl = null;
+
+const lastArtifacts = {
+  csvPath: null,
+  logPath: null,
+};
+
+function getLastArtifacts() {
+  return { ...lastArtifacts };
+}
+
+// Job registry for cancellation (best-effort)
+const jobs = new Map(); // job_id -> { aborted: bool, controller: AbortController }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Small helpers
+// ─────────────────────────────────────────────────────────────────────────────
+function sendJson(res, status, obj) {
+  const body = JSON.stringify(obj);
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+  });
+  res.end(body);
+}
+
+async function readJson(req) {
+  return new Promise((resolve) => {
+    let data = "";
+    req.on("data", (chunk) => (data += chunk));
+    req.on("end", () => {
+      try {
+        resolve(data ? JSON.parse(data) : {});
+      } catch {
+        resolve({});
+      }
+    });
+  });
+}
+
+function safeJoinPublic(filePath) {
+  const pub = path.join(__dirname, "public");
+  const full = path.normalize(path.join(pub, filePath));
+  if (!full.startsWith(pub)) return null;
+  return full;
+}
+
+function guessContentType(file) {
+  const ext = path.extname(file).toLowerCase();
+  if (ext === ".html") return "text/html; charset=utf-8";
+  if (ext === ".js") return "text/javascript; charset=utf-8";
+  if (ext === ".css") return "text/css; charset=utf-8";
+  if (ext === ".png") return "image/png";
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  if (ext === ".svg") return "image/svg+xml";
+  return "application/octet-stream";
+}
+
+function dateToYMD(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function* eachDayInclusive(start, end) {
+  const d = new Date(start.getTime());
+  while (d <= end) {
+    yield new Date(d.getTime());
+    d.setDate(d.getDate() + 1);
+  }
+}
+
+function normalizeNumbers(input) {
+  // Accept: array of strings OR a single string (textarea)
+  const raw = Array.isArray(input) ? input.join("\n") : String(input || "");
+  const parts = raw.split(/[^0-9]+/).filter(Boolean);
+
+  const cleaned = [];
+  for (const p of parts) {
+    let digits = String(p).replace(/\D+/g, "");
+    if (digits.length === 11 && digits.startsWith("1")) digits = digits.slice(1);
+    if (digits.length === 10) cleaned.push(digits);
+  }
+  return cleaned;
+}
+
+async function fetchJson(url, { method = "GET", headers = {}, body, signal } = {}) {
+  const timeoutMs = 120000;
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+
+  // If caller provides a signal, tie them together
+  const signals = [];
+  if (signal) signals.push(signal);
+  signals.push(controller.signal);
+
+  const anySignal = new AbortController();
+  const onAbort = () => anySignal.abort();
+  signals.forEach((s) => s && s.addEventListener("abort", onAbort, { once: true }));
+
+  try {
+    const resp = await fetch(url, {
+      method,
+      headers,
+      body,
+      signal: anySignal.signal,
+    });
+
+    const text = await resp.text();
+    let json = {};
+    try {
+      json = text ? JSON.parse(text) : {};
+    } catch {
+      json = { raw: text };
+    }
+    return { ok: resp.ok, status: resp.status, json };
+  } finally {
+    clearTimeout(t);
+    signals.forEach((s) => s && s.removeEventListener("abort", onAbort));
+  }
+}
+
+function authHeaders(apiKey) {
+  // Adjust if your API expects a different header name
+  return {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VoApps API calls
+// ─────────────────────────────────────────────────────────────────────────────
+async function voappsGetAccounts(apiKey, signal) {
+  const url = `${VOAPPS_API_BASE}/accounts`;
+  return fetchJson(url, { headers: authHeaders(apiKey), signal });
+}
+
+async function voappsGetMessages(apiKey, accountId, signal) {
+  const url = `${VOAPPS_API_BASE}/accounts/${accountId}/messages`;
+  return fetchJson(url, { headers: authHeaders(apiKey), signal });
+}
+
+async function voappsGetCampaignsForDay(apiKey, accountId, ymd, signal) {
+  const url = `${VOAPPS_API_BASE}/accounts/${accountId}/campaigns?created_date=${ymd}`;
+  return fetchJson(url, { headers: authHeaders(apiKey), signal });
+}
+
+async function voappsGetCampaignDetail(apiKey, accountId, campaignId, signal) {
+  const url = `${VOAPPS_API_BASE}/accounts/${accountId}/campaigns/${campaignId}`;
+  return fetchJson(url, { headers: authHeaders(apiKey), signal });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CSV + logging output
+// ─────────────────────────────────────────────────────────────────────────────
+function ensureDir(p) {
+  if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+}
+
+function csvEscape(v) {
+  const s = (v === null || v === undefined) ? "" : String(v);
+  if (/[,"\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+async function writeCsv(filePath, rows, headers) {
+  const lines = [];
+  lines.push(headers.join(","));
+  for (const r of rows) {
+    lines.push(headers.map((h) => csvEscape(r[h])).join(","));
+  }
+  await fsp.writeFile(filePath, lines.join("\n"), "utf8");
+}
+
+async function writeLog(filePath, lines) {
+  await fsp.writeFile(filePath, lines.join("\n") + "\n", "utf8");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Core search runner (server-side)
+// ─────────────────────────────────────────────────────────────────────────────
+async function runNumberSearch({
+  api_key,
+  numbers,
+  account_ids,
+  start_date,
+  end_date,
+  include_caller,
+  include_message_meta,
+  job_id,
+}) {
+  const logLines = [];
+  const log = (s) => logLines.push(s);
+
+  const selectedNumbers = normalizeNumbers(numbers);
+  if (!api_key) throw new Error("Missing api_key");
+  if (!selectedNumbers.length) throw new Error("No valid 10-digit numbers provided.");
+
+  const start = new Date(`${start_date}T00:00:00`);
+  const end = new Date(`${end_date}T00:00:00`);
+  if (!(start_date && end_date) || isNaN(start.getTime()) || isNaN(end.getTime())) {
+    throw new Error("Invalid start_date/end_date.");
+  }
+  if (start > end) throw new Error("Start date must be <= end date.");
+
+  const controller = new AbortController();
+  const signal = controller.signal;
+
+  if (job_id) jobs.set(job_id, { controller });
+
+  log(`VoApps Tools — Number Search`);
+  log(`Timestamp: ${new Date().toString()}`);
+  log(`VOAPPS_API_BASE: ${VOAPPS_API_BASE}`);
+  log(`Numbers submitted: ${selectedNumbers.length}`);
+  log(`Numbers: ${selectedNumbers.join(", ")}`);
+  log(`Start date: ${start_date}`);
+  log(`End date:   ${end_date}`);
+
+  // 1) Accounts
+  log(``);
+  log(`GET ${VOAPPS_API_BASE}/accounts`);
+  const acctResp = await voappsGetAccounts(api_key, signal);
+  if (!acctResp.ok) {
+    throw new Error(`Accounts request failed (HTTP ${acctResp.status})`);
+  }
+
+  const allAccounts = Array.isArray(acctResp.json?.accounts)
+    ? acctResp.json.accounts
+    : Array.isArray(acctResp.json)
+      ? acctResp.json
+      : [];
+
+  // If UI sent account_ids, filter; else search all returned accounts
+  const acctIdSet = Array.isArray(account_ids) && account_ids.length
+    ? new Set(account_ids.map(String))
+    : null;
+
+  const accounts = acctIdSet
+    ? allAccounts.filter((a) => acctIdSet.has(String(a?.id)))
+    : allAccounts;
+
+  // 2) Per-account message meta map (optional)
+  const messagesByAccount = new Map();
+  if (include_message_meta) {
+    for (const a of accounts) {
+      const aid = a?.id;
+      if (!aid) continue;
+      log(`GET ${VOAPPS_API_BASE}/accounts/${aid}/messages`);
+      const mr = await voappsGetMessages(api_key, aid, signal);
+      const msgs = Array.isArray(mr.json?.messages)
+        ? mr.json.messages
+        : Array.isArray(mr.json)
+          ? mr.json
+          : [];
+      const map = new Map();
+      for (const m of msgs) {
+        if (m && m.id != null) map.set(String(m.id), m);
+      }
+      messagesByAccount.set(String(aid), map);
+    }
+  }
+
+  // 3) Search campaigns day-by-day, then (best-effort) match via campaign export URL if present.
+  // NOTE: Your logs show many campaigns have "No export URL". We will still log them and move on.
+  const results = [];
+  const headers = [
+    "number",
+    "account_id",
+    "campaign_id",
+    "campaign_name",
+    "caller_number",
+    "message_id",
+    "message_name",
+    "message_description",
+    "voapps_result",
+    "voapps_code",
+    "voapps_timestamp",
+    "campaign_url",
+  ];
+
+  const wantCaller = !!include_caller;
+  const wantMsgMeta = !!include_message_meta;
+
+  for (const a of accounts) {
+    const aid = a?.id;
+    const aname = a?.name || "";
+    if (!aid) continue;
+
+    log(``);
+    log(`--- Account ${aid} (${aname}) ---`);
+
+    for (const day of eachDayInclusive(start, end)) {
+      const ymd = dateToYMD(day);
+      log(`GET ${VOAPPS_API_BASE}/accounts/${aid}/campaigns?created_date=${ymd}`);
+
+      const cr = await voappsGetCampaignsForDay(api_key, aid, ymd, signal);
+      const campaigns = Array.isArray(cr.json?.campaigns)
+        ? cr.json.campaigns
+        : Array.isArray(cr.json)
+          ? cr.json
+          : [];
+
+      log(`Campaigns returned for ${ymd}: ${campaigns.length}`);
+
+      for (const c of campaigns) {
+        const cid = c?.id;
+        const cname = c?.name || "";
+        if (!cid) continue;
+
+        // Pull campaign detail to locate export URL if exists
+        log(`GET ${VOAPPS_API_BASE}/accounts/${aid}/campaigns/${cid}`);
+        const detail = await voappsGetCampaignDetail(api_key, aid, cid, signal);
+
+        const exportUrl =
+          detail.json?.export ||
+          detail.json?.export_url ||
+          detail.json?.campaign?.export ||
+          detail.json?.campaign?.export_url ||
+          null;
+
+        if (!exportUrl) {
+          log(`No export URL for campaign ${cid}`);
+          continue;
+        }
+
+        // Download export CSV and search rows (best effort; schema may vary)
+        // We keep this conservative: if we can’t parse, we log and move on.
+        try {
+          const expResp = await fetch(exportUrl, { signal });
+          const csvText = await expResp.text();
+
+          // naive CSV parse: split lines, read headers
+          const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length);
+          if (lines.length < 2) continue;
+
+          const hdr = lines[0].split(",").map((h) => h.trim().replace(/^"|"$/g, ""));
+          const idx = (name) => hdr.findIndex((h) => h === name);
+
+          const iNumber = idx("number") !== -1 ? idx("number") : idx("phone_number");
+          const iResult = idx("voapps_result");
+          const iCode = idx("voapps_code");
+          const iTs = idx("voapps_timestamp");
+          const iCaller = idx("voapps_caller_number");
+          const iMsg = idx("voapps_message_id");
+
+          if (iNumber === -1) continue;
+
+          for (let i = 1; i < lines.length; i++) {
+            const cols = lines[i].split(",").map((v) => v.replace(/^"|"$/g, ""));
+            const num = normalizeNumbers(cols[iNumber] || "")[0] || "";
+            if (!num) continue;
+            if (!selectedNumbers.includes(num)) continue;
+
+            const messageId = (iMsg !== -1 ? (cols[iMsg] || "") : "");
+            const msgMap = messagesByAccount.get(String(aid));
+            const msg = (wantMsgMeta && messageId && msgMap) ? msgMap.get(String(messageId)) : null;
+
+            results.push({
+              number: num,
+              account_id: String(aid),
+              campaign_id: String(cid),
+              campaign_name: cname,
+              caller_number: wantCaller ? (iCaller !== -1 ? (cols[iCaller] || "") : "") : "",
+              message_id: messageId || "",
+              message_name: msg ? (msg.name || "") : "",
+              message_description: msg ? (msg.description || "") : "",
+              voapps_result: iResult !== -1 ? (cols[iResult] || "") : "",
+              voapps_code: iCode !== -1 ? (cols[iCode] || "") : "",
+              voapps_timestamp: iTs !== -1 ? (cols[iTs] || "") : "",
+              campaign_url: `https://directdropvoicemail.voapps.com/accounts/${aid}/campaigns/${cid}`,
+            });
+          }
+        } catch (e) {
+          log(`Export parse error for campaign ${cid}: ${e?.message || String(e)}`);
+        }
+      }
+    }
+  }
+
+  // Write outputs to Downloads
+  const downloads = path.join(os.homedir(), "Downloads");
+  const outDir = path.join(downloads, "VoApps Tools Output");
+  const logDir = path.join(downloads, "VoApps Tools Logs");
+  ensureDir(outDir);
+  ensureDir(logDir);
+
+  const stamp = new Date();
+  const stampStr =
+    `${stamp.getFullYear()}${String(stamp.getMonth() + 1).padStart(2, "0")}${String(stamp.getDate()).padStart(2, "0")}_` +
+    `${String(stamp.getHours()).padStart(2, "0")}${String(stamp.getMinutes()).padStart(2, "0")}${String(stamp.getSeconds()).padStart(2, "0")}`;
+
+  const csvPath = path.join(outDir, `NumberSearch_${stampStr}.csv`);
+  const logPath = path.join(logDir, `NumberSearch_${stampStr}.log`);
+
+  await writeCsv(csvPath, results, headers);
+  await writeLog(logPath, logLines);
+
+  lastArtifacts.csvPath = csvPath;
+  lastArtifacts.logPath = logPath;
+
+  return {
+    csvPath,
+    logPath,
+    matches: results.length,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HTTP server + router
+// ─────────────────────────────────────────────────────────────────────────────
+function createHttpServer() {
+  return http.createServer(async (req, res) => {
+    const urlObj = parseUrl(req.url || "", true);
+    const { pathname } = urlObj;
+
+    // --- API: ping ---
+    if (req.method === "GET" && pathname === "/api/ping") {
+      return sendJson(res, 200, { ok: true });
+    }
+
+    // --- API: accounts ---
+    if (req.method === "POST" && pathname === "/api/accounts") {
+      const body = await readJson(req);
+      const api_key = body.api_key || body.apiKey || "";
+      if (!api_key) return sendJson(res, 400, { ok: false, error: "Missing api_key" });
+
+      const r = await voappsGetAccounts(api_key);
+      if (!r.ok) return sendJson(res, r.status || 500, { ok: false, error: `Accounts failed (HTTP ${r.status})` });
+
+      const accounts = Array.isArray(r.json?.accounts) ? r.json.accounts : (Array.isArray(r.json) ? r.json : []);
+      return sendJson(res, 200, { ok: true, accounts });
+    }
+
+    // --- API: cancel ---
+    if (req.method === "POST" && pathname === "/api/cancel") {
+      const body = await readJson(req);
+      const job_id = body.job_id || "";
+      if (!job_id) return sendJson(res, 400, { ok: false, error: "Missing job_id" });
+
+      const job = jobs.get(job_id);
+      if (job?.controller) {
+        try { job.controller.abort(); } catch (_) {}
+        jobs.delete(job_id);
+        return sendJson(res, 200, { ok: true, cancelled: true });
+      }
+      return sendJson(res, 200, { ok: true, cancelled: false, message: "No active job found." });
+    }
+
+    // --- API: shutdown ---
+    if (req.method === "POST" && pathname === "/api/shutdown") {
+      // Reply first, then stop
+      sendJson(res, 200, { ok: true, shutting_down: true });
+      setTimeout(() => {
+        try { stopServer(); } catch (_) {}
+        process.exit(0);
+      }, 250);
+      return;
+    }
+
+    // --- API: search ---
+    if (req.method === "POST" && pathname === "/api/search") {
+      try {
+        const body = await readJson(req);
+
+        const api_key = body.api_key || body.apiKey || "";
+        const numbers = body.numbers ?? body.phone_numbers ?? "";
+        const account_ids = body.account_ids || body.accountIds || null;
+        const start_date = body.start_date || body.startDate || "";
+        const end_date = body.end_date || body.endDate || "";
+        const include_caller = !!(body.include_caller ?? body.includeCaller ?? true);
+        const include_message_meta = !!(body.include_message_meta ?? body.includeMessageMeta ?? true);
+        const job_id = body.job_id || body.jobId || null;
+
+        const out = await runNumberSearch({
+          api_key,
+          numbers,
+          account_ids,
+          start_date,
+          end_date,
+          include_caller,
+          include_message_meta,
+          job_id,
+        });
+
+        return sendJson(res, 200, {
+          ok: true,
+          message: "Search complete",
+          artifacts: { csvPath: out.csvPath, logPath: out.logPath },
+          matches: out.matches,
+        });
+      } catch (e) {
+        return sendJson(res, 500, { ok: false, error: e?.message || String(e) });
+      }
+    }
+
+    // --- Static files from /public ---
+    if (req.method === "GET") {
+      const rel = pathname === "/" ? "/index.html" : pathname;
+      const file = safeJoinPublic(rel);
+      if (!file) {
+        res.writeHead(404);
+        return res.end("Not found");
+      }
+      try {
+        const buf = await fsp.readFile(file);
+        res.writeHead(200, { "Content-Type": guessContentType(file), "Cache-Control": "no-store" });
+        return res.end(buf);
+      } catch {
+        res.writeHead(404);
+        return res.end("Not found");
+      }
+    }
+
+    res.writeHead(405);
+    res.end("Method Not Allowed");
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Start/Stop for Electron main.js
+// ─────────────────────────────────────────────────────────────────────────────
+async function startServer() {
+  if (serverInstance && serverUrl) return { url: serverUrl, port: PORT };
+
+  serverInstance = createHttpServer();
+
+  await new Promise((resolve, reject) => {
+    serverInstance.once("error", reject);
+    serverInstance.listen(PORT, HOST, () => resolve());
+  });
+
+  serverUrl = `http://${HOST}:${PORT}`;
+  console.log(`[VoApps Tools] Server listening on ${serverUrl}`);
+  console.log(`[VoApps Tools] VOAPPS_API_BASE=${VOAPPS_API_BASE}`);
+
+  return { url: serverUrl, port: PORT };
+}
+
+async function stopServer() {
+  if (!serverInstance) return;
+  await new Promise((resolve) => serverInstance.close(() => resolve()));
+  serverInstance = null;
+  serverUrl = null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Exports (CRITICAL for Electron main.js)
+// ─────────────────────────────────────────────────────────────────────────────
+module.exports = {
+  startServer,
+  stopServer,
+  getLastArtifacts,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Only auto-start if run directly: `node server.js`
+// ─────────────────────────────────────────────────────────────────────────────
+if (require.main === module) {
+  startServer().catch((e) => {
+    console.error("[VoApps Tools] Failed to start server:", e);
+    process.exit(1);
+  });
+}

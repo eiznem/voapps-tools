@@ -1,0 +1,101 @@
+{
+  "name": "voapps-tools",
+  "version": "2.4.0",
+  "description": "VoApps DirectDrop Voicemail Campaign Analysis Tool",
+  "main": "main.js",
+  "author": "Brett Menzie",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "build:all": "electron-builder --mac --win"
+  },
+  "build": {
+    "appId": "com.voapps.tools",
+    "productName": "VoApps Tools",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "server.js",
+      "trendAnalyzer.js",
+      "public/**/*",
+      "node_modules/**/*",
+      "package.json",
+      "Remove Quarantine.command",
+      "FIRST_TIME_SETUP.md"
+    ],
+    "mac": {
+      "category": "public.app-category.business",
+      "icon": "assets/icon.png",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist"
+    },
+    "dmg": {
+      "title": "VoApps Tools ${version}",
+      "icon": "assets/icon.png",
+      "background": null,
+      "window": {
+        "width": 700,
+        "height": 450
+      },
+      "contents": [
+        {
+          "x": 140,
+          "y": 220,
+          "type": "file"
+        },
+        {
+          "x": 400,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        },
+        {
+          "x": 620,
+          "y": 80,
+          "type": "file",
+          "path": "FIRST_TIME_SETUP.md"
+        },
+        {
+          "x": 620,
+          "y": 220,
+          "type": "file",
+          "path": "Remove Quarantine.command"
+        }
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "VoApps Tools"
+    }
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9",
+    "exceljs": "^4.4.0"
+  }
+}
