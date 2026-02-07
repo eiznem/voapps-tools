@@ -1,14 +1,19 @@
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
-const { startServer, stopServer, getLastArtifacts } = require('./server');
+const { startServer, stopServer, getLastArtifacts, getDatabaseStats } = require('./server');
+const { VERSION } = require('./version');
 const https = require('https');
+
+// Suppress macOS CoreText font warnings
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+app.commandLine.appendSwitch('disable-font-subpixel-positioning');
 
 let mainWindow = null;
 let serverUrl = null;
 
 // Update checker configuration
 const GITHUB_REPO = 'eiznem/voapps-tools';
-const CURRENT_VERSION = '2.4.0';
+
 const UPDATE_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
 
 function createWindow() {
@@ -18,10 +23,12 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js')
+      preload: path.join(__dirname, 'preload.js'),
+      disableHtmlFullscreenWindowResize: true
     },
-    title: 'VoApps Tools',
-    show: false
+    title: `VoApps Tools v${VERSION}`,
+    show: false,
+    backgroundColor: '#ffffff'
   });
 
   mainWindow.once('ready-to-show', () => {
@@ -90,9 +97,7 @@ function checkForUpdates() {
           if (res.statusCode === 200) {
             const release = JSON.parse(data);
             const latestVersion = release.tag_name.replace('v', '');
-            const currentVersion = CURRENT_VERSION;
-            console.log('CURRENT_VERSION loaded:', CURRENT_VERSION);
-
+            const currentVersion = VERSION;
 
             // Simple version comparison (works for semantic versioning)
             const isNewer = compareVersions(latestVersion, currentVersion) > 0;
@@ -120,21 +125,21 @@ function checkForUpdates() {
               });
             }
           } else {
-            resolve({ updateAvailable: false, currentVersion: CURRENT_VERSION, error: `HTTP ${res.statusCode}` });
+            resolve({ updateAvailable: false, currentVersion: VERSION, error: `HTTP ${res.statusCode}` });
           }
         } catch (error) {
-          resolve({ updateAvailable: false, currentVersion: CURRENT_VERSION, error: error.message });
+          resolve({ updateAvailable: false, currentVersion: VERSION, error: error.message });
         }
       });
     });
 
     req.on('error', (error) => {
-      resolve({ updateAvailable: false, currentVersion: CURRENT_VERSION, error: error.message });
+      resolve({ updateAvailable: false, currentVersion: VERSION, error: error.message });
     });
 
     req.setTimeout(10000, () => {
       req.destroy();
-      resolve({ updateAvailable: false, currentVersion: CURRENT_VERSION, error: 'Timeout' });
+      resolve({ updateAvailable: false, currentVersion: VERSION, error: 'Timeout' });
     });
 
     req.end();
@@ -188,6 +193,15 @@ ipcMain.handle('open-update-url', async (event, url) => {
   try {
     await shell.openExternal(url);
     return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-database-stats', async () => {
+  try {
+    const stats = await getDatabaseStats();
+    return { ok: true, stats };
   } catch (error) {
     return { ok: false, error: error.message };
   }
