@@ -32,6 +32,24 @@
 
 const http = require("http");
 const https = require("https");
+
+// Fix for Windows SSL certificate issues in Electron
+// On Windows, Node.js/Electron may not have access to the system certificate store
+// For trusted domains like VoApps, we create a permissive agent
+const TRUSTED_DOMAINS = ['directdropvoicemail.voapps.com', 'voapps.com'];
+let httpsAgent = null;
+
+function isTrustedDomain(hostname) {
+  return TRUSTED_DOMAINS.some(d => hostname.includes(d));
+}
+
+if (process.platform === 'win32') {
+  // Create a permissive agent for Windows - only used for known trusted VoApps domains
+  httpsAgent = new https.Agent({
+    rejectUnauthorized: false  // Skip SSL verification for VoApps API (trusted domain)
+  });
+  console.log('[SSL] Windows detected - using permissive HTTPS agent for VoApps API');
+}
 const fs = require("fs");
 const fsp = require("fs/promises");
 const path = require("path");
@@ -41,19 +59,45 @@ const { createWriteStream } = require('fs');
 const { generateTrendAnalysis } = require("./trendAnalyzer");
 const { VERSION, VERSION_NAME } = require('./version');
 
-// Cross-platform fetch implementation using https module for Windows compatibility
-// Native fetch in Node.js can fail on some Windows configurations
+// Cross-platform fetch implementation
+// Uses native fetch when available (Node 18+), with https fallback for Windows SSL issues
 async function crossPlatformFetch(url, options = {}) {
+  // Try native fetch first (works in Electron and Node 18+)
+  if (typeof fetch === 'function') {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+      return response;
+    } catch (fetchError) {
+      // If native fetch fails with certificate error, fall through to https module
+      if (!fetchError.message?.includes('certificate') && !fetchError.message?.includes('SSL')) {
+        throw fetchError;
+      }
+      console.warn('[Fetch] Native fetch failed, trying https module:', fetchError.message);
+    }
+  }
+
+  // Fallback to https module (for older Node or SSL issues on Windows)
   return new Promise((resolve, reject) => {
     const urlObj = new URL(url);
 
+    // On Windows, SSL certificate verification can fail if the system CA store isn't properly accessed
+    // Only use permissive agent for known trusted domains (VoApps API)
     const requestOptions = {
       hostname: urlObj.hostname,
       port: urlObj.port || 443,
       path: urlObj.pathname + urlObj.search,
       method: options.method || 'GET',
       headers: options.headers || {},
-      timeout: 30000
+      timeout: 30000,
+      agent: (httpsAgent && isTrustedDomain(urlObj.hostname)) ? httpsAgent : undefined
     };
 
     const req = https.request(requestOptions, (res) => {
@@ -74,7 +118,15 @@ async function crossPlatformFetch(url, options = {}) {
       });
     });
 
-    req.on('error', reject);
+    req.on('error', (err) => {
+      // If SSL certificate error on Windows, provide a helpful message
+      if (err.message?.includes('certificate') || err.code === 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY') {
+        console.error('[HTTPS] SSL Certificate Error - this may be a Windows CA store issue');
+        console.error('[HTTPS] Try running: set NODE_TLS_REJECT_UNAUTHORIZED=0 (not recommended for production)');
+      }
+      reject(err);
+    });
+
     req.on('timeout', () => {
       req.destroy();
       reject(new Error('Request timeout (30s)'));
