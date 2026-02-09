@@ -30,7 +30,7 @@
       "node_modules/**/*",
       "package.json",
       "Remove Quarantine.command",
-      "FIRST_TIME_SETUP.md"
+      "FIRST_TIME_SETUP.html"
     ],
     "mac": {
       "category": "public.app-category.business",
@@ -68,7 +68,7 @@
           "x": 620,
           "y": 80,
           "type": "file",
-          "path": "FIRST_TIME_SETUP.md"
+          "path": "FIRST_TIME_SETUP.html"
         },
         {
           "x": 620,
