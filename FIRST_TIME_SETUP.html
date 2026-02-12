@@ -136,6 +136,28 @@
             padding-top: 20px;
             border-top: 1px solid #eee;
         }
+        .code-block {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 13px;
+            overflow-x: auto;
+            margin: 8px 0;
+            position: relative;
+        }
+        .code-block::before {
+            content: "Terminal";
+            position: absolute;
+            top: -8px;
+            left: 12px;
+            background: #2d2d2d;
+            padding: 0 6px;
+            font-size: 10px;
+            color: #888;
+            border-radius: 3px;
+        }
     </style>
 </head>
 <body>
@@ -160,26 +182,8 @@
 
             <div class="method">
                 <div class="method-header">
-                    <span>Method A: Run the Script</span>
+                    <span>Method A: Right-Click to Open</span>
                     <span class="badge">Easiest</span>
-                </div>
-                <ol>
-                    <li>Double-click <strong>"Remove Quarantine.command"</strong></li>
-                    <li>If you see "cannot be opened because it is from an unidentified developer":
-                        <ul>
-                            <li>Right-click on the file instead</li>
-                            <li>Select <strong>"Open"</strong></li>
-                            <li>Click <strong>"Open"</strong> in the dialog</li>
-                        </ul>
-                    </li>
-                    <li>The script will automatically allow the app to run</li>
-                </ol>
-            </div>
-
-            <div class="method">
-                <div class="method-header">
-                    <span>Method B: Right-Click to Open</span>
-                    <span class="badge blue">Simple</span>
                 </div>
                 <ol>
                     <li>Open your <strong>Applications</strong> folder</li>
@@ -188,6 +192,18 @@
                     <li>Select <strong>"Open"</strong> from the menu</li>
                     <li>Click <strong>"Open"</strong> in the warning dialog</li>
                 </ol>
+            </div>
+
+            <div class="method">
+                <div class="method-header">
+                    <span>Method B: Terminal Command</span>
+                    <span class="badge blue">Advanced</span>
+                </div>
+                <p>Open Terminal and paste this command:</p>
+                <div class="code-block">xattr -cr "/Applications/VoApps Tools.app"</div>
+                <p style="margin-top: 8px; font-size: 13px; color: #666;">
+                    This removes the quarantine flag that macOS adds to downloaded apps.
+                </p>
             </div>
         </div>
 
@@ -207,7 +223,7 @@
         </div>
 
         <div class="version">
-            <strong>VoApps Tools v3.3.0</strong>
+            <strong>VoApps Tools v3.4.0</strong>
         </div>
     </div>
 </body>

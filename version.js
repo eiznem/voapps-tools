@@ -10,9 +10,9 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '3.3.0',
-  VERSION_NAME: 'Delivery Intelligence Platform',
-  RELEASE_DATE: '2026-02-09',
+  VERSION: '3.4.0',
+  VERSION_NAME: 'Executive Summary & Timezone Selection',
+  RELEASE_DATE: '2026-02-12',
   AUTHOR: 'Brett Menzie',
 
   // -----------------------------
@@ -50,6 +50,47 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '3.4.0': {
+      date: '2026-02-12',
+      title: 'Executive Summary & Timezone Selection',
+      changes: [
+        'Executive Summary search type - aggregate campaign statistics into deliverability report',
+        'Added account_name column to Phone Number Search, Combine Campaigns, and Executive Summary',
+        'Added campaign_url column to Executive Summary for direct links to campaigns',
+        'DST-aware timezone selection (ET, CT, MT, PT adjust for Daylight Saving)',
+        'VoApps Time option - constant UTC-7 for consistent day slicing (no DST)',
+        'Reorganized Report Output drawer combining headers, folder, and timezone settings',
+        'Delivery Intelligence reports now show dynamic version from version.js',
+        'Renamed "Number Trend Analyzer" to "Delivery Intelligence Report" throughout app'
+      ],
+      features: [
+        'Executive Summary report with delivery metrics per campaign',
+        'Account name included in all CSV exports',
+        'Timezone selection in Report Output settings',
+        'Unified Report Output settings panel'
+      ],
+      fixes: [
+        'Fixed Windows update checker downloading .dmg instead of .exe',
+        'Fixed hardcoded version 3.2.0 in Delivery Intelligence Excel reports',
+        'Fixed Global Insights (Time) tab showing wrong timezone label',
+        'Fixed SSL certificate errors on macOS with VPN (uses Apple Keychain)'
+      ]
+    },
+
+    '3.3.1': {
+      date: '2026-02-09',
+      title: 'Timestamp Normalization',
+      changes: [
+        'All timestamps normalized to VoApps Time (UTC-7) for consistent day slicing',
+        'Timestamps in combine campaigns, phone search, and database exports now use VoApps Time',
+        'Added VoApps Time explanation to Delivery Intelligence glossary'
+      ],
+      features: [
+        'Consistent UTC-7 timestamps across all outputs'
+      ],
+      fixes: []
+    },
+
     '3.3.0': {
       date: '2026-02-09',
       title: 'Cross-Platform Release',
@@ -81,7 +122,7 @@ module.exports = {
       date: '2026-02-07',
       title: 'Delivery Intelligence Platform',
       changes: [
-        'Complete rewrite of Number Trend Analyzer as Delivery Intelligence Platform',
+        'Complete rewrite as Delivery Intelligence Platform',
         'Attempt Index tracking per TN (resets after success)',
         'Success Probability decay curve by attempt number',
         'TN Health Classification (Healthy/Degrading/Toxic)',
@@ -220,7 +261,7 @@ module.exports = {
       title: 'Caller Number Names & Enhanced Reporting',
       changes: [
         'Added caller_number_name column with API fetching',
-        'Enhanced Number Trend Analyzer with Report Overview tab',
+        'Enhanced Delivery Intelligence with Report Overview tab',
         'Message and caller performance insights',
         'Sorted Number Summary by total attempts',
         'Message/caller name display throughout reports',
@@ -230,9 +271,9 @@ module.exports = {
 
     '2.3.0': {
       date: '2026-01-20',
-      title: 'Number Trend Analyzer Integration',
+      title: 'Delivery Intelligence Integration',
       changes: [
-        'Built-in Number Trend Analyzer (no separate app needed)',
+        'Built-in Delivery Intelligence Report (no separate app needed)',
         'Generate comprehensive Excel analysis workbooks',
         'Success rate by hour and day of week',
         'Call cadence pattern analysis',

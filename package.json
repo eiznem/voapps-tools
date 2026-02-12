@@ -1,6 +1,6 @@
 {
   "name": "voapps-tools",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "description": "VoApps DDVM Campaign Analysis Tool - Delivery Intelligence Platform",
   "main": "main.js",
   "author": "Brett Menzie",
@@ -29,7 +29,6 @@
       "public/**/*",
       "node_modules/**/*",
       "package.json",
-      "Remove Quarantine.command",
       "FIRST_TIME_SETUP.html"
     ],
     "mac": {
@@ -65,16 +64,10 @@
           "path": "/Applications"
         },
         {
-          "x": 620,
-          "y": 80,
-          "type": "file",
-          "path": "FIRST_TIME_SETUP.html"
-        },
-        {
-          "x": 620,
+          "x": 560,
           "y": 220,
           "type": "file",
-          "path": "Remove Quarantine.command"
+          "path": "FIRST_TIME_SETUP.html"
         }
       ]
     },
@@ -101,6 +94,7 @@
     "duckdb": "^1.1.3",
     "electron-updater": "^6.3.9",
     "exceljs": "^4.4.0",
+    "mac-ca": "^3.1.0",
     "papaparse": "^5.5.3"
   }
 }

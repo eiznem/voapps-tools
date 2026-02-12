@@ -2,8 +2,8 @@
 
 Desktop application for searching and analyzing VoApps DirectDrop Voicemail campaign data.
 
-![Version](https://img.shields.io/badge/version-2.4.0-blue)
-![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)
+![Version](https://img.shields.io/badge/version-3.4.0-blue)
+![Platform](https://img.shields.io/badge/platform-macOS%20|%20Windows-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## 🎯 Features
@@ -12,11 +12,12 @@ Desktop application for searching and analyzing VoApps DirectDrop Voicemail camp
 - **📞 Phone Number Search** - Find all campaign interactions for specific phone numbers (supports batch searches up to 1,000 numbers)
 - **🔄 Combine Campaigns** - Download and merge multiple campaigns into a single CSV file
 - **📁 Bulk Campaign Export** - Export campaigns individually, organized by year and month
-- **📊 Number Trend Analyzer** - Generate detailed Excel analysis with:
-  - Success rate calculations by hour and day of week
-  - Cadence pattern analysis
-  - Best/worst performing time slots
-  - Consecutive unsuccessful call detection
+- **📊 Executive Summary** - Generate aggregate deliverability reports with per-campaign statistics
+- **📈 Delivery Intelligence Report** - Generate comprehensive Excel workbook analyzing phone numbers, caller numbers, and messages:
+  - TN Health Classification (Healthy/Degrading/Toxic)
+  - Success Probability decay curves
+  - Variability Score analysis
+  - Day-of-week usage recommendations
   - Configurable thresholds (min consecutive, time span)
 
 ### User Interface
@@ -28,11 +29,16 @@ Desktop application for searching and analyzing VoApps DirectDrop Voicemail camp
 - **🔄 Auto-Update Checker** - Automatic update notifications with one-click downloads
 
 ### Technical Features
+- **🖥️ Cross-Platform** - Native support for macOS and Windows
+- **🌐 Timezone Selection** - DST-aware US timezones (ET, CT, MT, PT) plus VoApps Time (constant UTC-7)
+- **💾 DuckDB Database** - Local database for fast SQL queries on campaign data
 - **♾️ Pagination Support** - Handles any number of campaigns automatically
 - **🔁 Intelligent Retry Logic** - 3s / 10s / 60s delays for failed API calls
 - **📝 Comprehensive Logging** - Detailed API call logging with masked keys
 - **💾 Settings Persistence** - All preferences saved locally between sessions
 - **🛡️ Secure Storage** - API keys stored locally on your machine
+
+> **Note:** DuckDB database features are currently only available on macOS. Windows users should use CSV output mode.
 
 ## 📸 Screenshots
 
@@ -60,7 +66,7 @@ Search all campaigns for specific phone numbers with batch support up to 1,000 n
 
 **Combine Campaigns**
 
-Merge all campaigns into a single CSV with optional Number Trend Analyzer.
+Merge all campaigns into a single CSV with optional Delivery Intelligence Report.
 
 ![Combine](screenshots/combine.png)
 
@@ -79,11 +85,11 @@ Download each campaign separately, organized by year and month.
 
 ---
 
-### Number Trend Analyzer
+### Delivery Intelligence Report
 
-Generate comprehensive Excel analysis with success rates, cadence patterns, and consecutive unsuccessful detection.
+Generate comprehensive Excel analysis of phone numbers, caller numbers, and messages with success rates, cadence patterns, and consecutive unsuccessful detection.
 
-![Trend Analyzer](screenshots/trend-analyzer.png)
+![Delivery Intelligence](screenshots/trend-analyzer.png)
 
 ---
 
@@ -126,18 +132,25 @@ Automatic update checking every 24 hours with one-click downloads from GitHub re
 
 ### Download
 
-**Latest Version:** [v2.4.0](https://github.com/eiznem/voapps-tools/releases/latest)
+**Latest Version:** [v3.4.0](https://github.com/eiznem/voapps-tools/releases/latest)
 
-Download: `VoApps Tools-2.4.0-arm64.dmg`
+**macOS:** `VoApps Tools-3.4.0-arm64.dmg`
+**Windows:** `VoApps Tools Setup 3.4.0.exe`
 
 ### System Requirements
 
-- **macOS:** 10.13 (High Sierra) or later
-- **Processor:** 
-  - Apple Silicon (M1/M2/M3/M4) - Native support
-  - Intel - Runs via Rosetta 2 (automatic)
-- **Disk Space:** ~200 MB
-- **Internet:** Required for API access
+**macOS:**
+- macOS 10.13 (High Sierra) or later
+- Apple Silicon (M1/M2/M3/M4) - Native support
+- Intel - Runs via Rosetta 2 (automatic)
+
+**Windows:**
+- Windows 10 or later (64-bit)
+- x64 processor
+
+**Both platforms:**
+- ~200 MB disk space
+- Internet connection for API access
 
 ### Installation Steps
 
@@ -145,7 +158,7 @@ Download: `VoApps Tools-2.4.0-arm64.dmg`
 Click the download link above or visit the [Releases page](https://github.com/eiznem/voapps-tools/releases)
 
 #### 2. Open the DMG File
-Double-click `VoApps Tools-2.4.0-arm64.dmg` in your Downloads folder
+Double-click `VoApps Tools-3.4.0-arm64.dmg` in your Downloads folder
 
 #### 3. Drag to Applications
 Drag the VoApps Tools icon to your Applications folder
@@ -255,38 +268,46 @@ You should see "Ping: OK" in the Live Log.
 
 That's it! You're ready to analyze your VoApps campaigns.
 
-## 📊 Number Trend Analyzer
+## 📊 Delivery Intelligence Report
 
-The Number Trend Analyzer generates a comprehensive Excel workbook with five worksheets:
+The Delivery Intelligence Report analyzes **phone numbers**, **caller numbers**, and **messages** to generate a comprehensive Excel workbook with multiple analysis tabs:
 
 ### Worksheets
 
-1. **Summary** - Overview statistics and key metrics
-2. **Hourly Analysis** - Success rates by hour of day
-3. **Daily Analysis** - Success rates by day of week
+1. **Executive Summary** - Overview, recommendations, and list quality grade
+2. **Number Summary** - Per-number statistics with health classification
+3. **Consecutive Unsuccessful** - Numbers flagged for list hygiene
 4. **Call Cadence** - Time intervals between calls to same number
-5. **Consecutive Unsuccessful** - Numbers with multiple failed attempts
+5. **Retry Decay Curve** - Success probability by attempt number
+6. **Day Insights** - Day-of-week recommendations per account/message
+7. **Global Insights (Msg & Caller)** - Message and caller performance
+8. **Global Insights (Time)** - Hourly and daily success patterns
+9. **Glossary** - Explanation of all metrics and terminology
 
-### Using Trend Analyzer
+### Using Delivery Intelligence
 
 **With New Data:**
 1. Select "Combine Campaigns" search type
-2. Check "✓ + Number Trend Analyzer"
+2. Under Delivery Intelligence Report, select "Combine Campaigns" as source
 3. Configure thresholds (optional)
 4. Run combine operation
-5. Click "📊 Open Number Analysis" when complete
+5. Click "📊 Open Delivery Intelligence" when complete
 
 **With Existing CSV:**
-1. Select "Combine Campaigns" search type
-2. Check "✓ + Number Trend Analyzer"
-3. Click "⬆ Upload CSV"
-4. Select your CSV file
-5. Analysis generates automatically
+1. Under Delivery Intelligence Report, select "Uploaded CSV"
+2. Click "Upload CSV" button
+3. Select your CSV file
+4. Analysis generates automatically
+
+**From Database:**
+1. Under Delivery Intelligence Report, select "Local Database"
+2. Set your date range
+3. Click "Analyze Database"
 
 ### Thresholds
 
 - **Min Consecutive:** Minimum consecutive unsuccessful calls to flag (default: 4)
-- **Min Span (days):** Minimum time span for consecutive calls (default: 14 days)
+- **Min Span (days):** Minimum time span for consecutive calls (default: 30 days)
 
 ## 📂 Output Locations
 
@@ -321,22 +342,30 @@ Results are then filtered by exact target_date to give you precisely what you re
 
 ### Timezone Handling
 
+- **VoApps Time** - Constant UTC-7 (no DST), used by VoApps for consistent day slicing
+- **US Timezones** - ET, CT, MT, PT are DST-aware and automatically adjust offsets based on the timestamp date
 - All date selections are treated as **UTC midnight (00:00:00Z)**
-- VoApps uses `-07:00` constant offset for daily cut times
 - Each account can have its own timezone setting (check account config)
 
 ### Report Output Columns
 
-Customize which columns appear in your CSV exports:
+Customize which columns appear in your CSV exports (Phone Number Search and Combine Campaigns):
 
 **Core Columns:**
-- number, account_id, campaign_id, campaign_name
+- number, account_id, account_name, campaign_id, campaign_name
 
 **Metadata Columns:**
-- caller_number, message_id, message_name, message_description
+- caller_number, caller_number_name, message_id, message_name, message_description
 
 **Result Columns:**
 - voapps_result, voapps_code, voapps_timestamp, campaign_url
+
+### Executive Summary Columns
+
+The Executive Summary report includes fixed columns:
+- campaign_id, campaign_name, account_id, account_name, target_date
+- records, deliverable, successful_deliveries, expired, canceled
+- duplicate, unsuccessful_attempts, unfinished, restricted, delivery_pct, campaign_url
 
 ### Logging Levels
 
@@ -389,11 +418,7 @@ VoApps Tools automatically checks for updates once per 24 hours. You'll be notif
 
 ## 📖 Documentation
 
-- **[FIRST_TIME_SETUP.md](FIRST_TIME_SETUP.md)** - macOS installation guide
-- **[RELEASE_NOTES_v2.4.0.md](RELEASE_NOTES_v2.4.0.md)** - What's new in v2.4.0
-- **[TREND_ANALYZER_INTEGRATION.md](TREND_ANALYZER_INTEGRATION.md)** - Trend analyzer details
-- **[GITHUB_AUTO_UPDATE_SETUP.md](GITHUB_AUTO_UPDATE_SETUP.md)** - For developers
-- **[PACKAGING_GUIDE.md](PACKAGING_GUIDE.md)** - Build instructions
+- **[FIRST_TIME_SETUP.html](FIRST_TIME_SETUP.html)** - macOS installation guide (included in DMG)
 
 ## 💻 Development
 
@@ -421,7 +446,8 @@ npm start
 # Build DMG for distribution
 npm run build
 
-# Output: dist/VoApps Tools-2.4.0-arm64.dmg
+# Output: dist/VoApps Tools-3.4.0-arm64.dmg (macOS)
+# Output: dist/VoApps Tools Setup 3.4.0.exe (Windows)
 ```
 
 ### Project Structure
@@ -479,8 +505,8 @@ VoApps™ and DirectDrop™ are trademarks of their respective owners. This soft
 
 ---
 
-**Version:** 2.4.0  
-**Last Updated:** January 2026
+**Version:** 3.4.0
+**Last Updated:** February 2026
 
 ---
 

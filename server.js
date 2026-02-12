@@ -1,8 +1,17 @@
 /**
  * VoApps Tools — Local Server (Electron)
- * Version: 3.3.0 - Cross-Platform Release
+ * Version: 3.4.0 - Executive Summary & Timezone Selection
  *
- * NEW IN v3.3.0:
+ * NEW IN v3.4.0:
+ * - Executive Summary search type for aggregating campaign deliverability statistics
+ * - User-selectable timezone for timestamp display (ET, CT, MT, PT, UTC)
+ * - Reorganized Report Output settings (combined headers, folder, timezone)
+ * - Fixed Windows update checker to find .exe instead of .dmg
+ *
+ * FROM v3.3.1:
+ * - All timestamps normalized to user-selected timezone (default: UTC-7 VoApps Time)
+ *
+ * FROM v3.3.0:
  * - Windows x64 support with native HTTPS fetch
  * - Configurable output folder (Documents by default)
  * - Fixed success rate calculation (only counts delivery attempts with timestamps)
@@ -33,9 +42,9 @@
 const http = require("http");
 const https = require("https");
 
-// Fix for Windows SSL certificate issues in Electron
-// On Windows, Node.js/Electron may not have access to the system certificate store
-// For trusted domains like VoApps, we create a permissive agent
+// Fix for SSL certificate issues in Electron
+// - On macOS: Use mac-ca to access Apple Keychain certificate store (fixes VPN issues)
+// - On Windows: Use permissive agent for trusted VoApps domains
 const TRUSTED_DOMAINS = ['directdropvoicemail.voapps.com', 'voapps.com'];
 let httpsAgent = null;
 
@@ -43,8 +52,21 @@ function isTrustedDomain(hostname) {
   return TRUSTED_DOMAINS.some(d => hostname.includes(d));
 }
 
+// macOS: Load system certificates from Keychain
+// This fixes SSL issues when behind corporate VPNs or proxy servers
+if (process.platform === 'darwin') {
+  try {
+    const macCa = require('mac-ca');
+    // Add macOS Keychain certificates to the trusted CA list
+    macCa.addToGlobalAgent();
+    console.log('[SSL] macOS detected - added Keychain certificates to trusted store');
+  } catch (e) {
+    console.warn('[SSL] mac-ca not available, using default certificate store:', e.message);
+  }
+}
+
+// Windows: Create permissive agent for trusted VoApps domains
 if (process.platform === 'win32') {
-  // Create a permissive agent for Windows - only used for known trusted VoApps domains
   httpsAgent = new https.Agent({
     rejectUnauthorized: false  // Skip SSL verification for VoApps API (trusted domain)
   });
@@ -60,10 +82,16 @@ const { generateTrendAnalysis } = require("./trendAnalyzer");
 const { VERSION, VERSION_NAME } = require('./version');
 
 // Cross-platform fetch implementation
-// Uses native fetch when available (Node 18+), with https fallback for Windows SSL issues
+// On Windows, we always use the https module with a permissive agent due to SSL certificate issues
+// On other platforms, we use native fetch
 async function crossPlatformFetch(url, options = {}) {
-  // Try native fetch first (works in Electron and Node 18+)
-  if (typeof fetch === 'function') {
+  const urlObj = new URL(url);
+  const isWindows = process.platform === 'win32';
+  const isTrusted = isTrustedDomain(urlObj.hostname);
+
+  // On Windows for trusted domains, always use https module with permissive agent
+  // This avoids SSL certificate store issues that are common on Windows
+  if (!isWindows && typeof fetch === 'function') {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -76,20 +104,13 @@ async function crossPlatformFetch(url, options = {}) {
       clearTimeout(timeoutId);
       return response;
     } catch (fetchError) {
-      // If native fetch fails with certificate error, fall through to https module
-      if (!fetchError.message?.includes('certificate') && !fetchError.message?.includes('SSL')) {
-        throw fetchError;
-      }
-      console.warn('[Fetch] Native fetch failed, trying https module:', fetchError.message);
+      console.warn('[Fetch] Native fetch failed:', fetchError.message);
+      // Fall through to https module
     }
   }
 
-  // Fallback to https module (for older Node or SSL issues on Windows)
+  // Use https module (required on Windows, fallback on other platforms)
   return new Promise((resolve, reject) => {
-    const urlObj = new URL(url);
-
-    // On Windows, SSL certificate verification can fail if the system CA store isn't properly accessed
-    // Only use permissive agent for known trusted domains (VoApps API)
     const requestOptions = {
       hostname: urlObj.hostname,
       port: urlObj.port || 443,
@@ -97,7 +118,8 @@ async function crossPlatformFetch(url, options = {}) {
       method: options.method || 'GET',
       headers: options.headers || {},
       timeout: 30000,
-      agent: (httpsAgent && isTrustedDomain(urlObj.hostname)) ? httpsAgent : undefined
+      // On Windows, use permissive agent for trusted VoApps domains
+      agent: (isWindows && isTrusted && httpsAgent) ? httpsAgent : undefined
     };
 
     const req = https.request(requestOptions, (res) => {
@@ -269,8 +291,9 @@ async function initDatabase() {
 
   // Check if DuckDB is available
   if (!duckdb) {
-    console.warn('[DuckDB] Cannot initialize - native module not loaded');
-    throw new Error('Database features unavailable: DuckDB native module failed to load. Use CSV-only mode.');
+    const platform = process.platform === 'win32' ? 'Windows' : process.platform;
+    console.warn('[DuckDB] Cannot initialize - native module not loaded on', platform);
+    throw new Error(`Database features not available on ${platform}. This is normal - please use CSV output mode instead.`);
   }
 
   try {
@@ -342,6 +365,175 @@ function runQuery(sql, params = []) {
 function generateRowId(row) {
   const data = `${row.number}|${row.account_id}|${row.campaign_id}|${row.voapps_timestamp}`;
   return crypto.createHash('md5').update(data).digest('hex');
+}
+
+/**
+ * Timezone configuration - maps user-friendly names to IANA timezones
+ * VoApps Time is a constant UTC-7 (no DST), used for consistent day slicing
+ */
+const TIMEZONE_CONFIG = {
+  'America/New_York': { label: 'ET', name: 'Eastern Time' },
+  'America/Chicago': { label: 'CT', name: 'Central Time' },
+  'America/Denver': { label: 'MT', name: 'Mountain Time' },
+  'America/Los_Angeles': { label: 'PT', name: 'Pacific Time' },
+  'UTC': { label: 'UTC', name: 'UTC' },
+  'VoApps': { label: 'VoApps', name: 'VoApps Time (UTC-7)' }  // Constant UTC-7, no DST
+};
+
+/**
+ * Get the current offset for a timezone at a specific date (DST-aware)
+ * @param {string} timezone - IANA timezone name or 'VoApps'
+ * @param {Date} date - The date to check offset for
+ * @returns {string} - Offset string like "-05:00" or "-04:00"
+ */
+function getTimezoneOffsetForDate(timezone, date) {
+  // VoApps Time is always UTC-7 (no DST)
+  if (timezone === 'VoApps') {
+    return '-07:00';
+  }
+
+  // UTC is always +00:00
+  if (timezone === 'UTC') {
+    return '+00:00';
+  }
+
+  try {
+    // Use Intl.DateTimeFormat to get the actual offset at the given date
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      timeZoneName: 'longOffset'
+    });
+
+    const parts = formatter.formatToParts(date);
+    const tzPart = parts.find(p => p.type === 'timeZoneName');
+
+    if (tzPart && tzPart.value) {
+      // Extract offset from "GMT-05:00" or "GMT-04:00" format
+      const match = tzPart.value.match(/GMT([+-]\d{2}:\d{2})/);
+      if (match) {
+        return match[1];
+      }
+    }
+
+    // Fallback: calculate offset manually
+    const utcDate = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }));
+    const tzDate = new Date(date.toLocaleString('en-US', { timeZone: timezone }));
+    const diffMinutes = (tzDate - utcDate) / 60000;
+    const hours = Math.floor(Math.abs(diffMinutes) / 60);
+    const minutes = Math.abs(diffMinutes) % 60;
+    const sign = diffMinutes >= 0 ? '+' : '-';
+    return `${sign}${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  } catch (e) {
+    // Default to UTC-7 if timezone is invalid
+    return '-07:00';
+  }
+}
+
+/**
+ * Normalize timestamp to user's selected timezone (DST-aware)
+ * Supports IANA timezone names (e.g., "America/New_York") and "VoApps" for constant UTC-7
+ *
+ * @param {string} timestamp - The timestamp to normalize
+ * @param {string} targetTimezone - Target timezone (IANA name or 'VoApps'), defaults to user setting
+ *
+ * Examples:
+ *   "2025-03-15 09:47:05 -05:00" with ET → "2025-03-15 09:47:05 -04:00" (DST active)
+ *   "2025-01-15 09:47:05 -05:00" with ET → "2025-01-15 09:47:05 -05:00" (no DST)
+ *   "2025-11-16 14:47:05 UTC" with VoApps → "2025-11-16 07:47:05 -07:00" (constant)
+ */
+function normalizeToVoAppsTime(timestamp, targetTimezone = null) {
+  if (!timestamp || typeof timestamp !== 'string') return timestamp;
+
+  const ts = timestamp.trim();
+  if (!ts) return timestamp;
+
+  // Use user's selected timezone if not specified
+  const timezone = targetTimezone || getTimezone();
+
+  try {
+    let date;
+
+    // Parse timestamp based on format
+    if (ts.includes(' UTC')) {
+      // Format: "2025-11-16 14:47:05 UTC"
+      const dateStr = ts.replace(' UTC', '');
+      date = new Date(dateStr + 'Z');  // Treat as UTC
+    } else {
+      // Format: "2025-11-16 09:47:05 -05:00" or similar
+      const match = ts.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})\s*([+-]\d{2}:\d{2})$/);
+      if (match) {
+        const [, datePart, timePart, offsetPart] = match;
+        // Convert to ISO format for parsing
+        date = new Date(`${datePart}T${timePart}${offsetPart}`);
+      } else {
+        // Try direct parsing as fallback
+        date = new Date(ts);
+      }
+    }
+
+    if (isNaN(date.getTime())) {
+      return timestamp;  // Return original if parsing failed
+    }
+
+    // Get the DST-aware offset for this specific date
+    const offset = getTimezoneOffsetForDate(timezone, date);
+    const offsetHours = parseTimezoneOffset(offset);
+
+    // Convert to target timezone
+    const utcMs = date.getTime();
+    const targetOffsetMs = offsetHours * 60 * 60 * 1000;
+    const targetDate = new Date(utcMs + targetOffsetMs);
+
+    // Format as YYYY-MM-DD HH:MM:SS [offset]
+    const year = targetDate.getUTCFullYear();
+    const month = String(targetDate.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(targetDate.getUTCDate()).padStart(2, '0');
+    const hours = String(targetDate.getUTCHours()).padStart(2, '0');
+    const minutes = String(targetDate.getUTCMinutes()).padStart(2, '0');
+    const seconds = String(targetDate.getUTCSeconds()).padStart(2, '0');
+
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds} ${offset}`;
+  } catch (e) {
+    return timestamp;  // Return original on any error
+  }
+}
+
+/**
+ * Parse a timezone offset string like "-07:00" or "+05:30" into hours
+ * @param {string} offset - Timezone offset string (e.g., "-07:00", "+00:00")
+ * @returns {number} - Offset in hours (e.g., -7, 0, 5.5)
+ */
+function parseTimezoneOffset(offset) {
+  if (!offset || typeof offset !== 'string') return -7; // Default to UTC-7
+
+  const match = offset.match(/^([+-])(\d{2}):(\d{2})$/);
+  if (!match) return -7;
+
+  const sign = match[1] === '+' ? 1 : -1;
+  const hours = parseInt(match[2], 10);
+  const minutes = parseInt(match[3], 10);
+
+  return sign * (hours + minutes / 60);
+}
+
+/**
+ * Get timezone label for display (e.g., "ET" for America/New_York)
+ * @param {string} timezone - IANA timezone name or 'VoApps'
+ * @returns {string} - Human-readable timezone label
+ */
+function getTimezoneLabel(timezone) {
+  if (TIMEZONE_CONFIG[timezone]) {
+    return TIMEZONE_CONFIG[timezone].label;
+  }
+  // Fallback for legacy offset format
+  const legacyLabels = {
+    '-05:00': 'ET',
+    '-06:00': 'CT',
+    '-07:00': 'MT',
+    '-08:00': 'PT',
+    '+00:00': 'UTC'
+  };
+  return legacyLabels[timezone] || timezone;
 }
 
 /**
@@ -662,8 +854,12 @@ async function exportDatabase(outputPath) {
       // Write batch to stream
       for (const row of batchRows) {
         const line = headers.map(h => {
-          const val = row[h];
+          let val = row[h];
           if (val === null || val === undefined) return '';
+          // Normalize timestamps to VoApps Time (UTC-7)
+          if (h === 'voapps_timestamp' && val) {
+            val = normalizeToVoAppsTime(val);
+          }
           const str = String(val);
           return str.includes(',') || str.includes('"') ? `"${str.replace(/"/g, '""')}"` : str;
         }).join(',');
@@ -805,7 +1001,10 @@ function loadSettings() {
   } catch (e) {
     console.warn('[Settings] Failed to load settings:', e.message);
   }
-  return { outputFolder: getDefaultOutputFolder() };
+  return {
+    outputFolder: getDefaultOutputFolder(),
+    timezone: '-07:00'  // Default to VoApps Time (UTC-7)
+  };
 }
 
 function saveSettings(settings) {
@@ -832,6 +1031,27 @@ function setOutputFolder(folderPath) {
   return saveSettings(settings);
 }
 
+function getTimezone() {
+  const settings = loadSettings();
+  // Default to VoApps Time (constant UTC-7) for consistency
+  // Migrate legacy offset format to IANA timezone names
+  const tz = settings.timezone || 'VoApps';
+  const legacyMapping = {
+    '-05:00': 'America/New_York',
+    '-06:00': 'America/Chicago',
+    '-07:00': 'VoApps',  // Keep as VoApps for constant UTC-7
+    '-08:00': 'America/Los_Angeles',
+    '+00:00': 'UTC'
+  };
+  return legacyMapping[tz] || tz;
+}
+
+function setTimezone(timezone) {
+  const settings = loadSettings();
+  settings.timezone = timezone;
+  return saveSettings(settings);
+}
+
 function createOutputFolders() {
   const base = getOutputFolder();
   const logs = path.join(base, "Logs");
@@ -839,12 +1059,13 @@ function createOutputFolders() {
   const phoneHistory = path.join(output, "Phone Number History");
   const combineCampaigns = path.join(output, "Combine Campaigns");
   const bulkExport = path.join(output, "Bulk Campaign Export");
+  const executiveSummary = path.join(output, "Executive Summary");
 
-  for (const dir of [base, logs, output, phoneHistory, combineCampaigns, bulkExport]) {
+  for (const dir of [base, logs, output, phoneHistory, combineCampaigns, bulkExport, executiveSummary]) {
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  return { base, logs, phoneHistory, combineCampaigns, bulkExport };
+  return { base, logs, phoneHistory, combineCampaigns, bulkExport, executiveSummary };
 }
 
 function createLogger(logPath, errorPath, verbosity = "normal", jobId = null) {
@@ -1157,6 +1378,37 @@ async function fetchAllAccounts(apiKey, logger = null, verbosity = "normal", fil
 }
 
 /**
+ * Fetch account names from API
+ * Returns a map of accountId -> accountName
+ */
+async function fetchAccountNames(apiKey, accountIds, logger = null, verbosity = "normal") {
+  const accountNames = {};
+
+  try {
+    const data = await retryableApiCall('/accounts', apiKey, logger, verbosity);
+
+    if (Array.isArray(data.accounts)) {
+      for (const account of data.accounts) {
+        const accountId = String(account.id);
+        if (accountIds.includes(accountId)) {
+          accountNames[accountId] = account.name || '';
+        }
+      }
+    }
+
+    if (logger && verbosity !== 'minimal') {
+      logger(`✅ Fetched account names for ${Object.keys(accountNames).length} account(s)`);
+    }
+  } catch (err) {
+    if (logger) {
+      logger(`⚠️  Could not fetch account names: ${err.message}`);
+    }
+  }
+
+  return accountNames;
+}
+
+/**
  * Fetch timezone settings for accounts
  * VoApps API returns timezone as IANA format (e.g., "America/Denver")
  */
@@ -1439,13 +1691,16 @@ async function runNumberSearch(config) {
 
     log(`\n📊 Found ${campaigns.length} campaigns to search`);
 
-    // Fetch caller numbers, messages, and account timezones
+    // Fetch caller numbers, messages, account timezones, and account names
     const callerNumberNames = include_caller
       ? await fetchCallerNumbers(api_key, account_ids, log, "normal")
       : {};
 
     // Fetch account timezones for discrepancy detection
     const accountTimezones = await fetchAccountTimezones(api_key, account_ids, log, "normal");
+
+    // Fetch account names
+    const accountNames = await fetchAccountNames(api_key, account_ids, log, "normal");
 
     const messageInfo = {};
     if (include_message_meta) {
@@ -1470,7 +1725,16 @@ async function runNumberSearch(config) {
 
     // Search campaigns
     const allMatches = [];
-    const numberSet = new Set(numbers.map(n => String(n).trim()));
+    // Normalize phone numbers - strip non-digits, handle +1 prefix
+    const normalizedNumbers = numbers.map(n => {
+      let num = String(n).replace(/\D/g, '');
+      // Remove leading 1 if 11 digits starting with 1
+      if (num.length === 11 && num.startsWith('1')) {
+        num = num.slice(1);
+      }
+      return num;
+    }).filter(n => n.length === 10);
+    const numberSet = new Set(normalizedNumbers);
 
     log(`\n🔍 Searching ${campaigns.length} campaigns for ${numberSet.size} numbers...`);
 
@@ -1547,6 +1811,7 @@ async function runNumberSearch(config) {
             allMatches.push({
               number: num,
               account_id: accountId,
+              account_name: accountNames[accountId] || '',
               campaign_id: campaignId,
               campaign_name: campaign.name || '',
               caller_number: callerNum,
@@ -1556,7 +1821,7 @@ async function runNumberSearch(config) {
               message_description: messageInfo[messageKey]?.description || '',
               voapps_result: row.voapps_result || '',
               voapps_code: row.voapps_code || '',
-              voapps_timestamp: row.voapps_timestamp || '',
+              voapps_timestamp: normalizeToVoAppsTime(row.voapps_timestamp || ''),
               campaign_url: `https://directdropvoicemail.voapps.com/accounts/${accountId}/campaigns/${campaignId}`,
               target_date: campaign.target_date || ''
             });
@@ -1586,7 +1851,7 @@ async function runNumberSearch(config) {
       csvPath = path.join(folders.phoneHistory, `${filePrefix}phone_search_${suffix}.csv`);
 
       const headers = [
-        'number', 'account_id', 'campaign_id', 'campaign_name',
+        'number', 'account_id', 'account_name', 'campaign_id', 'campaign_name',
         'caller_number', 'caller_number_name', 'message_id', 'message_name', 'message_description',
         'voapps_result', 'voapps_code', 'voapps_timestamp', 'campaign_url'
       ];
@@ -1619,6 +1884,276 @@ async function runNumberSearch(config) {
       matches: allMatches.length,
       wasSplit,
       fileCount
+    };
+  } catch (err) {
+    log(`\n❌ Fatal error: ${err.message}`, true);
+    close();
+    throw err;
+  }
+}
+
+/**
+ * Generate Executive Summary - aggregate campaign statistics into deliverability report
+ * Produces a CSV with per-campaign statistics:
+ * campaign_id, campaign_name, account_id, target_date, records, deliverable,
+ * successful_deliveries, expired, canceled, duplicate, unsuccessful_attempts, restricted, delivery_pct
+ */
+async function generateExecutiveSummary(config) {
+  const {
+    api_key,
+    account_ids,
+    start_date,
+    end_date,
+    job_id = null
+  } = config;
+
+  const folders = createOutputFolders();
+  const suffix = getFilenameSuffix(folders.logs, 'voapps_log');
+  const logPath = path.join(folders.logs, `voapps_log_${suffix}.txt`);
+  const errorPath = path.join(folders.logs, `voapps_errors_${suffix}.txt`);
+
+  const { log, close } = createLogger(logPath, errorPath, "normal", job_id);
+
+  // Initialize job tracking with SSE support
+  if (job_id) {
+    jobs.set(job_id, {
+      id: job_id,
+      cancelled: false,
+      stream: null,
+      progress: 0,
+      status: 'starting',
+      current: 0,
+      total: 0,
+      message: 'Generating Executive Summary...',
+      logs: [],
+      logPath,
+      errorPath
+    });
+  }
+
+  // Get user's timezone preference
+  const userTimezone = getTimezone();
+  const userTimezoneLabel = getTimezoneLabel(userTimezone);
+
+  log(`📊 Executive Summary Report`);
+  log(`Accounts: ${account_ids.join(", ")}`);
+  log(`Date Range: ${start_date} to ${end_date}`);
+  log(`Timezone: ${userTimezoneLabel} (${userTimezone})`);
+
+  try {
+    // Fetch account names for the report
+    const accountNames = await fetchAccountNames(api_key, account_ids, log, "normal");
+
+    // Fetch campaigns
+    const campaigns = await fetchAllCampaigns(api_key, account_ids, start_date, end_date, log, "normal", job_id);
+
+    if (campaigns.length === 0) {
+      log("\n⚠️  No campaigns found in date range");
+      close();
+      throw new Error("No campaigns found in specified date range");
+    }
+
+    log(`\n📊 Found ${campaigns.length} campaigns to analyze`);
+
+    // Initialize progress
+    if (job_id) {
+      sendProgress(job_id, {
+        status: 'running',
+        total: campaigns.length,
+        current: 0,
+        message: 'Analyzing campaigns...'
+      });
+    }
+
+    const summaryRows = [];
+    let totalRecords = 0;
+
+    for (let i = 0; i < campaigns.length; i++) {
+      if (job_id && jobs.get(job_id)?.cancelled) {
+        throw new Error("Cancelled");
+      }
+
+      const campaign = campaigns[i];
+      const accountId = campaign.account_id;
+      const campaignId = campaign.id;
+
+      log(`\n[${i + 1}/${campaigns.length}] ${campaign.name || 'Unnamed'}`);
+
+      // Update progress
+      if (job_id) {
+        sendProgress(job_id, {
+          current: i + 1,
+          message: `Analyzing: ${campaign.name || `Campaign ${campaignId}`}`
+        });
+      }
+
+      try {
+        // Get campaign detail to extract export URL
+        const detail = await fetchCampaignDetail(api_key, accountId, campaignId);
+        const exportUrl = detail.export || detail.campaign?.export || null;
+
+        if (!exportUrl) {
+          log(`   ⚠️  No export URL available`);
+          continue;
+        }
+
+        // Fetch CSV from S3 (NO authentication)
+        const expResp = await fetch(exportUrl);
+        if (!expResp.ok) {
+          throw new Error(`Failed to download CSV: HTTP ${expResp.status}`);
+        }
+
+        const csvText = await expResp.text();
+        const { rows } = parseCsv(csvText);
+
+        // Count results by voapps_code
+        // Based on VoApps result codes:
+        // 200 = Successfully delivered -> successful_deliveries (deliverable)
+        // 300 = Expired -> expired (deliverable)
+        // 301 = Canceled -> canceled (deliverable)
+        // 400 = Unsuccessful delivery attempt -> unsuccessful_attempts (deliverable)
+        // 401 = Not a wireless number -> (not deliverable, just a record)
+        // 402 = Duplicate number -> duplicate (not deliverable)
+        // 403 = Not a valid US number -> (not deliverable, just a record)
+        // 404 = Undeliverable -> (not deliverable, just a record)
+        // 405 = Not in service -> unsuccessful_attempts (deliverable)
+        // 406 = Voicemail not setup -> unsuccessful_attempts (deliverable)
+        // 407 = Voicemail full -> unsuccessful_attempts (deliverable)
+        // 408 = Invalid caller number -> unfinished (deliverable)
+        // 409 = Invalid message id -> unfinished (deliverable)
+        // 410 = Prohibited self call -> unfinished (deliverable)
+        // 500-504 = Restricted variants -> restricted (not deliverable)
+        const resultCounts = {
+          successful_deliveries: 0,
+          expired: 0,
+          canceled: 0,
+          unsuccessful_attempts: 0,
+          duplicate: 0,
+          restricted: 0,
+          unfinished: 0
+        };
+
+        for (const row of rows) {
+          const code = String(row.voapps_code || '').trim();
+
+          switch (code) {
+            case '200':
+              resultCounts.successful_deliveries++;
+              break;
+            case '300':
+              resultCounts.expired++;
+              break;
+            case '301':
+              resultCounts.canceled++;
+              break;
+            case '400':  // Unsuccessful delivery attempt
+            case '405':  // Not in service
+            case '406':  // Voicemail not setup
+            case '407':  // Voicemail full
+              resultCounts.unsuccessful_attempts++;
+              break;
+            case '402':
+              resultCounts.duplicate++;
+              break;
+            case '408':  // Invalid caller number
+            case '409':  // Invalid message id
+            case '410':  // Prohibited self call
+              resultCounts.unfinished++;
+              break;
+            case '500':  // Restricted
+            case '501':  // Restricted for frequency
+            case '502':  // Restricted geographical region
+            case '503':  // Restricted individual number
+            case '504':  // Restricted WebRecon
+              resultCounts.restricted++;
+              break;
+            // 401, 403, 404 are just counted as records (not categorized)
+            default:
+              break;
+          }
+        }
+
+        const records = rows.length;
+        totalRecords += records;
+
+        // Deliverable = successful + expired + canceled + unsuccessful + unfinished
+        // (NOT duplicate, restricted, or the non-deliverable codes 401/403/404)
+        const deliverable = resultCounts.successful_deliveries +
+                           resultCounts.expired +
+                           resultCounts.canceled +
+                           resultCounts.unsuccessful_attempts +
+                           resultCounts.unfinished;
+
+        // Delivery % = successful / deliverable (avoid divide by zero)
+        const deliveryPct = deliverable > 0 ? resultCounts.successful_deliveries / deliverable : 0;
+
+        // Normalize target_date to user's selected timezone
+        const normalizedTargetDate = campaign.target_date
+          ? normalizeToVoAppsTime(campaign.target_date, userTimezone)
+          : '';
+
+        summaryRows.push({
+          campaign_id: campaignId,
+          campaign_name: campaign.name || '',
+          account_id: accountId,
+          account_name: accountNames[accountId] || '',
+          target_date: normalizedTargetDate,
+          records: records,
+          deliverable: deliverable,
+          successful_deliveries: resultCounts.successful_deliveries,
+          expired: resultCounts.expired,
+          canceled: resultCounts.canceled,
+          duplicate: resultCounts.duplicate,
+          unsuccessful_attempts: resultCounts.unsuccessful_attempts,
+          unfinished: resultCounts.unfinished,
+          restricted: resultCounts.restricted,
+          delivery_pct: deliveryPct,
+          campaign_url: `https://directdropvoicemail.voapps.com/accounts/${accountId}/campaigns/${campaignId}`
+        });
+
+        log(`   ✅ ${records.toLocaleString()} records, ${(deliveryPct * 100).toFixed(1)}% delivery rate`);
+      } catch (err) {
+        log(`   ❌ Error: ${err.message}`, true);
+      }
+    }
+
+    log(`\n📊 Total: ${summaryRows.length} campaigns, ${totalRecords.toLocaleString()} records`);
+
+    // Write CSV to Executive Summary folder
+    const suffix = getFilenameSuffix(folders.executiveSummary, 'executive_summary');
+    const csvPath = path.join(folders.executiveSummary, `executive_summary_${suffix}.csv`);
+
+    const headers = [
+      'campaign_id', 'campaign_name', 'account_id', 'account_name', 'target_date', 'records',
+      'deliverable', 'successful_deliveries', 'expired', 'canceled', 'duplicate',
+      'unsuccessful_attempts', 'unfinished', 'restricted', 'delivery_pct', 'campaign_url'
+    ];
+
+    let csvContent = headers.join(',') + '\n';
+    for (const row of summaryRows) {
+      const values = headers.map(h => {
+        const val = row[h];
+        if (h === 'delivery_pct') return (val * 100).toFixed(2) + '%';
+        if (typeof val === 'string' && (val.includes(',') || val.includes('"'))) {
+          return `"${val.replace(/"/g, '""')}"`;
+        }
+        return val;
+      });
+      csvContent += values.join(',') + '\n';
+    }
+
+    fs.writeFileSync(csvPath, csvContent, 'utf8');
+    log(`\n✅ Saved: ${path.basename(csvPath)}`);
+
+    lastArtifacts.csvPath = csvPath;
+    lastArtifacts.logPath = logPath;
+
+    close();
+    return {
+      csvPath,
+      logPath,
+      campaignCount: summaryRows.length,
+      totalRecords
     };
   } catch (err) {
     log(`\n❌ Fatal error: ${err.message}`, true);
@@ -1693,13 +2228,16 @@ async function runCombineCampaigns(config) {
 
     log(`\n📊 Found ${campaigns.length} campaigns to combine`);
 
-    // Fetch caller numbers, messages, and account timezones
+    // Fetch caller numbers, messages, account timezones, and account names
     const callerNumberNames = include_caller
       ? await fetchCallerNumbers(api_key, account_ids, log, "normal")
       : {};
 
     // Fetch account timezones for discrepancy detection
     const accountTimezones = await fetchAccountTimezones(api_key, account_ids, log, "normal");
+
+    // Fetch account names
+    const accountNames = await fetchAccountNames(api_key, account_ids, log, "normal");
 
     const messageInfo = {};
     if (include_message_meta) {
@@ -1792,6 +2330,7 @@ async function runCombineCampaigns(config) {
           allRows.push({
             number: num,
             account_id: accountId,
+            account_name: accountNames[accountId] || '',
             campaign_id: campaignId,
             campaign_name: campaign.name || '',
             caller_number: callerNum,
@@ -1801,7 +2340,7 @@ async function runCombineCampaigns(config) {
             message_description: messageInfo[messageKey]?.description || '',
             voapps_result: row.voapps_result || '',
             voapps_code: row.voapps_code || '',
-            voapps_timestamp: row.voapps_timestamp || '',
+            voapps_timestamp: normalizeToVoAppsTime(row.voapps_timestamp || ''),
             campaign_url: `https://directdropvoicemail.voapps.com/accounts/${accountId}/campaigns/${campaignId}`,
             target_date: campaign.target_date || ''
           });
@@ -1832,7 +2371,7 @@ async function runCombineCampaigns(config) {
       csvPath = path.join(folders.combineCampaigns, `${filePrefix}combined_${suffix}.csv`);
 
       const headers = [
-        'number', 'account_id', 'campaign_id', 'campaign_name',
+        'number', 'account_id', 'account_name', 'campaign_id', 'campaign_name',
         'caller_number', 'caller_number_name', 'message_id', 'message_name', 'message_description',
         'voapps_result', 'voapps_code', 'voapps_timestamp', 'campaign_url'
       ];
@@ -1855,7 +2394,11 @@ async function runCombineCampaigns(config) {
 
       // Use allCsvFiles if split, otherwise pass rows directly
       const analysisInput = wasSplit ? allCsvFiles : allRows;
-      
+
+      // Get user's timezone for report
+      const userTimezone = getTimezone();
+      const userTimezoneLabel = getTimezoneLabel(userTimezone);
+
       await generateTrendAnalysis(
         analysisInput,
         analysisPath,
@@ -1863,7 +2406,9 @@ async function runCombineCampaigns(config) {
         min_run_span_days,
         messageInfo,
         callerNumberNames,
-        accountTimezones
+        accountTimezones,
+        userTimezone,
+        userTimezoneLabel
       );
 
       lastArtifacts.analysisPath = analysisPath;
@@ -2171,8 +2716,12 @@ async function exportDatabaseSubset(numbers, accountIds, startDate, endDate, out
 
     for (const row of batchRows) {
       const line = headers.map(h => {
-        const val = row[h];
+        let val = row[h];
         if (val === null || val === undefined) return '';
+        // Normalize timestamps to VoApps Time (UTC-7)
+        if (h === 'voapps_timestamp' && val) {
+          val = normalizeToVoAppsTime(val);
+        }
         const str = String(val);
         return str.includes(',') || str.includes('"') ? `"${str.replace(/"/g, '""')}"` : str;
       }).join(',');
@@ -2259,15 +2808,52 @@ function createHttpServer() {
       }
     }
 
+    // Settings - Get timezone
+    if (req.method === "GET" && pathname === "/api/settings/timezone") {
+      const timezone = getTimezone();
+      const label = getTimezoneLabel(timezone);
+      return sendJson(res, 200, { ok: true, timezone, label });
+    }
+
+    // Settings - Set timezone
+    if (req.method === "POST" && pathname === "/api/settings/timezone") {
+      try {
+        const body = await readJson(req);
+        const { timezone } = body;
+        if (!timezone) {
+          return sendJson(res, 400, { ok: false, error: "Timezone required" });
+        }
+        // Validate format - accept IANA names, 'VoApps', 'UTC', or legacy offset format
+        const validTimezones = ['VoApps', 'UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles'];
+        const isValidIANA = validTimezones.includes(timezone);
+        const isValidOffset = /^[+-]\d{2}:\d{2}$/.test(timezone);
+        if (!isValidIANA && !isValidOffset) {
+          return sendJson(res, 400, { ok: false, error: "Invalid timezone. Use IANA name (e.g., 'America/New_York') or 'VoApps'" });
+        }
+        const success = setTimezone(timezone);
+        if (success) {
+          const label = getTimezoneLabel(timezone);
+          return sendJson(res, 200, { ok: true, timezone, label });
+        } else {
+          return sendJson(res, 500, { ok: false, error: "Failed to save settings" });
+        }
+      } catch (e) {
+        return sendJson(res, 500, { ok: false, error: e.message });
+      }
+    }
+
     // Accounts endpoint
     if (req.method === "POST" && pathname === "/api/accounts") {
       try {
         const body = await readJson(req);
+        console.log('[API] /api/accounts - Starting request, platform:', process.platform);
         const accounts = await fetchAllAccounts(body.api_key || "", null, "minimal", body.filter);
+        console.log('[API] /api/accounts - Success, found', accounts?.length || 0, 'accounts');
         return sendJson(res, 200, { ok: true, accounts });
       } catch (e) {
-        console.error('[API Error - /api/accounts]', e.message, e.stack);
-        return sendJson(res, 500, { ok: false, error: e.message });
+        const errorDetail = `${e.message} | Code: ${e.code || 'none'}`;
+        console.error('[API Error - /api/accounts]', errorDetail, e.stack);
+        return sendJson(res, 500, { ok: false, error: e.message, code: e.code, platform: process.platform });
       }
     }
 
@@ -2526,6 +3112,37 @@ function createHttpServer() {
       }
     }
 
+    // Executive Summary endpoint
+    if (req.method === "POST" && pathname === "/api/executive-summary") {
+      try {
+        const body = await readJson(req);
+        const out = await generateExecutiveSummary({
+          api_key: body.api_key || "",
+          account_ids: body.account_ids || [],
+          start_date: body.start_date || "",
+          end_date: body.end_date || "",
+          job_id: body.job_id || null
+        });
+
+        return sendJson(res, 200, {
+          ok: true,
+          message: "Executive Summary complete",
+          artifacts: {
+            csvPath: out.csvPath,
+            logPath: out.logPath
+          },
+          stats: {
+            campaignCount: out.campaignCount,
+            totalRecords: out.totalRecords
+          }
+        });
+      } catch (e) {
+        console.error('[API Error - /api/executive-summary]', e.message, e.stack);
+        const cancelled = e.message === "Cancelled";
+        return sendJson(res, cancelled ? 499 : 500, { ok: false, error: e.message });
+      }
+    }
+
     // Analyze CSV endpoint
     if (req.method === "POST" && pathname === "/api/analyze-csv") {
       try {
@@ -2561,30 +3178,34 @@ function createHttpServer() {
         const folders = createOutputFolders();
         const outDir = folders.combineCampaigns;
         
+        // Get user's timezone for report
+        const userTz = getTimezone();
+        const userTzLabel = getTimezoneLabel(userTz);
+
         if (rows.length > MAX_ROWS_PER_FILE) {
           const suffix = getFilenameSuffix(outDir, 'UploadedCSV');
           const tempCsvPath = path.join(outDir, `UploadedCSV_${suffix}.csv`);
           const csvResult = await writeCsv(tempCsvPath, rows, headers, null, MAX_ROWS_PER_FILE);
-          
+
           const analysisFilename = `NumberAnalysis_${suffix}.xlsx`;
           const analysisPath = path.join(outDir, analysisFilename);
-          
-          await generateTrendAnalysis(csvResult.files, analysisPath, minConsec, minSpan, {}, {});
-          
+
+          await generateTrendAnalysis(csvResult.files, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel);
+
           lastArtifacts.analysisPath = analysisPath;
-          
+
           return sendJson(res, 200, {
             ok: true,
             message: `Analysis complete (${csvResult.totalRows.toLocaleString()} rows across ${csvResult.fileCount} files)`,
             artifacts: { analysisPath }
           });
         }
-        
+
         const suffix = getFilenameSuffix(outDir, 'NumberAnalysis');
         const analysisFilename = `NumberAnalysis_${suffix}.xlsx`;
         const analysisPath = path.join(outDir, analysisFilename);
 
-        await generateTrendAnalysis(rows, analysisPath, minConsec, minSpan, {}, {});
+        await generateTrendAnalysis(rows, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel);
 
         lastArtifacts.analysisPath = analysisPath;
 
@@ -2652,6 +3273,10 @@ function createHttpServer() {
         const analysisFilename = `${filePrefix}db_analysis_${suffix}.xlsx`;
         const analysisPath = path.join(folders.combineCampaigns, analysisFilename);
 
+        // Get user's timezone for report
+        const userTz = getTimezone();
+        const userTzLabel = getTimezoneLabel(userTz);
+
         console.log(`[DB Analysis] Generating analysis: ${analysisFilename}`);
 
         await generateTrendAnalysis(
@@ -2660,7 +3285,10 @@ function createHttpServer() {
           min_consec_unsuccessful,
           min_run_span_days,
           {},  // messageMap
-          {}   // callerMap
+          {},  // callerMap
+          {},  // accountTimezones
+          userTz,
+          userTzLabel
         );
 
         lastArtifacts.analysisPath = analysisPath;

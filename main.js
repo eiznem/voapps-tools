@@ -106,17 +106,27 @@ function checkForUpdates() {
             const isNewer = compareVersions(latestVersion, currentVersion) > 0;
 
             if (isNewer) {
-              // Find DMG asset
-              const dmgAsset = release.assets.find(asset => 
-                asset.name.endsWith('.dmg') || asset.name.endsWith('-arm64.dmg')
-              );
+              // Find platform-specific asset
+              let downloadAsset = null;
+
+              if (process.platform === 'win32') {
+                // Windows: Find .exe installer
+                downloadAsset = release.assets.find(asset =>
+                  asset.name.endsWith('.exe') && !asset.name.includes('portable')
+                ) || release.assets.find(asset => asset.name.endsWith('.exe'));
+              } else {
+                // macOS: Find .dmg installer
+                downloadAsset = release.assets.find(asset =>
+                  asset.name.endsWith('.dmg') || asset.name.endsWith('-arm64.dmg')
+                );
+              }
 
               resolve({
                 updateAvailable: true,
                 latestVersion,
                 currentVersion,
                 releaseUrl: release.html_url,
-                downloadUrl: dmgAsset ? dmgAsset.browser_download_url : release.html_url,
+                downloadUrl: downloadAsset ? downloadAsset.browser_download_url : release.html_url,
                 releaseNotes: release.body,
                 releaseName: release.name
               });

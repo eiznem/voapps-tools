@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>VoApps Tools v3.3.0</title>
+  <title>VoApps Tools v3.4.0</title>
   <style>
     :root {
       --success: #16a34a;
@@ -396,6 +396,7 @@
       color: #666;
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 6px;
     }
 
@@ -677,6 +678,18 @@
       padding: 10px;
       background: #fafafa;
       border-radius: 6px;
+    }
+
+    /* Flash animation for Generate From box when Combine Campaigns is selected */
+    @keyframes flashBorder {
+      0%, 100% { box-shadow: none; }
+      25% { box-shadow: 0 0 0 2px #FF4B7D; }
+      50% { box-shadow: none; }
+      75% { box-shadow: 0 0 0 2px #FF4B7D; }
+    }
+
+    .trend-generate.flash-attention {
+      animation: flashBorder 1.2s ease-out;
     }
 
     .trend-section-title {
@@ -1111,6 +1124,13 @@
       font-weight: 700;
       color: #2E2C3E;
       margin-bottom: 2px;
+    }
+
+    .settings-section-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #2E2C3E;
+      margin-bottom: 4px;
     }
 
     .settings-section-subtitle {
@@ -1738,11 +1758,7 @@
         </div>
         <div class="sidebar-item" data-view="report" onclick="toggleDrawer('report')">
           <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
-          <span class="sidebar-item-tooltip">Report Headers</span>
-        </div>
-        <div class="sidebar-item" data-view="folder" onclick="toggleDrawer('folder')">
-          <svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
-          <span class="sidebar-item-tooltip">Output Folder</span>
+          <span class="sidebar-item-tooltip">Report Output</span>
         </div>
         <div class="sidebar-item" data-view="api" onclick="toggleDrawer('api')">
           <svg viewBox="0 0 24 24"><path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
@@ -1751,7 +1767,7 @@
       </div>
 
       <div class="sidebar-footer">
-        <div class="sidebar-version">v3.3.0</div>
+        <div class="sidebar-version">v3.4.0</div>
       </div>
     </nav>
 
@@ -1809,9 +1825,10 @@
                 <div class="search-output-grid">
                   <div class="search-type-section">
                     <select id="searchTypeDropdown" class="search-type-dropdown">
-                      <option value="phone">Phone Number(s)</option>
+                      <option value="phone">Phone Number Search</option>
                       <option value="combine">Combine Campaigns</option>
                       <option value="bulk-export">Bulk Campaign Export</option>
+                      <option value="executive-summary">Executive Summary</option>
                     </select>
                     <div id="searchTypeDescription" class="search-type-description">
                       Searches all campaigns for the specified phone numbers and returns detailed interaction history.
@@ -1853,19 +1870,19 @@
                     Phone Numbers
                   </div>
                 </div>
-                <textarea id="phoneNumbers" placeholder="Enter phone numbers (one per line or comma-separated)" style="width: 100%; min-height: 80px; padding: 10px; font-size: 12px; border: 2px solid #e0e0e0; border-radius: 6px; resize: vertical; font-family: inherit; box-sizing: border-box;"></textarea>
+                <textarea id="phoneNumbers" placeholder="Enter phone numbers (one per line or comma-separated)&#10;Formats: 5551234567, (555) 123-4567, +1-555-123-4567, etc." style="width: 100%; min-height: 80px; padding: 10px; font-size: 12px; border: 2px solid #e0e0e0; border-radius: 6px; resize: vertical; font-family: inherit; box-sizing: border-box;"></textarea>
               </div>
 
-              <!-- NUMBER TREND ANALYZER -->
+              <!-- DELIVERY INTELLIGENCE REPORT -->
               <div id="trendAnalyzerContainer" class="panel trend-analyzer-container">
                 <div class="panel-header">
                   <div class="panel-title">
                     <svg style="width: 14px; height: 14px; fill: currentColor; margin-right: 4px;" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg>
-                    Number Trend Analyzer
+                    Delivery Intelligence Report
                   </div>
                   <span class="info-icon" onclick="showInfoModal('trendAnalyzer')">i</span>
                 </div>
-                <div class="trend-analyzer-subtitle">Creates Excel analysis with success rates, patterns, and insights</div>
+                <div class="trend-analyzer-subtitle">Excel analysis of phone numbers, caller numbers, and messages</div>
                 <div class="trend-analyzer-content">
                   <div class="trend-analyzer-layout">
                     <!-- Left: Thresholds -->
@@ -1883,20 +1900,20 @@
                     <!-- Right: Generate Options -->
                     <div class="trend-generate">
                       <div class="trend-section-title">
-                        Generate Analysis
+                        Generate From
                         <a href="#" id="clearTrendSelection" class="clear-selection-link" style="display: none;" onclick="event.preventDefault(); clearTrendSelection();">clear</a>
                       </div>
                       <label class="trend-radio-option">
                         <input type="radio" name="trendSource" value="combine" id="trendSourceCombine">
-                        <span>...with Combine Campaigns</span>
+                        <span>Combine Campaigns</span>
                       </label>
                       <label class="trend-radio-option">
                         <input type="radio" name="trendSource" value="csv" id="trendSourceCsv">
-                        <span>...from CSV</span>
+                        <span>Uploaded CSV</span>
                       </label>
                       <label class="trend-radio-option">
                         <input type="radio" name="trendSource" value="database" id="trendSourceDb">
-                        <span>...from Database</span>
+                        <span>Local Database</span>
                       </label>
                       <!-- Dynamic action buttons -->
                       <div id="trendActionArea" class="trend-action-area">
@@ -2117,14 +2134,14 @@
                 </button>
               </div>
 
-              <!-- Run Trend Analyzer from Database -->
+              <!-- Delivery Intelligence Report from Database -->
               <div class="settings-section" style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #e0e0e0;">
                 <div style="font-size: 11px; font-weight: 600; color: #333; margin-bottom: 8px;">
                   <svg style="width: 14px; height: 14px; fill: #666; vertical-align: middle; margin-right: 4px;" viewBox="0 0 24 24"><path d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z"/></svg>
-                  Number Trend Analyzer
+                  Delivery Intelligence Report
                 </div>
                 <div style="font-size: 10px; color: #666; margin-bottom: 10px;">
-                  Analyze patterns in database records. Uses current date range selection.
+                  Analyze phone numbers, callers, and messages. Uses current date range selection.
                 </div>
                 <button class="database-btn" onclick="runDbTrendAnalysis()" style="width: 100%;">
                   <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg>
@@ -2158,20 +2175,60 @@
           </div>
         </div>
 
-        <!-- REPORT HEADERS DRAWER -->
+        <!-- REPORT OUTPUT DRAWER (Combined: Output Folder, Timezone, Report Headers) -->
         <div id="drawerReport" class="drawer-panel">
           <div class="drawer-header">
             <div class="drawer-title">
               <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
-              Report Headers
-              <span class="info-icon info-icon-drawer" onclick="event.stopPropagation(); showInfoModal('reportHeaders')">i</span>
+              Report Output
+              <span class="info-icon info-icon-drawer" onclick="event.stopPropagation(); showInfoModal('reportOutput')">i</span>
             </div>
             <button class="drawer-close" onclick="closeDrawer()">
               <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
             </button>
           </div>
           <div class="drawer-content">
+            <!-- Section 1: Output Folder -->
             <div class="settings-section">
+              <div class="settings-section-title">Output Folder</div>
+              <div class="settings-section-subtitle">Where output files are saved</div>
+
+              <div class="folder-path-display" id="outputFolderPath" style="background: #f5f5f5; padding: 10px 12px; border-radius: 6px; font-family: monospace; font-size: 12px; word-break: break-all; margin-bottom: 12px; border: 1px solid #e0e0e0;">
+                Loading...
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <button id="chooseFolderBtn" class="btn" style="flex: 1;">
+                  <svg class="btn-icon" viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+                  Choose Folder...
+                </button>
+                <button id="openFolderBtn" class="btn">
+                  <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
+                  Open
+                </button>
+              </div>
+            </div>
+
+            <!-- Section 2: Timezone -->
+            <div class="settings-section" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #e0e0e0;">
+              <div class="settings-section-title">Timezone</div>
+              <div class="settings-section-subtitle">Timezone for timestamps in reports</div>
+
+              <select id="timezoneSelect" class="form-select" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid #e0e0e0; font-size: 12px; margin-top: 8px;">
+                <option value="VoApps" selected>VoApps Time — UTC-7 (constant, no DST)</option>
+                <option value="America/New_York">Eastern Time (ET) — DST aware</option>
+                <option value="America/Chicago">Central Time (CT) — DST aware</option>
+                <option value="America/Denver">Mountain Time (MT) — DST aware</option>
+                <option value="America/Los_Angeles">Pacific Time (PT) — DST aware</option>
+                <option value="UTC">UTC</option>
+              </select>
+              <div style="margin-top: 8px; font-size: 11px; color: #666;">
+                Timestamps will be converted to this timezone. VoApps Time is constant UTC-7; US timezones adjust for Daylight Saving.
+              </div>
+            </div>
+
+            <!-- Section 3: Report Headers -->
+            <div class="settings-section" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #e0e0e0;">
+              <div class="settings-section-title">CSV Columns</div>
               <div class="settings-section-subtitle">Select columns to include in CSV exports</div>
 
               <div class="columns-grid">
@@ -2185,6 +2242,7 @@
                   </div>
                   <label class="checkbox-label"><input type="checkbox" class="col-check col-core" value="number" checked> number</label>
                   <label class="checkbox-label"><input type="checkbox" class="col-check col-core" value="account_id" checked> account_id</label>
+                  <label class="checkbox-label"><input type="checkbox" class="col-check col-core" value="account_name" checked> account_name</label>
                   <label class="checkbox-label"><input type="checkbox" class="col-check col-core" value="campaign_id" checked> campaign_id</label>
                   <label class="checkbox-label"><input type="checkbox" class="col-check col-core" value="campaign_name" checked> campaign_name</label>
                 </div>
@@ -2217,45 +2275,6 @@
                   <label class="checkbox-label"><input type="checkbox" class="col-check col-results" value="voapps_timestamp" checked> voapps_timestamp</label>
                   <label class="checkbox-label"><input type="checkbox" class="col-check col-results" value="campaign_url" checked> campaign_url</label>
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- OUTPUT FOLDER DRAWER -->
-        <div id="drawerFolder" class="drawer-panel">
-          <div class="drawer-header">
-            <div class="drawer-title">
-              <svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
-              Output Folder
-            </div>
-            <button class="drawer-close" onclick="closeDrawer()">
-              <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-            </button>
-          </div>
-          <div class="drawer-content">
-            <div class="settings-section">
-              <div class="settings-section-subtitle">Where output files are saved</div>
-
-              <div class="folder-path-display" id="outputFolderPath" style="background: #f5f5f5; padding: 10px 12px; border-radius: 6px; font-family: monospace; font-size: 12px; word-break: break-all; margin-bottom: 12px; border: 1px solid #e0e0e0;">
-                Loading...
-              </div>
-              <div style="display: flex; gap: 8px;">
-                <button id="chooseFolderBtn" class="btn" style="flex: 1;">
-                  <svg class="btn-icon" viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
-                  Choose Folder...
-                </button>
-                <button id="openFolderBtn" class="btn">
-                  <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
-                  Open
-                </button>
-              </div>
-              <div style="margin-top: 16px; font-size: 11px; color: #666;">
-                <strong>Folder Structure:</strong><br>
-                • Output/Phone Number History<br>
-                • Output/Combine Campaigns<br>
-                • Output/Bulk Campaign Export<br>
-                • Logs
               </div>
             </div>
           </div>
@@ -2404,19 +2423,28 @@
         <button class="info-modal-close" onclick="hideInfoModal('searchType')">×</button>
       </div>
       <div class="info-modal-body" style="font-size: 12px;">
-        <h4>Phone Number(s)</h4>
+        <h4>Phone Number Search</h4>
         <p>Search for specific phone numbers across all campaigns. Enter numbers one per line or comma-separated. Returns the complete history of all interactions with those numbers including timestamps, results, messages used, and caller IDs.</p>
 
         <h4>Combine Campaigns</h4>
         <p>Merge all campaign data from selected accounts into a single CSV file. This is useful for:</p>
         <ul style="margin-left: 16px; margin-bottom: 12px;">
           <li>Analyzing overall performance across multiple campaigns</li>
-          <li>Running the Number Trend Analyzer for insights</li>
+          <li>Generating a Delivery Intelligence Report for insights</li>
           <li>Identifying patterns in calling results</li>
         </ul>
 
         <h4>Bulk Campaign Export</h4>
         <p>Export each campaign as a separate CSV file, organized in folders by year and month. Useful for archiving and compliance purposes.</p>
+
+        <h4>Executive Summary</h4>
+        <p>Generate a deliverability report with aggregate statistics for each campaign:</p>
+        <ul style="margin-left: 16px; margin-bottom: 12px;">
+          <li>Campaign details (ID, name, account, target date)</li>
+          <li>Record counts and deliverability metrics</li>
+          <li>Success/failure breakdowns (expired, canceled, duplicate, etc.)</li>
+          <li>Delivery percentage for each campaign</li>
+        </ul>
 
         <h4>Output Options</h4>
         <ul style="margin-left: 16px;">
@@ -2428,25 +2456,27 @@
     </div>
   </div>
 
-  <!-- Trend Analyzer Info Modal -->
+  <!-- Delivery Intelligence Report Info Modal -->
   <div id="trendAnalyzerModal" class="info-modal" onclick="if(event.target === this) hideInfoModal('trendAnalyzer')">
     <div class="info-modal-content">
       <div class="info-modal-header">
-        <div class="info-modal-title">📊 Number Trend Analyzer</div>
+        <div class="info-modal-title">📊 Delivery Intelligence Report</div>
         <button class="info-modal-close" onclick="hideInfoModal('trendAnalyzer')">×</button>
       </div>
       <div class="info-modal-body" style="font-size: 12px;">
         <h4>Overview</h4>
-        <p>Generates a comprehensive Excel workbook with multiple analysis tabs showing calling patterns, success rates, and actionable insights.</p>
+        <p>Generates a comprehensive Excel workbook analyzing <strong>phone numbers</strong>, <strong>caller numbers</strong>, and <strong>messages</strong> to provide actionable delivery insights.</p>
 
         <h4>Generated Tabs</h4>
         <ul style="margin-left: 16px; margin-bottom: 12px;">
-          <li><strong>Report Overview:</strong> Summary, recommendations, and glossary</li>
+          <li><strong>Executive Summary:</strong> List quality grade, recommendations, and key metrics</li>
+          <li><strong>Number Summary:</strong> Per-number stats with TN health classification</li>
+          <li><strong>Consecutive Unsuccessful:</strong> Numbers needing list hygiene attention</li>
+          <li><strong>Call Cadence:</strong> Time intervals between attempts to same number</li>
+          <li><strong>Retry Decay Curve:</strong> Success probability by attempt number</li>
+          <li><strong>Day Insights:</strong> Day-of-week recommendations per account/message</li>
           <li><strong>Global Insights (Msg & Caller):</strong> Message and caller number performance</li>
           <li><strong>Global Insights (Time):</strong> Hourly and daily success patterns</li>
-          <li><strong>Call Cadence:</strong> Time intervals between calls to same number</li>
-          <li><strong>Number Summary:</strong> Per-number stats, message usage, day distribution</li>
-          <li><strong>Consecutive Unsuccessful:</strong> Numbers needing list hygiene attention</li>
           <li><strong>Glossary:</strong> Definitions of all columns and terms</li>
         </ul>
 
@@ -2456,9 +2486,9 @@
 
         <h4>Data Sources</h4>
         <ul style="margin-left: 16px;">
-          <li><strong>With Combine:</strong> Automatically generate when running Combine Campaigns</li>
-          <li><strong>From CSV:</strong> Upload a previously exported CSV file</li>
-          <li><strong>From Database:</strong> Query your local database (uses Date Range filter)</li>
+          <li><strong>Combine Campaigns:</strong> Generate automatically when combining campaign data</li>
+          <li><strong>Uploaded CSV:</strong> Upload a previously exported CSV file</li>
+          <li><strong>Local Database:</strong> Query your local database (uses Date Range filter)</li>
         </ul>
       </div>
     </div>
@@ -2529,38 +2559,49 @@
     </div>
   </div>
 
-  <!-- REPORT HEADERS INFO MODAL -->
-  <div id="reportHeadersModal" class="info-modal" onclick="if(event.target === this) hideInfoModal('reportHeaders')">
+  <!-- REPORT OUTPUT INFO MODAL -->
+  <div id="reportOutputModal" class="info-modal" onclick="if(event.target === this) hideInfoModal('reportOutput')">
     <div class="info-modal-content">
       <div class="info-modal-header">
-        <div class="info-modal-title">Report Headers</div>
-        <button class="info-modal-close" onclick="hideInfoModal('reportHeaders')">×</button>
+        <div class="info-modal-title">Report Output Settings</div>
+        <button class="info-modal-close" onclick="hideInfoModal('reportOutput')">×</button>
       </div>
       <div class="info-modal-body" style="font-size: 12px;">
-        <h4 style="margin-top:0;">Customizing CSV Columns</h4>
-        <p>Select which columns to include in your CSV exports. This applies to all search types (Phone Number, Combine Campaigns, Bulk Export).</p>
+        <h4 style="margin-top:0;">Output Folder</h4>
+        <p>Choose where output files are saved. Files are organized into subfolders:</p>
+        <ul style="margin-left: 16px; margin-bottom: 16px;">
+          <li><strong>Output/Phone Number History</strong> — Phone number search results</li>
+          <li><strong>Output/Combine Campaigns</strong> — Combined campaign data and Delivery Intelligence Reports</li>
+          <li><strong>Output/Bulk Campaign Export</strong> — Bulk export archives</li>
+          <li><strong>Output/Executive Summary</strong> — Executive summary reports</li>
+          <li><strong>Logs</strong> — Operation logs</li>
+        </ul>
+
+        <h4>Timezone</h4>
+        <p>Select your preferred timezone for timestamps in reports. <strong>VoApps Time</strong> is a constant UTC-7 (no DST) for consistent day slicing. US timezone options (ET, CT, MT, PT) are DST-aware and will show the correct offset based on the timestamp's date.</p>
+
+        <h4>CSV Columns</h4>
+        <p>Select which columns to include in CSV exports. <strong>Applies to:</strong> Phone Number Search and Combine Campaigns only. Does not apply to Executive Summary (fixed columns), Delivery Intelligence Report (Excel format), or Bulk Campaign Export (all columns included).</p>
 
         <h4>Column Groups</h4>
         <ul style="margin-left: 16px;">
-          <li><strong>Core:</strong> Basic identifiers (number, account_id, campaign_id, campaign_name)</li>
+          <li><strong>Core:</strong> Basic identifiers (number, account_id, account_name, campaign_id, campaign_name)</li>
           <li><strong>Metadata:</strong> Additional info (caller_number, message details)</li>
           <li><strong>Results:</strong> Outcome data (voapps_result, voapps_code, timestamp, URL)</li>
         </ul>
-
-        <h4>Quick Actions</h4>
-        <p>Each column group has <strong>all</strong> and <strong>clear</strong> buttons to quickly select or deselect all columns in that group.</p>
 
         <h4>Column Definitions</h4>
         <table style="font-size: 10px; width: 100%; border-collapse: collapse; margin-top: 8px;">
           <tr style="border-bottom: 1px solid #eee;"><td style="padding: 4px 0;"><strong>number</strong></td><td>Phone number called</td></tr>
           <tr style="border-bottom: 1px solid #eee;"><td style="padding: 4px 0;"><strong>account_id</strong></td><td>VoApps account identifier</td></tr>
+          <tr style="border-bottom: 1px solid #eee;"><td style="padding: 4px 0;"><strong>account_name</strong></td><td>Human-readable account name</td></tr>
           <tr style="border-bottom: 1px solid #eee;"><td style="padding: 4px 0;"><strong>campaign_id</strong></td><td>Campaign identifier</td></tr>
           <tr style="border-bottom: 1px solid #eee;"><td style="padding: 4px 0;"><strong>campaign_name</strong></td><td>Human-readable campaign name</td></tr>
           <tr style="border-bottom: 1px solid #eee;"><td style="padding: 4px 0;"><strong>caller_number</strong></td><td>Caller ID used for the call</td></tr>
           <tr style="border-bottom: 1px solid #eee;"><td style="padding: 4px 0;"><strong>message_id</strong></td><td>Message template identifier</td></tr>
           <tr style="border-bottom: 1px solid #eee;"><td style="padding: 4px 0;"><strong>voapps_result</strong></td><td>Call result (success, failed, etc.)</td></tr>
           <tr style="border-bottom: 1px solid #eee;"><td style="padding: 4px 0;"><strong>voapps_code</strong></td><td>Specific result code</td></tr>
-          <tr><td style="padding: 4px 0;"><strong>voapps_timestamp</strong></td><td>When the call was made (UTC)</td></tr>
+          <tr><td style="padding: 4px 0;"><strong>voapps_timestamp</strong></td><td>When the call was made</td></tr>
         </table>
       </div>
     </div>
@@ -2596,8 +2637,8 @@
         <h4>SQL Queries</h4>
         <p>Run custom SQL queries against your data. The main table is <code>campaign_results</code>. Use the sample queries dropdown for common queries.</p>
 
-        <h4>Number Trend Analyzer</h4>
-        <p>Run the Number Trend Analyzer directly from database data. Uses your current date range selection to filter records.</p>
+        <h4>Delivery Intelligence Report</h4>
+        <p>Generate a Delivery Intelligence Report directly from database data. Analyzes phone numbers, caller numbers, and messages. Uses your current date range selection to filter records.</p>
 
         <h4>Storage Location</h4>
         <p><code>~/Downloads/VoApps Tools/campaign_data.duckdb</code></p>
@@ -2608,7 +2649,7 @@
   <div id="helpModal" class="info-modal" onclick="if(event.target === this) hideInfoModal('help')">
     <div class="info-modal-content" style="max-width: 700px; max-height: 85vh; overflow-y: auto;">
       <div class="info-modal-header">
-        <div class="info-modal-title">VoApps Tools v3.3.0 — Help</div>
+        <div class="info-modal-title">VoApps Tools v3.4.0 — Help</div>
         <button class="info-modal-close" onclick="hideInfoModal('help')">×</button>
       </div>
       <div class="info-modal-body" style="font-size: 12px;">
@@ -2627,7 +2668,7 @@
         <h4>🔍 Search Modes</h4>
         <ul style="margin-left: 16px;">
           <li><strong>Phone Number Search:</strong> Find all campaign interactions for specific phone numbers. Enter numbers (one per line or comma-separated) and get a complete history.</li>
-          <li><strong>Combine Campaigns:</strong> Merge all campaign data from selected accounts into a single CSV. Optionally run the Number Trend Analyzer for Excel insights.</li>
+          <li><strong>Combine Campaigns:</strong> Merge all campaign data from selected accounts into a single CSV. Optionally generate a Delivery Intelligence Report for Excel insights.</li>
           <li><strong>Bulk Export:</strong> Export each campaign as a separate CSV file, organized by year/month folders. Useful for archiving.</li>
         </ul>
 
@@ -2638,17 +2679,18 @@
           <li><strong>Both:</strong> Save to database AND create CSV files</li>
         </ul>
 
-        <h4>📊 Number Trend Analyzer</h4>
-        <p>Available in Combine Campaigns mode. Generates an Excel workbook with:</p>
+        <h4>📊 Delivery Intelligence Report</h4>
+        <p>Generates an Excel workbook analyzing <strong>phone numbers</strong>, <strong>caller numbers</strong>, and <strong>messages</strong>:</p>
         <ul style="margin-left: 16px;">
-          <li>Report Overview with date range and thresholds</li>
+          <li>Executive Summary with list quality grade</li>
+          <li>Number Summary with TN health classification</li>
           <li>Global Insights by Message &amp; Caller Number</li>
           <li>Global Insights by Time (hourly/daily patterns)</li>
-          <li>Call Cadence analysis (time between attempts)</li>
-          <li>Number Summary (per-number statistics)</li>
+          <li>Retry Decay Curve (success probability by attempt)</li>
+          <li>Day Insights (day-of-week recommendations)</li>
           <li>Consecutive Unsuccessful patterns</li>
         </ul>
-        <p>You can also upload a CSV directly to run analysis without fetching from VoApps.</p>
+        <p>Generate from Combine Campaigns, upload a CSV, or run from local database.</p>
 
         <h4>🗄️ Local Database</h4>
         <p>DuckDB stores results locally for fast querying. Use the SQL Query interface to run custom queries. Features include:</p>
@@ -2669,6 +2711,20 @@
         </ul>
 
         <h4 style="border-top: 1px solid #e0e0e0; padding-top: 12px; margin-top: 16px;">📝 Release Notes</h4>
+        <p><strong>v3.4.0 - Executive Summary & Timezone Selection</strong></p>
+        <ul style="margin-left: 16px;">
+          <li>Executive Summary search type - aggregate campaign statistics into deliverability report</li>
+          <li>Added account_name column to all CSV exports (Phone Search, Combine, Executive Summary)</li>
+          <li>Added campaign_url to Executive Summary for direct campaign links</li>
+          <li>User-selectable timezone with DST awareness (ET, CT, MT, PT) plus VoApps Time (constant UTC-7)</li>
+          <li>Reorganized Report Output settings (combined headers, folder, timezone)</li>
+          <li>Fixed Windows update checker to find .exe instead of .dmg</li>
+          <li>Fixed hardcoded version in Delivery Intelligence Excel reports</li>
+        </ul>
+        <p><strong>v3.3.1 - Timestamp Normalization</strong></p>
+        <ul style="margin-left: 16px;">
+          <li>All timestamps normalized to user-selected timezone (default: VoApps Time UTC-7)</li>
+        </ul>
         <p><strong>v3.3.0 - Cross-Platform Release</strong></p>
         <ul style="margin-left: 16px;">
           <li>Windows x64 support with native HTTPS fetch</li>
@@ -3276,7 +3332,8 @@
     const searchTypeDescriptions = {
       phone: "Search campaigns for specific phone numbers.",
       combine: "Merge all campaign data into a single CSV.",
-      "bulk-export": "Export each campaign as a separate CSV."
+      "bulk-export": "Export each campaign as a separate CSV.",
+      "executive-summary": "Aggregate campaign level statistics into a high-level deliverability report for the period selected (users often set date ranges to encompass a whole month)."
     };
 
     $('searchTypeDropdown').onchange = () => {
@@ -3285,15 +3342,30 @@
       $('phoneInputContainer').classList.toggle('visible', val === 'phone');
       $('trendAnalyzerContainer').classList.toggle('visible', val === 'combine');
 
+      // Flash the "Generate From" box when Combine Campaigns is selected
+      if (val === 'combine') {
+        const generateBox = document.querySelector('.trend-generate');
+        if (generateBox) {
+          // Remove class first to reset animation if already present
+          generateBox.classList.remove('flash-attention');
+          // Force reflow to restart animation
+          void generateBox.offsetWidth;
+          generateBox.classList.add('flash-attention');
+          // Remove class after animation completes
+          setTimeout(() => generateBox.classList.remove('flash-attention'), 1200);
+        }
+      }
+
       const runBtn = $('runBtn');
       if (val === 'bulk-export') runBtn.innerHTML = '<svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>Export';
       else if (val === 'combine') runBtn.innerHTML = '<svg class="btn-icon" viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>Combine';
+      else if (val === 'executive-summary') runBtn.innerHTML = '<svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>Generate';
       else runBtn.innerHTML = '<svg class="btn-icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>Run';
 
       saveSettings();
     };
 
-    // Trend Analyzer radio button handling
+    // Delivery Intelligence Report radio button handling
     function updateTrendSourceUI() {
       const source = document.querySelector('input[name="trendSource"]:checked')?.value;
       const uploadBtn = $('uploadCsvBtn');
@@ -3383,7 +3455,7 @@
 
       setLocked(true);
       setStatus('Analyzing...', 'running');
-      log(`Starting Number Trend Analyzer...`);
+      log(`Starting Delivery Intelligence Report...`);
       log(`  File: ${uploadedCsvFile.name}`);
       log(`  Min Consecutive: ${minConsec}`);
       log(`  Min Days Span: ${minSpan}`);
@@ -3491,7 +3563,7 @@
       }
     };
 
-    // Database Analysis Button (from trend analyzer radio button)
+    // Database Analysis Button (from Delivery Intelligence radio button)
     if ($('runDbAnalysisBtn')) {
       $('runDbAnalysisBtn').onclick = () => window.runDbTrendAnalysis();
     }
@@ -3887,14 +3959,25 @@
         output_mode: outputMode
       };
 
-      // Client prefix only applies to phone search, combine campaigns, and trend analyzer
+      // Client prefix only applies to phone search, combine campaigns, and delivery intelligence
       // NOT to bulk-export (individual campaign exports don't need client prefix)
       if (searchType !== 'bulk-export' && clientPrefix) {
         payload.client_prefix = clientPrefix;
       }
 
       if (isPhoneSearch) {
-        payload.numbers = $('phoneNumbers').value.trim().split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+        // Parse phone numbers - strip all non-digit characters, handle +1 prefix
+        payload.numbers = $('phoneNumbers').value.trim().split(/[\n,]+/)
+          .map(s => {
+            // Remove all non-digit characters (parentheses, dashes, dots, spaces, brackets, slashes, +)
+            let num = s.replace(/\D/g, '');
+            // Remove leading 1 if it's an 11-digit number starting with 1
+            if (num.length === 11 && num.startsWith('1')) {
+              num = num.slice(1);
+            }
+            return num;
+          })
+          .filter(n => n.length === 10);  // Only keep valid 10-digit numbers
       }
 
       // Check if "With Combine" radio is selected for trend analysis
@@ -3908,6 +3991,7 @@
       let endpoint = '/api/search';
       if (searchType === 'combine') endpoint = '/api/combine';
       if (searchType === 'bulk-export') endpoint = '/api/bulk-export';
+      if (searchType === 'executive-summary') endpoint = '/api/executive-summary';
 
       try {
         const resp = await fetch(endpoint, {
@@ -3932,6 +4016,13 @@
           summary = `${downloaded} campaigns, ${totalRecords} rows`;
           log('');
           log(`✓ Complete: ${downloaded} campaigns, ${failed} failed, ${totalRecords} rows`);
+        } else if (searchType === 'executive-summary') {
+          const s = data.stats || {};
+          const campaignCount = s.campaignCount || 0;
+          const totalRecords = s.totalRecords || 0;
+          summary = `${campaignCount} campaigns, ${totalRecords} records`;
+          log('');
+          log(`✓ Complete: ${campaignCount} campaigns, ${totalRecords} records`);
         } else {
           const count = data.matches || data.totalRows || 0;
           summary = `${count} results`;
@@ -4163,6 +4254,7 @@
           const runBtn = $('runBtn');
           if (s.searchType === 'bulk-export') runBtn.innerHTML = '<svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>Export';
           else if (s.searchType === 'combine') runBtn.innerHTML = '<svg class="btn-icon" viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>Combine';
+          else if (s.searchType === 'executive-summary') runBtn.innerHTML = '<svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>Generate';
           else runBtn.innerHTML = '<svg class="btn-icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>Run';
         }
 
@@ -4261,6 +4353,44 @@
     }
 
     // ============================================================================
+    // TIMEZONE MANAGEMENT
+    // ============================================================================
+    async function loadTimezone() {
+      try {
+        const r = await fetch('/api/settings/timezone');
+        if (r.ok) {
+          const data = await r.json();
+          if (data.ok && data.timezone) {
+            const select = $('timezoneSelect');
+            if (select) {
+              select.value = data.timezone;
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load timezone:', e);
+      }
+    }
+
+    async function saveTimezone(timezone) {
+      try {
+        const r = await fetch('/api/settings/timezone', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ timezone })
+        });
+        if (r.ok) {
+          const data = await r.json();
+          showToast(`Timezone set to ${data.label}`, 'success');
+        } else {
+          showToast('Failed to save timezone', 'error');
+        }
+      } catch (e) {
+        showToast('Failed to save timezone', 'error');
+      }
+    }
+
+    // ============================================================================
     // ZOOM CONTROLS
     // ============================================================================
     let currentZoom = 1.0;
@@ -4308,7 +4438,7 @@
     // INIT
     // ============================================================================
     (async () => {
-      log('VoApps Tools v3.3.0');
+      log('VoApps Tools v3.4.0');
 
       loadSettings();
       initLogFilter();
@@ -4316,6 +4446,7 @@
       initTrendSourceUI();
       initZoom();
       loadOutputFolder();
+      loadTimezone();
       loadAccountsFromCache(); // Restore cached accounts if available
 
       // Folder chooser buttons
@@ -4324,6 +4455,11 @@
       }
       if ($('openFolderBtn')) {
         $('openFolderBtn').onclick = openOutputFolder;
+      }
+
+      // Timezone select
+      if ($('timezoneSelect')) {
+        $('timezoneSelect').onchange = (e) => saveTimezone(e.target.value);
       }
 
       try {

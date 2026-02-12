@@ -1,7 +1,8 @@
-// trendAnalyzer.js - Delivery Intelligence Platform v3.2.0
+// trendAnalyzer.js - Delivery Intelligence Report
+// Analyzes phone numbers, caller numbers, and messages for delivery insights
 // Generates comprehensive Excel analysis workbooks from campaign data
 //
-// v3.2.0 - Delivery Intelligence Platform
+// Features:
 // - Attempt Index tracking per TN (resets after success)
 // - Success Probability by attempt number (decay curve)
 // - TN Health Classification (Healthy/Degrading/Toxic)
@@ -23,7 +24,8 @@ const Papa = require('papaparse');
 const fs = require('fs');
 const path = require('path');
 
-const VERSION = '3.2.0';
+// Import VERSION from central source of truth
+const { VERSION } = require('./version');
 
 // VoApps brand colors (official palette)
 const VOAPPS_DARK_NAVY = '0D053F';     // Header background (darkest)
@@ -325,6 +327,8 @@ function detectTimezoneDiscrepancies(accountTimezones, accountResultTimezones) {
  * @param {Object} messageMap - Map of message_id to message metadata
  * @param {Object} callerMap - Map of caller_number to caller name
  * @param {Object} accountTimezones - Map of account_id to IANA timezone (e.g., { "12345": "America/Denver" })
+ * @param {string} userTimezone - User's selected timezone (IANA name or 'VoApps')
+ * @param {string} userTimezoneLabel - User's timezone label (e.g., "VoApps", "ET", "MT")
  */
 async function generateTrendAnalysis(
   csvInput,
@@ -333,7 +337,9 @@ async function generateTrendAnalysis(
   minRunSpanDays = 30,
   messageMap = {},
   callerMap = {},
-  accountTimezones = {}
+  accountTimezones = {},
+  userTimezone = 'VoApps',
+  userTimezoneLabel = 'VoApps'
 ) {
   log(`Starting Delivery Intelligence Analysis (v${VERSION})`);
 
@@ -977,7 +983,7 @@ async function generateTrendAnalysis(
   // ============================================================================
 
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'VoApps Delivery Intelligence Platform v3.2.0';
+  workbook.creator = `VoApps Number Analysis and Delivery Intelligence Report v${VERSION}`;
   workbook.created = new Date();
 
   // VoApps-branded styles
@@ -1024,7 +1030,7 @@ async function generateTrendAnalysis(
 
   // Title
   execSheet.mergeCells('A1:C1');
-  execSheet.getCell('A1').value = 'Delivery Intelligence Report v3.2.0';
+  execSheet.getCell('A1').value = `Number Analysis and Delivery Intelligence Report v${VERSION}`;
   execSheet.getCell('A1').style = headerStyle;
   execSheet.getRow(1).height = 35;
 
@@ -1565,8 +1571,23 @@ async function generateTrendAnalysis(
     views: [{ state: 'frozen', xSplit: 0, ySplit: 1 }]
   });
 
-  // Timezone notice at top
-  timeSheet.getCell('A1').value = `Timezone: ${detectedTimezone}`;
+  // Timezone notice at top - show user's selected timezone with label
+  // Handle IANA timezone names vs legacy offset format
+  let userTzDisplay;
+  if (userTimezone === 'VoApps') {
+    userTzDisplay = 'VoApps Time (UTC-7, constant)';
+  } else if (userTimezone === 'UTC') {
+    userTzDisplay = 'UTC';
+  } else if (userTimezone.startsWith('America/')) {
+    // IANA timezone name - show label with DST note
+    userTzDisplay = `${userTimezoneLabel} (DST-aware)`;
+  } else if (userTimezone.startsWith('-') || userTimezone.startsWith('+')) {
+    // Legacy offset format
+    userTzDisplay = userTimezoneLabel ? `${userTimezoneLabel} (UTC${userTimezone})` : `UTC${userTimezone}`;
+  } else {
+    userTzDisplay = userTimezoneLabel || userTimezone;
+  }
+  timeSheet.getCell('A1').value = `Report Timezone: ${userTzDisplay}`;
   timeSheet.getCell('A1').font = { bold: true, size: 12, color: { argb: VOAPPS_PURPLE } };
   timeSheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: VOAPPS_PURPLE_PALE } };
   timeSheet.mergeCells('A1:E1');
@@ -1718,7 +1739,7 @@ async function generateTrendAnalysis(
   const glossarySheet = workbook.addWorksheet('Glossary');
 
   glossarySheet.mergeCells('A1:B1');
-  glossarySheet.getCell('A1').value = 'Delivery Intelligence Platform v3.2.0 - Glossary';
+  glossarySheet.getCell('A1').value = `Number Analysis and Delivery Intelligence Report v${VERSION} - Glossary`;
   glossarySheet.getCell('A1').style = headerStyle;
   glossarySheet.getRow(1).height = 35;
 
@@ -1732,6 +1753,7 @@ async function generateTrendAnalysis(
 
   const coreConcepts = [
     ['DDVM', 'DirectDrop Voicemail - VoApps patented technology that delivers voicemail messages directly to mobile carrier voicemail platforms without ringing the phone.'],
+    ['VoApps Time', 'A constant UTC-7 timezone (no DST adjustment) used by VoApps to slice days consistently for campaign scheduling. When VoApps Time is selected, timestamps always show UTC-7 regardless of season. US timezone options (ET, CT, MT, PT) are DST-aware and show the correct offset for each timestamp based on its date.'],
     ['Attempt Index', 'The number of DDVM delivery attempts to a phone number since the last successful delivery. Resets to 0 after each success. Higher values indicate declining deliverability.'],
     ['TN Health', 'Classification of phone number health: Healthy (good deliverability), Degrading (declining performance), or Toxic (should be suppressed).'],
     ['Never Delivered', 'A phone number that has never received a successful DDVM delivery across all attempts.'],
