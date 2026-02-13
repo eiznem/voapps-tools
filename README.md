@@ -6,6 +6,8 @@ Desktop application for searching and analyzing VoApps DirectDrop Voicemail camp
 ![Platform](https://img.shields.io/badge/platform-macOS%20|%20Windows-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
+<img width="200" height="200" alt="icon" src="https://github.com/user-attachments/assets/d985e551-8873-453e-99be-bdd90e372f10" />
+
 ## 🎯 Features
 
 ### Search & Analysis
@@ -45,7 +47,7 @@ Desktop application for searching and analyzing VoApps DirectDrop Voicemail camp
 ### Main Interface
 Clean, modern two-panel layout with resizable sections and intuitive controls.
 
-![Main Interface](screenshots/main-interface.png)
+<img width="1710" height="1112" alt="image" src="https://github.com/user-attachments/assets/7baa749a-628b-4fc4-86ca-7db37068bb9b" />
 
 ---
 
@@ -59,7 +61,7 @@ Clean, modern two-panel layout with resizable sections and intuitive controls.
 
 Search all campaigns for specific phone numbers with batch support up to 1,000 numbers.
 
-![Phone Search](screenshots/phone-search.png)
+<img width="647" height="185" alt="image" src="https://github.com/user-attachments/assets/af723910-07b0-4972-8d67-b7d25bcf6f19" />
 
 </td>
 <td width="33%">
@@ -68,7 +70,9 @@ Search all campaigns for specific phone numbers with batch support up to 1,000 n
 
 Merge all campaigns into a single CSV with optional Delivery Intelligence Report.
 
-![Combine](screenshots/combine.png)
+<img width="1710" height="1112" alt="image" src="https://github.com/user-attachments/assets/b5f0bfe9-61a8-4fec-9c29-b93fa66f09b1" />
+
+<img width="3420" height="558" alt="image" src="https://github.com/user-attachments/assets/1bab7480-d6b4-46f7-a3c8-03e3937c7f19" />
 
 </td>
 <td width="33%">
@@ -77,11 +81,15 @@ Merge all campaigns into a single CSV with optional Delivery Intelligence Report
 
 Download each campaign separately, organized by year and month.
 
-![Bulk Export](screenshots/bulk-export.png)
+<img width="646" height="196" alt="image" src="https://github.com/user-attachments/assets/76a4be4b-87d0-4fa2-871b-ab08d0dce126" />
 
 </td>
 </tr>
 </table>
+
+**Executive Summary Report**
+
+<img width="640" height="219" alt="image" src="https://github.com/user-attachments/assets/674ee3c0-c531-4232-b2bc-b74cdfa75c97" />
 
 ---
 
@@ -89,7 +97,7 @@ Download each campaign separately, organized by year and month.
 
 Generate comprehensive Excel analysis of phone numbers, caller numbers, and messages with success rates, cadence patterns, and consecutive unsuccessful detection.
 
-![Delivery Intelligence](screenshots/trend-analyzer.png)
+<img width="855" height="693" alt="image" src="https://github.com/user-attachments/assets/d132bf8b-e281-4a32-8c75-38b17a250879" />
 
 ---
 
@@ -97,7 +105,7 @@ Generate comprehensive Excel analysis of phone numbers, caller numbers, and mess
 
 Live progress tracking with detailed API call logging and campaign-by-campaign status updates.
 
-![Running Log](screenshots/running-log.png)
+<img width="1710" height="1112" alt="image" src="https://github.com/user-attachments/assets/8f471089-75da-4b8b-8fd0-79082517ff6c" />
 
 ---
 
@@ -109,12 +117,10 @@ Desktop notifications and sound alerts when jobs complete, with direct access to
 <tr>
 <td width="50%">
 
-![Notification](screenshots/notification.png)
+<img width="401" height="127" alt="image" src="https://github.com/user-attachments/assets/01022d3d-cc3a-4f6c-b30d-508de41ccf2c" />
 
 </td>
 <td width="50%">
-
-![Completed](screenshots/completed-job.png)
 
 </td>
 </tr>
@@ -126,7 +132,7 @@ Desktop notifications and sound alerts when jobs complete, with direct access to
 
 Automatic update checking every 24 hours with one-click downloads from GitHub releases.
 
-![Update Checker](screenshots/update-checker.png)
+<img width="346" height="289" alt="image" src="https://github.com/user-attachments/assets/6c166967-3b6a-47f0-a057-0f2663ba8843" />
 
 ## 📥 Download & Installation
 
@@ -190,6 +196,9 @@ The app will:
 - Show the main interface
 - Be ready for your API key
 
+<img width="724" height="359" alt="image" src="https://github.com/user-attachments/assets/78d58eb4-d03e-4d76-8527-243564f43c7e" />
+
+
 ### Troubleshooting Installation
 
 #### "Cannot open because developer cannot be verified"
@@ -230,9 +239,11 @@ To remove VoApps Tools:
 After installation, follow these steps to get started:
 
 ### 1. Get Your API Key
-1. Log into your [VoApps account](https://voapps.com)
-2. Navigate to **Settings → API**
-3. Generate a new API key or copy your existing key
+1. Log into your [VoApps API Access](https://directdropvoicemail.voapps.com/api/index)
+2. Click **API Access** in the left menu
+3. Copy your key
+
+<img width="730" height="369" alt="image" src="https://github.com/user-attachments/assets/2f274249-1d4b-40a0-ae85-cef4901a3704" />
 
 ### 2. Launch VoApps Tools
 - Open from Applications folder
@@ -250,6 +261,9 @@ You should see "Ping: OK" in the Live Log.
 1. Click **⬇ click to load** under Accounts
 2. Select the accounts you want to search
 3. Or manually enter account IDs (comma-separated)
+
+<img width="1710" height="1112" alt="image" src="https://github.com/user-attachments/assets/71a8e367-8838-4d85-97e1-90b8577265ef" />
+
 
 ### 5. Set Date Range
 - Use preset dropdown (1 Month, 3 Months, 6 Months, etc.)
@@ -304,6 +318,9 @@ The Delivery Intelligence Report analyzes **phone numbers**, **caller numbers**,
 2. Set your date range
 3. Click "Analyze Database"
 
+<img width="721" height="817" alt="image" src="https://github.com/user-attachments/assets/a8115551-56be-4f11-9733-2633a4f568cf" />
+
+
 ### Thresholds
 
 - **Min Consecutive:** Minimum consecutive unsuccessful calls to flag (default: 4)
@@ -331,6 +348,8 @@ All outputs are saved to `~/Downloads/VoApps Tools/`:
 ```
 
 ## 🔧 Advanced Features
+
+<img width="724" height="909" alt="image" src="https://github.com/user-attachments/assets/15fa0bff-1e95-4e32-86ab-82b844fd49fd" />
 
 ### Date Range Buffers
 
@@ -367,6 +386,8 @@ The Executive Summary report includes fixed columns:
 - records, deliverable, successful_deliveries, expired, canceled
 - duplicate, unsuccessful_attempts, unfinished, restricted, delivery_pct, campaign_url
 
+<img width="3412" height="1496" alt="image" src="https://github.com/user-attachments/assets/7b2898a8-a231-4530-86a4-8bd951be4807" />
+
 ### Logging Levels
 
 - **None** - Disable logging
@@ -383,6 +404,8 @@ VoApps Tools automatically checks for updates once per 24 hours. You'll be notif
 - View release notes and download new version
 
 ## 🐛 Troubleshooting
+
+<img width="1710" height="1112" alt="image" src="https://github.com/user-attachments/assets/bed12fe7-e47d-4777-982e-23837adb5d2f" />
 
 ### API Connection Issues
 
