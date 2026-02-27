@@ -10,9 +10,9 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '3.4.0',
-  VERSION_NAME: 'Executive Summary & Timezone Selection',
-  RELEASE_DATE: '2026-02-12',
+  VERSION: '3.4.1',
+  VERSION_NAME: 'Memory & Stability Improvements',
+  RELEASE_DATE: '2026-02-27',
   AUTHOR: 'Brett Menzie',
 
   // -----------------------------
@@ -50,6 +50,33 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '3.4.1': {
+      date: '2026-02-27',
+      title: 'Memory & Stability Improvements',
+      changes: [
+        'Row caps (100K max per detail tab) prevent ExcelJS from exhausting heap on large datasets',
+        'Pre-compute all aggregate metrics in one pass then free numberSummaryArray before workbook creation — frees up to 1 GB before Excel generation begins',
+        'Progressive memory release: filteredHealth/Variability/Summary arrays freed immediately after each tab\'s addRows()',
+        'Phase 1 campaignTsMap now stores only first/last timestamped row per campaign instead of every row — saves 80-100 MB on multi-million-row datasets',
+        'Replaced JS Arrays with Uint16Array for hourCounts and dayOfWeekCounts across all number data objects',
+        'Eliminated firstRawTimestamp/lastRawTimestamp string fields; epoch ms stored and formatted at write time',
+        'Delivery Intelligence Report now runs correctly when Combine Campaigns output mode is set to Database',
+        'Analysis button no longer shows green state from a previous run when a new combine job starts',
+        'Column C descriptions added to Executive Summary for key metrics and TN Health Distribution rows',
+        'Executive Summary column B widened to 50, column C widened to 130'
+      ],
+      features: [
+        'Detail tab row caps (100K rows per tab) with log message when truncation occurs',
+        'Database-only combine mode now generates Delivery Intelligence Report via temp CSV'
+      ],
+      fixes: [
+        'Fixed Delivered % showing NaN% (ns.successCount → ns.successful — wrong property name in pre-compute loop)',
+        'Fixed minDate/maxDate/fourteenDaysAgo not being set in the row-array analysis path',
+        'Fixed Analysis button remaining green/active after switching to a new combine run',
+        'Fixed Delivery Intelligence Report not triggering when output mode is Database'
+      ]
+    },
+
     '3.4.0': {
       date: '2026-02-12',
       title: 'Executive Summary & Timezone Selection',

@@ -2,7 +2,7 @@
 
 Desktop application for searching and analyzing VoApps DirectDrop Voicemail campaign data.
 
-![Version](https://img.shields.io/badge/version-3.4.0-blue)
+![Version](https://img.shields.io/badge/version-3.4.1-blue)
 ![Platform](https://img.shields.io/badge/platform-macOS%20|%20Windows-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -132,10 +132,10 @@ Automatic update checking every 24 hours with one-click downloads from GitHub re
 
 ### Download
 
-**Latest Version:** [v3.4.0](https://github.com/eiznem/voapps-tools/releases/latest)
+**Latest Version:** [v3.4.1](https://github.com/eiznem/voapps-tools/releases/latest)
 
-**macOS:** `VoApps Tools-3.4.0-arm64.dmg`
-**Windows:** `VoApps Tools Setup 3.4.0.exe`
+**macOS:** `VoApps Tools-3.4.1-arm64.dmg`
+**Windows:** `VoApps Tools Setup 3.4.1.exe`
 
 ### System Requirements
 
@@ -158,7 +158,7 @@ Automatic update checking every 24 hours with one-click downloads from GitHub re
 Click the download link above or visit the [Releases page](https://github.com/eiznem/voapps-tools/releases)
 
 #### 2. Open the DMG File
-Double-click `VoApps Tools-3.4.0-arm64.dmg` in your Downloads folder
+Double-click `VoApps Tools-3.4.1-arm64.dmg` in your Downloads folder
 
 #### 3. Drag to Applications
 Drag the VoApps Tools icon to your Applications folder
@@ -274,15 +274,16 @@ The Delivery Intelligence Report analyzes **phone numbers**, **caller numbers**,
 
 ### Worksheets
 
-1. **Executive Summary** - Overview, recommendations, and list quality grade
-2. **Number Summary** - Per-number statistics with health classification
-3. **Consecutive Unsuccessful** - Numbers flagged for list hygiene
-4. **Call Cadence** - Time intervals between calls to same number
-5. **Retry Decay Curve** - Success probability by attempt number
-6. **Day Insights** - Day-of-week recommendations per account/message
-7. **Global Insights (Msg & Caller)** - Message and caller performance
-8. **Global Insights (Time)** - Hourly and daily success patterns
-9. **Glossary** - Explanation of all metrics and terminology
+1. **Executive Summary** - Key metrics, TN Health distribution, decay curve, and actionable recommendations with column C explanations
+2. **TN Health** - Toxic and Degrading numbers with success rate, consecutive failures, and suppression actions (capped at 100K rows)
+3. **Variability Analysis** - Numbers with variability score < 60 sorted by score (capped at 100K rows)
+4. **Number Summary** - All flagged numbers combining TN Health and variability issues (capped at 100K rows)
+5. **Consecutive Unsuccessful** - Numbers flagged for list hygiene based on configurable run thresholds
+6. **Retry Decay Curve** - Success probability by attempt number with sample size
+7. **Day Insights** - Day-of-week recommendations per account and message
+8. **Global Insights (Msg & Caller)** - Message and caller performance with success rates
+9. **Global Insights (Time)** - Hourly and daily success patterns
+10. **Glossary** - Explanation of all metrics, result codes, and terminology
 
 ### Using Delivery Intelligence
 
@@ -335,7 +336,7 @@ All outputs are saved to `~/Downloads/VoApps Tools/`:
 ### Date Range Buffers
 
 VoApps Tools automatically adds buffers to ensure complete data retrieval:
-- **Start date:** -30 days (captures pre-scheduled campaigns)
+- **Start date:** -7 days (captures pre-scheduled campaigns)
 - **End date:** +1 day (accounts for UTC timezone conversion)
 
 Results are then filtered by exact target_date to give you precisely what you requested.
@@ -446,8 +447,8 @@ npm start
 # Build DMG for distribution
 npm run build
 
-# Output: dist/VoApps Tools-3.4.0-arm64.dmg (macOS)
-# Output: dist/VoApps Tools Setup 3.4.0.exe (Windows)
+# Output: dist/VoApps Tools-3.4.1-arm64.dmg (macOS)
+# Output: dist/VoApps Tools Setup 3.4.1.exe (Windows)
 ```
 
 ### Project Structure
@@ -505,8 +506,8 @@ VoApps™ and DirectDrop™ are trademarks of their respective owners. This soft
 
 ---
 
-**Version:** 3.4.0
-**Last Updated:** February 2026
+**Version:** 3.4.1
+**Last Updated:** February 27, 2026
 
 ---
 

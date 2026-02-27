@@ -1,5 +1,5 @@
 /**
- * VoApps Tools v3.4.0 — Electron Preload
+ * VoApps Tools v3.4.1 — Electron Preload
  *
  * WHAT THIS DOES
  * - Exposes a safe, minimal bridge to the renderer (index.html)

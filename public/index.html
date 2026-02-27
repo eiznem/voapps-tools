@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>VoApps Tools v3.4.0</title>
+  <title>VoApps Tools v3.4.1</title>
   <style>
     :root {
       --success: #16a34a;
@@ -1296,7 +1296,7 @@
 
     .database-actions {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(5, 1fr);
       gap: 6px;
     }
 
@@ -1697,6 +1697,19 @@
     .toast-message { flex: 1; font-size: 12px; }
     .toast-close { cursor: pointer; opacity: 0.5; font-size: 14px; }
     .toast-close:hover { opacity: 1; }
+    .toast-action {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 4px;
+      border: 1px solid currentColor;
+      background: transparent;
+      cursor: pointer;
+      opacity: 0.75;
+      white-space: nowrap;
+    }
+    .toast-action:hover { opacity: 1; background: rgba(0,0,0,0.05); }
+    .toast.persistent { box-shadow: 0 4px 16px rgba(0,0,0,0.2); }
 
     @keyframes slideInRight {
       from { transform: translateX(350px); opacity: 0; }
@@ -1767,7 +1780,7 @@
       </div>
 
       <div class="sidebar-footer">
-        <div class="sidebar-version">v3.4.0</div>
+        <div class="sidebar-version">v3.4.1</div>
       </div>
     </nav>
 
@@ -1917,10 +1930,10 @@
                       </label>
                       <!-- Dynamic action buttons -->
                       <div id="trendActionArea" class="trend-action-area">
-                        <input type="file" id="csvFileUpload" accept=".csv" style="display: none;">
+                        <input type="file" id="csvFileUpload" accept=".csv" multiple style="display: none;">
                         <button id="uploadCsvBtn" class="btn trend-action-btn" style="display: none;">
                           <svg class="btn-icon" viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
-                          Upload CSV
+                          Upload CSV(s)
                         </button>
                         <span id="uploadedFileName" class="uploaded-filename" style="display: none;"></span>
                         <button id="runAnalyzerBtn" class="btn btn-primary trend-action-btn" style="display: none;">
@@ -2007,11 +2020,11 @@
                     <div class="status-actions">
                       <button id="openCsvBtn" class="btn-status btn-status-green" disabled>
                         <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-                        CSV
+                        Open CSV
                       </button>
                       <button id="openLogBtn" class="btn-status btn-status-amber" disabled>
                         <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
-                        Log
+                        Open Log
                       </button>
                       <button id="openAnalysisBtn" class="btn-status btn-status-green" disabled style="display:none;">
                         <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg>
@@ -2131,6 +2144,10 @@
                 <button class="database-btn danger" onclick="clearDatabase()">
                   <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
                   Clear
+                </button>
+                <button class="database-btn" onclick="openBackupsFolder()">
+                  <svg viewBox="0 0 24 24"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+                  Backups
                 </button>
               </div>
 
@@ -2649,7 +2666,7 @@
   <div id="helpModal" class="info-modal" onclick="if(event.target === this) hideInfoModal('help')">
     <div class="info-modal-content" style="max-width: 700px; max-height: 85vh; overflow-y: auto;">
       <div class="info-modal-header">
-        <div class="info-modal-title">VoApps Tools v3.4.0 — Help</div>
+        <div class="info-modal-title">VoApps Tools v3.4.1 — Help</div>
         <button class="info-modal-close" onclick="hideInfoModal('help')">×</button>
       </div>
       <div class="info-modal-body" style="font-size: 12px;">
@@ -2711,7 +2728,7 @@
         </ul>
 
         <h4 style="border-top: 1px solid #e0e0e0; padding-top: 12px; margin-top: 16px;">📝 Release Notes</h4>
-        <p><strong>v3.4.0 - Executive Summary & Timezone Selection</strong></p>
+        <p><strong>v3.4.1 - Executive Summary & Timezone Selection</strong></p>
         <ul style="margin-left: 16px;">
           <li>Executive Summary search type - aggregate campaign statistics into deliverability report</li>
           <li>Added account_name column to all CSV exports (Phone Search, Combine, Executive Summary)</li>
@@ -2962,27 +2979,52 @@
     // ============================================================================
     // TOAST
     // ============================================================================
+    function _dismissToast(toast) {
+      toast.style.animation = 'slideInRight 0.3s ease reverse';
+      setTimeout(() => toast.remove(), 300);
+    }
+
     function showToast(message, type = 'info', duration = 3000) {
       const container = $('toastContainer');
       if (!container) return;
 
       const toast = document.createElement('div');
       toast.className = `toast ${type}`;
-      const icons = { success: '✓', error: '✕', info: 'ℹ' };
+      const icons = { success: '✓', error: '⚠', info: 'ℹ' };
 
       toast.innerHTML = `
         <span class="toast-icon">${icons[type] || 'ℹ'}</span>
         <span class="toast-message">${message}</span>
-        <span class="toast-close" onclick="this.parentElement.remove()">×</span>
+        <span class="toast-close" onclick="_dismissToast(this.parentElement)">×</span>
       `;
 
       container.appendChild(toast);
 
       if (duration > 0) {
-        setTimeout(() => {
-          toast.style.animation = 'slideInRight 0.3s ease reverse';
-          setTimeout(() => toast.remove(), 300);
-        }, duration);
+        setTimeout(() => _dismissToast(toast), duration);
+      }
+    }
+
+    // Persistent toast with optional "Open" action button — stays until dismissed
+    function showActionToast(message, type = 'success', actionLabel = null, onAction = null) {
+      const container = $('toastContainer');
+      if (!container) return;
+
+      const toast = document.createElement('div');
+      toast.className = `toast ${type} persistent`;
+      const icons = { success: '✓', error: '⚠', info: 'ℹ' };
+
+      toast.innerHTML = `
+        <span class="toast-icon">${icons[type] || 'ℹ'}</span>
+        <span class="toast-message">${message}</span>
+        ${actionLabel ? `<button class="toast-action">${actionLabel}</button>` : ''}
+        <span class="toast-close" onclick="_dismissToast(this.parentElement)">×</span>
+      `;
+
+      container.appendChild(toast);
+
+      if (actionLabel && onAction) {
+        toast.querySelector('.toast-action').onclick = onAction;
       }
     }
 
@@ -3111,6 +3153,19 @@
           showToast(`Exported ${data.rowCount.toLocaleString()} rows`, 'success');
           if (window.voapps) await refreshArtifacts();
         } else throw new Error(data.error);
+      } catch (e) {
+        showToast(`Error: ${e.message}`, 'error');
+      }
+    }
+
+    async function openBackupsFolder() {
+      try {
+        const response = await fetch('/api/database/backups-folder');
+        const data = await response.json();
+        if (data.ok && data.path) {
+          const res = await window.voapps.openPath(data.path);
+          if (!res.ok) showToast(`Failed to open folder: ${res.error}`, 'error');
+        } else throw new Error(data.error || 'Unknown error');
       } catch (e) {
         showToast(`Error: ${e.message}`, 'error');
       }
@@ -3385,7 +3440,7 @@
 
       if (source === 'csv') {
         if (uploadBtn) uploadBtn.style.display = 'inline-flex';
-        if (uploadedCsvFile && uploadedName) {
+        if (uploadedCsvFiles.length > 0 && uploadedName) {
           uploadedName.style.display = 'inline';
           if (runBtn) runBtn.style.display = 'inline-flex';
         }
@@ -3406,6 +3461,9 @@
       document.querySelectorAll('input[name="trendSource"]').forEach(radio => {
         radio.checked = false;
       });
+      uploadedCsvFiles = [];
+      $('csvFileUpload').value = '';
+      $('uploadedFileName').textContent = '';
       updateTrendSourceUI();
     };
 
@@ -3427,25 +3485,28 @@
 
     $('uploadCsvBtn').onclick = () => $('csvFileUpload').click();
 
-    let uploadedCsvFile = null;
+    let uploadedCsvFiles = [];
 
     $('csvFileUpload').onchange = (e) => {
-      const file = e.target.files[0];
-      if (file) {
-        uploadedCsvFile = file;
-        $('uploadedFileName').textContent = file.name;
-        $('uploadedFileName').title = file.name; // Show full name on hover
-        log(`CSV loaded: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
-        updateTrendSourceUI(); // Update button visibility
+      const files = Array.from(e.target.files);
+      if (files.length > 0) {
+        uploadedCsvFiles = files;
+        const label = files.length === 1
+          ? `${files[0].name} (${(files[0].size / 1024).toFixed(1)} KB)`
+          : `${files.length} files selected`;
+        $('uploadedFileName').textContent = label;
+        $('uploadedFileName').title = files.map(f => f.name).join('\n');
+        files.forEach(f => log(`CSV loaded: ${f.name} (${(f.size / 1024).toFixed(1)} KB)`));
+        updateTrendSourceUI();
       } else {
-        uploadedCsvFile = null;
+        uploadedCsvFiles = [];
         $('uploadedFileName').textContent = '';
         updateTrendSourceUI();
       }
     };
 
     $('runAnalyzerBtn').onclick = async () => {
-      if (!uploadedCsvFile) {
+      if (uploadedCsvFiles.length === 0) {
         showToast('No CSV file selected', 'error');
         return;
       }
@@ -3456,17 +3517,21 @@
       setLocked(true);
       setStatus('Analyzing...', 'running');
       log(`Starting Delivery Intelligence Report...`);
-      log(`  File: ${uploadedCsvFile.name}`);
+      uploadedCsvFiles.forEach(f => log(`  File: ${f.name}`));
       log(`  Min Consecutive: ${minConsec}`);
       log(`  Min Days Span: ${minSpan}`);
 
       try {
         const formData = new FormData();
-        formData.append('csv', await uploadedCsvFile.text());
+        // Send all selected CSV files as actual file blobs (not text strings)
+        for (const file of uploadedCsvFiles) {
+          formData.append('csv', file, file.name);
+        }
+        formData.append('file_count', uploadedCsvFiles.length);
         formData.append('min_consec_unsuccessful', minConsec);
         formData.append('min_run_span_days', minSpan);
 
-        log('Uploading and processing CSV...');
+        log(`Uploading and processing ${uploadedCsvFiles.length} CSV file(s)...`);
         updateProgress(-1, 100, 'Analyzing data...'); // -1 = indeterminate
 
         const response = await fetch('/api/analyze-csv', {
@@ -3487,15 +3552,25 @@
 
         log(`✓ Analysis complete!`);
         log(`  Output: ${data.artifacts?.analysisPath || 'Excel file generated'}`);
-        showToast('Analysis complete!', 'success', 5000);
 
         if (window.voapps) await refreshArtifacts();
+
+        const analysisPathResult = data.artifacts?.analysisPath;
+        showActionToast('Analysis complete!', 'success',
+          analysisPathResult ? 'Open Analysis' : null,
+          analysisPathResult ? async () => {
+            const res = await window.voapps.openPath(analysisPathResult);
+            if (!res.ok) log(`Failed to open: ${res.error}`);
+          } : null
+        );
 
       } catch (e) {
         setLocked(false);
         setStatus('Error', 'error');
         log(`ERROR: ${e.message}`);
-        showToast(`Analysis failed: ${e.message}`, 'error', 5000);
+        // Try to refresh artifacts so log button becomes available
+        if (window.voapps) { try { await refreshArtifacts(); } catch (_) {} }
+        showToast(`Analysis failed: ${e.message}`, 'error', 0);
       }
     };
 
@@ -3525,22 +3600,44 @@
       try {
         updateProgress(0, 100, 'Querying database...');
 
-        const response = await fetch('/api/analyze-database', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            start_date: startDate,
-            end_date: endDate,
-            min_consec_unsuccessful: minConsec,
-            min_run_span_days: minSpan,
-            client_prefix: clientPrefix
-          })
-        });
+        // Large DB scans can take many minutes — use a 2-hour timeout
+        const dbAbort = new AbortController();
+        const dbTimeout = setTimeout(() => dbAbort.abort(), 2 * 60 * 60 * 1000);
+        let response;
+        try {
+          response = await fetch('/api/analyze-database', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: dbAbort.signal,
+            body: JSON.stringify({
+              start_date: startDate,
+              end_date: endDate,
+              min_consec_unsuccessful: minConsec,
+              min_run_span_days: minSpan,
+              client_prefix: clientPrefix
+            })
+          });
+        } finally {
+          clearTimeout(dbTimeout);
+        }
 
         const data = await response.json();
 
         if (!response.ok || !data.ok) {
-          throw new Error(data.error || 'Analysis failed');
+          // Capture logPath from error response so we can still open it
+          const errLogPath = data.artifacts?.logPath;
+          if (errLogPath && window.voapps) {
+            // Manually enable the log button before throwing
+            $('logPath').textContent = errLogPath;
+            $('openLogBtn').disabled = false;
+            $('openLogBtn').onclick = async () => {
+              const res = await window.voapps.openPath(errLogPath);
+              if (!res.ok) log(`Failed: ${res.error}`);
+            };
+          }
+          const err = new Error(data.error || 'Analysis failed');
+          err.logPath = errLogPath;
+          throw err;
         }
 
         updateProgress(100, 100, 'Complete');
@@ -3551,15 +3648,32 @@
         log(`✓ Database analysis complete!`);
         log(`  Rows analyzed: ${data.rowCount?.toLocaleString() || 0}`);
         log(`  Output: ${data.artifacts?.analysisPath || 'Excel file generated'}`);
-        showToast('Database analysis complete!', 'success', 5000);
 
         if (window.voapps) await refreshArtifacts();
+
+        const dbAnalysisPath = data.artifacts?.analysisPath;
+        showActionToast('Database analysis complete!', 'success',
+          dbAnalysisPath ? 'Open Analysis' : null,
+          dbAnalysisPath ? async () => {
+            const res = await window.voapps.openPath(dbAnalysisPath);
+            if (!res.ok) log(`Failed to open: ${res.error}`);
+          } : null
+        );
 
       } catch (e) {
         setLocked(false);
         setStatus('Error', 'error');
         log(`ERROR: ${e.message}`);
-        showToast(`Analysis failed: ${e.message}`, 'error', 5000);
+        // Refresh artifacts to enable Log button even on failure
+        if (window.voapps) { try { await refreshArtifacts(); } catch (_) {} }
+        const errLogPath = e.logPath || null;
+        showActionToast(`Analysis failed: ${e.message}`, 'error',
+          errLogPath && window.voapps ? 'Open Log' : null,
+          errLogPath && window.voapps ? async () => {
+            const res = await window.voapps.openPath(errLogPath);
+            if (!res.ok) log(`Failed to open: ${res.error}`);
+          } : null
+        );
       }
     };
 
@@ -3911,6 +4025,10 @@
       setLocked(true);
       setStatus('Running...', 'running');
 
+      // Reset Analysis button from any previous run so it doesn't show stale state
+      const _analysisBtn = $('openAnalysisBtn');
+      if (_analysisBtn) { _analysisBtn.style.display = 'none'; _analysisBtn.disabled = true; }
+
       const taskName = isPhoneSearch ? 'Search' : isBulkExport ? 'Export' : 'Combine';
       log(`Starting ${taskName}...`);
 
@@ -4001,7 +4119,12 @@
         });
 
         const data = await resp.json();
-        if (!resp.ok || !data.ok) throw new Error(data.error || 'Failed');
+        if (!resp.ok || !data.ok) {
+          // Preserve logPath from error response so we can enable the Open Log button
+          const err = new Error(data.error || 'Failed');
+          err.logPath = data.artifacts?.logPath || null;
+          throw err;
+        }
 
         setLocked(false);
         setStatus('Done', 'done');
@@ -4041,7 +4164,18 @@
         setLocked(false);
         setStatus('Error', 'error');
         log(`ERROR: ${e.message}`);
-        showToast(`Failed: ${e.message}`, 'error', 5000);
+        // Refresh artifacts to enable Open Log button (logPath is set before the error occurs)
+        if (window.voapps) { try { await refreshArtifacts(); } catch (_) {} }
+        // If server sent logPath explicitly, wire up the log button manually as a fallback
+        if (e.logPath && window.voapps) {
+          $('logPath').textContent = e.logPath;
+          $('openLogBtn').disabled = false;
+          $('openLogBtn').onclick = async () => {
+            const res = await window.voapps.openPath(e.logPath);
+            if (!res.ok) log(`Failed: ${res.error}`);
+          };
+        }
+        showToast(`Failed: ${e.message}`, 'error', 0);
       } finally {
         if (eventSource) { eventSource.close(); eventSource = null; }
         currentJobId = null;
@@ -4438,7 +4572,7 @@
     // INIT
     // ============================================================================
     (async () => {
-      log('VoApps Tools v3.4.0');
+      log('VoApps Tools v3.4.1');
 
       loadSettings();
       initLogFilter();

@@ -1,6 +1,6 @@
 {
   "name": "voapps-tools",
-  "version": "3.4.0",
+  "version": "3.4.1",
   "description": "VoApps DDVM Campaign Analysis Tool - Delivery Intelligence Platform",
   "main": "main.js",
   "author": "Brett Menzie",
@@ -12,11 +12,13 @@
     "build:win": "electron-builder --win --x64",
     "build:win:arm64": "electron-builder --win --arm64",
     "build:all": "electron-builder --mac --win",
-    "update-version": "node scripts/update-version.js"
+    "update-version": "node scripts/update-version.js",
+    "postinstall": "node-pre-gyp install --directory node_modules/duckdb --update-binary 2>/dev/null || true"
   },
   "build": {
     "appId": "com.voapps.tools",
     "productName": "VoApps Tools",
+    "npmRebuild": false,
     "directories": {
       "output": "dist"
     },
@@ -25,6 +27,8 @@
       "preload.js",
       "server.js",
       "trendAnalyzer.js",
+      "analysisWorker.js",
+      "dbExportWorker.js",
       "version.js",
       "public/**/*",
       "node_modules/**/*",
