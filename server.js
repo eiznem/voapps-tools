@@ -1,13 +1,28 @@
 /**
  * VoApps Tools — Local Server (Electron)
- * Version: 3.2.0 - Delivery Intelligence Platform
+ * Version: 3.4.1 - Executive Summary & Timezone Selection
  *
- * NEW IN v3.2.0:
+ * NEW IN v3.4.1:
+ * - Executive Summary search type for aggregating campaign deliverability statistics
+ * - User-selectable timezone for timestamp display (ET, CT, MT, PT, UTC)
+ * - Reorganized Report Output settings (combined headers, folder, timezone)
+ * - Fixed Windows update checker to find .exe instead of .dmg
+ *
+ * FROM v3.3.1:
+ * - All timestamps normalized to user-selected timezone (default: UTC-7 VoApps Time)
+ *
+ * FROM v3.3.0:
+ * - Windows x64 support with native HTTPS fetch
+ * - Configurable output folder (Documents by default)
+ * - Fixed success rate calculation (only counts delivery attempts with timestamps)
+ * - Streaming database export to prevent OOM on large datasets
+ * - Cross-platform settings storage
+ *
+ * FROM v3.2.0:
  * - Delivery Intelligence Platform with TN Health Classification
  * - Attempt Index tracking, Variability Score, Retry Decay Curve
  * - Day-of-week recommendations for accounts/messages
  * - Global Insights with timezone detection
- * - Official Excel tables, empty log cleanup
  *
  * FROM v3.1.0:
  * - Live log streaming with SSE (Server-Sent Events)
@@ -20,12 +35,43 @@
  * - Three output modes: CSV only, Database only, or Both
  * - Database management endpoints
  * - SQL query interface
- * - Automatic duplicate record handling via MD5 row IDs
  */
 
 "use strict";
 
 const http = require("http");
+const https = require("https");
+
+// Fix for SSL certificate issues in Electron
+// - On macOS: Use mac-ca to access Apple Keychain certificate store (fixes VPN issues)
+// - On Windows: Use permissive agent for trusted VoApps domains
+const TRUSTED_DOMAINS = ['directdropvoicemail.voapps.com', 'voapps.com'];
+let httpsAgent = null;
+
+function isTrustedDomain(hostname) {
+  return TRUSTED_DOMAINS.some(d => hostname.includes(d));
+}
+
+// macOS: Load system certificates from Keychain
+// This fixes SSL issues when behind corporate VPNs or proxy servers
+if (process.platform === 'darwin') {
+  try {
+    const macCa = require('mac-ca');
+    // Add macOS Keychain certificates to the trusted CA list
+    macCa.addToGlobalAgent();
+    console.log('[SSL] macOS detected - added Keychain certificates to trusted store');
+  } catch (e) {
+    console.warn('[SSL] mac-ca not available, using default certificate store:', e.message);
+  }
+}
+
+// Windows: Create permissive agent for trusted VoApps domains
+if (process.platform === 'win32') {
+  httpsAgent = new https.Agent({
+    rejectUnauthorized: false  // Skip SSL verification for VoApps API (trusted domain)
+  });
+  console.log('[SSL] Windows detected - using permissive HTTPS agent for VoApps API');
+}
 const fs = require("fs");
 const fsp = require("fs/promises");
 const path = require("path");
@@ -33,10 +79,129 @@ const os = require("os");
 const { parse: parseUrl } = require("url");
 const { createWriteStream } = require('fs');
 const { generateTrendAnalysis } = require("./trendAnalyzer");
+const { Worker } = require('worker_threads');
 const { VERSION, VERSION_NAME } = require('./version');
 
-// DuckDB integration
-const duckdb = require('duckdb');
+/**
+ * Run generateTrendAnalysis in a worker thread so the main/UI thread stays responsive.
+ */
+function runAnalysisInWorker(inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(path.join(__dirname, 'analysisWorker.js'), {
+      workerData: { inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel },
+      // Allow up to 6GB heap for large dataset analysis
+      resourceLimits: { maxOldGenerationSizeMb: 6144 }
+    });
+    worker.on('message', (msg) => {
+      if (msg.ok) resolve();
+      else reject(new Error(msg.error || 'Worker analysis failed'));
+    });
+    worker.on('error', reject);
+    worker.on('exit', (code) => {
+      if (code !== 0) reject(new Error(`Analysis worker exited with code ${code}`));
+    });
+  });
+}
+
+// Cross-platform fetch implementation
+// On Windows, we always use the https module with a permissive agent due to SSL certificate issues
+// On other platforms, we use native fetch
+async function crossPlatformFetch(url, options = {}) {
+  const urlObj = new URL(url);
+  const isWindows = process.platform === 'win32';
+  const isTrusted = isTrustedDomain(urlObj.hostname);
+
+  // On Windows for trusted domains, always use https module with permissive agent
+  // This avoids SSL certificate store issues that are common on Windows
+  if (!isWindows && typeof fetch === 'function') {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+      return response;
+    } catch (fetchError) {
+      console.warn('[Fetch] Native fetch failed:', fetchError.message);
+      // Fall through to https module
+    }
+  }
+
+  // Use https module (required on Windows, fallback on other platforms)
+  return new Promise((resolve, reject) => {
+    const requestOptions = {
+      hostname: urlObj.hostname,
+      port: urlObj.port || 443,
+      path: urlObj.pathname + urlObj.search,
+      method: options.method || 'GET',
+      headers: options.headers || {},
+      timeout: 30000,
+      // On Windows, use permissive agent for trusted VoApps domains
+      agent: (isWindows && isTrusted && httpsAgent) ? httpsAgent : undefined
+    };
+
+    const req = https.request(requestOptions, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        resolve({
+          ok: res.statusCode >= 200 && res.statusCode < 300,
+          status: res.statusCode,
+          statusText: res.statusMessage,
+          headers: {
+            get: (name) => res.headers[name.toLowerCase()],
+            forEach: (cb) => Object.entries(res.headers).forEach(([k, v]) => cb(v, k))
+          },
+          text: async () => data,
+          json: async () => JSON.parse(data)
+        });
+      });
+    });
+
+    req.on('error', (err) => {
+      // If SSL certificate error on Windows, provide a helpful message
+      if (err.message?.includes('certificate') || err.code === 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY') {
+        console.error('[HTTPS] SSL Certificate Error - this may be a Windows CA store issue');
+        console.error('[HTTPS] Try running: set NODE_TLS_REJECT_UNAUTHORIZED=0 (not recommended for production)');
+      }
+      reject(err);
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Request timeout (30s)'));
+    });
+
+    if (options.signal) {
+      options.signal.addEventListener('abort', () => {
+        req.destroy();
+        reject(new Error('Request aborted'));
+      });
+    }
+
+    if (options.body) {
+      req.write(options.body);
+    }
+
+    req.end();
+  });
+}
+
+// DuckDB integration - safely load with fallback for Windows compatibility
+let duckdb = null;
+let duckdbLoadError = null;
+try {
+  duckdb = require('duckdb');
+  console.log('[DuckDB] Native module loaded successfully');
+} catch (e) {
+  duckdbLoadError = e.message;
+  console.warn('[DuckDB] Failed to load native module:', e.message);
+  console.warn('[DuckDB] Database features will be disabled. CSV-only mode available.');
+}
 const crypto = require('crypto');
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
@@ -45,8 +210,11 @@ const VOAPPS_API_BASE = process.env.VOAPPS_API_BASE || "https://directdropvoicem
 
 const MAX_ROWS_PER_FILE = 500000; // Split at 500K rows for optimal analysis
 
-// Database configuration
-const DB_PATH = path.join(os.homedir(), 'Library', 'Application Support', 'VoApps Tools', 'voapps_data.duckdb');
+// Database configuration - cross-platform path
+const DB_DIR = process.platform === 'win32'
+  ? path.join(os.homedir(), 'AppData', 'Local', 'VoApps Tools')
+  : path.join(os.homedir(), 'Library', 'Application Support', 'VoApps Tools');
+const DB_PATH = path.join(DB_DIR, 'voapps_data.duckdb');
 let db = null;
 let dbReady = false;
 
@@ -131,16 +299,30 @@ function sendLog(jobId, message, isError = false) {
 // =============================================================================
 
 /**
+ * Check if database features are available
+ */
+function isDatabaseAvailable() {
+  return duckdb !== null;
+}
+
+/**
  * Initialize DuckDB database
  */
 async function initDatabase() {
   if (dbReady) return;
-  
+
+  // Check if DuckDB is available
+  if (!duckdb) {
+    const platform = process.platform === 'win32' ? 'Windows' : process.platform;
+    console.warn('[DuckDB] Cannot initialize - native module not loaded on', platform);
+    throw new Error(`Database features not available on ${platform}. This is normal - please use CSV output mode instead.`);
+  }
+
   try {
     // Ensure directory exists
     const dbDir = path.dirname(DB_PATH);
     await fsp.mkdir(dbDir, { recursive: true });
-    
+
     // Create database connection
     db = new duckdb.Database(DB_PATH);
     
@@ -150,6 +332,7 @@ async function initDatabase() {
         row_id VARCHAR PRIMARY KEY,
         number VARCHAR NOT NULL,
         account_id VARCHAR NOT NULL,
+        account_name VARCHAR,
         campaign_id VARCHAR,
         campaign_name VARCHAR,
         caller_number VARCHAR,
@@ -166,7 +349,14 @@ async function initDatabase() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    
+
+    // Migration: add account_name column if it doesn't exist (for existing DBs)
+    try {
+      await runQuery(`ALTER TABLE campaign_results ADD COLUMN IF NOT EXISTS account_name VARCHAR`);
+    } catch (e) {
+      // Ignore if already exists or not supported
+    }
+
     // Create indexes for faster queries
     await runQuery(`CREATE INDEX IF NOT EXISTS idx_number ON campaign_results(number)`);
     await runQuery(`CREATE INDEX IF NOT EXISTS idx_account ON campaign_results(account_id)`);
@@ -205,6 +395,177 @@ function runQuery(sql, params = []) {
 function generateRowId(row) {
   const data = `${row.number}|${row.account_id}|${row.campaign_id}|${row.voapps_timestamp}`;
   return crypto.createHash('md5').update(data).digest('hex');
+}
+
+/**
+ * Timezone configuration - maps user-friendly names to IANA timezones
+ * VoApps Time is a constant UTC-7 (no DST), used for consistent day slicing
+ */
+const TIMEZONE_CONFIG = {
+  'America/New_York': { label: 'ET', name: 'Eastern Time' },
+  'America/Chicago': { label: 'CT', name: 'Central Time' },
+  'America/Denver': { label: 'MT', name: 'Mountain Time' },
+  'America/Los_Angeles': { label: 'PT', name: 'Pacific Time' },
+  'UTC': { label: 'UTC', name: 'UTC' },
+  'VoApps': { label: 'VoApps', name: 'VoApps Time (UTC-7)' }  // Constant UTC-7, no DST
+};
+
+/**
+ * Get the current offset for a timezone at a specific date (DST-aware)
+ * @param {string} timezone - IANA timezone name or 'VoApps'
+ * @param {Date} date - The date to check offset for
+ * @returns {string} - Offset string like "-05:00" or "-04:00"
+ */
+function getTimezoneOffsetForDate(timezone, date) {
+  // VoApps Time is always UTC-7 (no DST)
+  if (timezone === 'VoApps') {
+    return '-07:00';
+  }
+
+  // UTC is always +00:00
+  if (timezone === 'UTC') {
+    return '+00:00';
+  }
+
+  try {
+    // Use Intl.DateTimeFormat to get the actual offset at the given date
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      timeZoneName: 'longOffset'
+    });
+
+    const parts = formatter.formatToParts(date);
+    const tzPart = parts.find(p => p.type === 'timeZoneName');
+
+    if (tzPart && tzPart.value) {
+      // Extract offset from "GMT-05:00" or "GMT-04:00" format
+      const match = tzPart.value.match(/GMT([+-]\d{2}:\d{2})/);
+      if (match) {
+        return match[1];
+      }
+    }
+
+    // Fallback: calculate offset manually
+    const utcDate = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }));
+    const tzDate = new Date(date.toLocaleString('en-US', { timeZone: timezone }));
+    const diffMinutes = (tzDate - utcDate) / 60000;
+    const hours = Math.floor(Math.abs(diffMinutes) / 60);
+    const minutes = Math.abs(diffMinutes) % 60;
+    const sign = diffMinutes >= 0 ? '+' : '-';
+    return `${sign}${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  } catch (e) {
+    // Default to UTC-7 if timezone is invalid
+    return '-07:00';
+  }
+}
+
+/**
+ * Normalize timestamp to user's selected timezone (DST-aware)
+ * Supports IANA timezone names (e.g., "America/New_York") and "VoApps" for constant UTC-7
+ *
+ * @param {string} timestamp - The timestamp to normalize
+ * @param {string} targetTimezone - Target timezone (IANA name or 'VoApps'), defaults to user setting
+ *
+ * Examples:
+ *   "2025-03-15 09:47:05 -05:00" with ET → "2025-03-15 09:47:05 -04:00" (DST active)
+ *   "2025-01-15 09:47:05 -05:00" with ET → "2025-01-15 09:47:05 -05:00" (no DST)
+ *   "2025-11-16 14:47:05 UTC" with VoApps → "2025-11-16 07:47:05 -07:00" (constant)
+ */
+function normalizeToVoAppsTime(timestamp, targetTimezone = null) {
+  if (!timestamp || typeof timestamp !== 'string') return timestamp;
+
+  const ts = timestamp.trim();
+  if (!ts) return timestamp;
+
+  // Use user's selected timezone if not specified
+  const timezone = targetTimezone || getTimezone();
+
+  try {
+    let date;
+
+    // Parse timestamp based on format
+    if (ts.includes(' UTC')) {
+      // Format: "2025-11-16 14:47:05 UTC"
+      const dateStr = ts.replace(' UTC', '');
+      date = new Date(dateStr + 'Z');  // Treat as UTC
+    } else {
+      // Format: "2025-11-16 09:47:05 -05:00" or similar
+      const match = ts.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})\s*([+-]\d{2}:\d{2})$/);
+      if (match) {
+        const [, datePart, timePart, offsetPart] = match;
+        // Convert to ISO format for parsing
+        date = new Date(`${datePart}T${timePart}${offsetPart}`);
+      } else {
+        // Try direct parsing as fallback
+        date = new Date(ts);
+      }
+    }
+
+    if (isNaN(date.getTime())) {
+      return timestamp;  // Return original if parsing failed
+    }
+
+    // Get the DST-aware offset for this specific date
+    const offset = getTimezoneOffsetForDate(timezone, date);
+    const offsetHours = parseTimezoneOffset(offset);
+
+    // Convert to target timezone
+    const utcMs = date.getTime();
+    const targetOffsetMs = offsetHours * 60 * 60 * 1000;
+    const targetDate = new Date(utcMs + targetOffsetMs);
+
+    // Format as YYYY-MM-DD HH:MM:SS [offset]
+    const year = targetDate.getUTCFullYear();
+    const month = String(targetDate.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(targetDate.getUTCDate()).padStart(2, '0');
+    const hours = String(targetDate.getUTCHours()).padStart(2, '0');
+    const minutes = String(targetDate.getUTCMinutes()).padStart(2, '0');
+    const seconds = String(targetDate.getUTCSeconds()).padStart(2, '0');
+
+    // Normalise +00:00 to the more readable "UTC" label
+    const offsetLabel = offset === '+00:00' ? 'UTC' : offset;
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds} ${offsetLabel}`;
+  } catch (e) {
+    return timestamp;  // Return original on any error
+  }
+}
+
+/**
+ * Parse a timezone offset string like "-07:00" or "+05:30" into hours
+ * @param {string} offset - Timezone offset string (e.g., "-07:00", "+00:00")
+ * @returns {number} - Offset in hours (e.g., -7, 0, 5.5)
+ */
+function parseTimezoneOffset(offset) {
+  if (!offset || typeof offset !== 'string') return -7; // Default to UTC-7
+
+  const match = offset.match(/^([+-])(\d{2}):(\d{2})$/);
+  if (!match) return -7;
+
+  const sign = match[1] === '+' ? 1 : -1;
+  const hours = parseInt(match[2], 10);
+  const minutes = parseInt(match[3], 10);
+
+  return sign * (hours + minutes / 60);
+}
+
+/**
+ * Get timezone label for display (e.g., "ET" for America/New_York)
+ * @param {string} timezone - IANA timezone name or 'VoApps'
+ * @returns {string} - Human-readable timezone label
+ */
+function getTimezoneLabel(timezone) {
+  if (TIMEZONE_CONFIG[timezone]) {
+    return TIMEZONE_CONFIG[timezone].label;
+  }
+  // Fallback for legacy offset format
+  const legacyLabels = {
+    '-05:00': 'ET',
+    '-06:00': 'CT',
+    '-07:00': 'MT',
+    '-08:00': 'PT',
+    '+00:00': 'UTC'
+  };
+  return legacyLabels[timezone] || timezone;
 }
 
 /**
@@ -289,14 +650,15 @@ async function insertRows(rows, logger = null) {
           // Insert new row
           await runQuery(`
             INSERT INTO campaign_results (
-              row_id, number, account_id, campaign_id, campaign_name,
+              row_id, number, account_id, account_name, campaign_id, campaign_name,
               caller_number, caller_number_name, message_id, message_name, message_description,
               voapps_result, voapps_code, voapps_timestamp, campaign_url, target_date
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `, [
             rowId,
             row.number || '',
             row.account_id || '',
+            row.account_name || '',
             row.campaign_id || '',
             row.campaign_name || '',
             row.caller_number || '',
@@ -330,12 +692,28 @@ async function insertRows(rows, logger = null) {
  * Get database statistics
  */
 async function getDatabaseStats() {
+  // Check if DuckDB is available at all
+  if (!isDatabaseAvailable()) {
+    return {
+      ready: false,
+      available: false,
+      error: duckdbLoadError || 'DuckDB native module not loaded',
+      totalRows: 0,
+      uniqueNumbers: 0,
+      uniqueCampaigns: 0,
+      dateRange: null,
+      dbSize: 0,
+      dbPath: null
+    };
+  }
+
   if (!dbReady) {
     try {
       await initDatabase();
     } catch (err) {
       return {
         ready: false,
+        available: true,
         error: err.message,
         totalRows: 0,
         uniqueNumbers: 0,
@@ -461,45 +839,84 @@ async function compactDatabase() {
 }
 
 /**
- * Export database to CSV
+ * Export database to CSV using streaming to avoid OOM on large datasets
  */
 async function exportDatabase(outputPath) {
+  if (!isDatabaseAvailable()) {
+    return { success: false, error: 'Database not available' };
+  }
   if (!dbReady) await initDatabase();
-  
+
   try {
-    const rows = await runQuery(`
-      SELECT * FROM campaign_results
-      ORDER BY target_date DESC, voapps_timestamp DESC
-    `);
-    
-    if (rows.length === 0) {
-      return {
-        success: false,
-        error: 'No data to export'
-      };
+    // Get count first to check if there's data
+    const countResult = await runQuery('SELECT COUNT(*) as cnt FROM campaign_results');
+    const totalRows = Number(countResult[0]?.cnt || 0);
+
+    if (totalRows === 0) {
+      return { success: false, error: 'No data to export' };
     }
-    
-    // Write to CSV
-    const headers = Object.keys(rows[0]);
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => headers.map(h => {
-        const val = row[h];
-        // Handle null/undefined
-        if (val === null || val === undefined) return '';
-        // Convert to string (handles numbers, BigInt, dates, etc.)
-        const str = String(val);
-        // Escape if contains comma or quote
-        return str.includes(',') || str.includes('"') ? `"${str.replace(/"/g, '""')}"` : str;
-      }).join(','))
-    ].join('\n');
-    
-    await fsp.writeFile(outputPath, csvContent, 'utf-8');
-    
+
+    // Get column names from schema
+    const schemaResult = await runQuery(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'campaign_results'
+      ORDER BY ordinal_position
+    `);
+    const headers = schemaResult.map(r => r.column_name);
+
+    // Create write stream for memory-efficient export
+    const writeStream = fs.createWriteStream(outputPath, { encoding: 'utf-8' });
+
+    // Write headers
+    writeStream.write(headers.join(',') + '\n');
+
+    // Stream rows in batches to avoid OOM
+    const BATCH_SIZE = 50000;
+    let offset = 0;
+    let rowCount = 0;
+
+    while (offset < totalRows) {
+      const batchRows = await runQuery(`
+        SELECT * FROM campaign_results
+        ORDER BY target_date DESC, voapps_timestamp DESC
+        LIMIT ${BATCH_SIZE} OFFSET ${offset}
+      `);
+
+      if (batchRows.length === 0) break;
+
+      // Write batch to stream
+      for (const row of batchRows) {
+        const line = headers.map(h => {
+          let val = row[h];
+          if (val === null || val === undefined) return '';
+          // Normalize timestamps to VoApps Time (UTC-7)
+          if (h === 'voapps_timestamp' && val) {
+            val = normalizeToVoAppsTime(val);
+          }
+          const str = String(val);
+          return str.includes(',') || str.includes('"') ? `"${str.replace(/"/g, '""')}"` : str;
+        }).join(',');
+        writeStream.write(line + '\n');
+      }
+
+      rowCount += batchRows.length;
+      offset += BATCH_SIZE;
+
+      // Log progress for large exports
+      if (totalRows > BATCH_SIZE) {
+        console.log(`[Export] ${rowCount.toLocaleString()} / ${totalRows.toLocaleString()} rows written`);
+      }
+    }
+
+    // Close the stream
+    await new Promise((resolve, reject) => {
+      writeStream.end((err) => err ? reject(err) : resolve());
+    });
+
     return {
       success: true,
       path: outputPath,
-      rowCount: rows.length
+      rowCount
     };
   } catch (err) {
     return {
@@ -598,19 +1015,90 @@ function getFilenameSuffix(directory, prefix) {
   return `${dateStr}_${counterStr}`;
 }
 
+// Settings management
+const SETTINGS_PATH = process.platform === 'win32'
+  ? path.join(os.homedir(), 'AppData', 'Local', 'VoApps Tools', 'settings.json')
+  : path.join(os.homedir(), 'Library', 'Application Support', 'VoApps Tools', 'settings.json');
+
+function getDefaultOutputFolder() {
+  // Use Documents folder as default instead of Downloads
+  return path.join(os.homedir(), 'Documents', 'VoApps Tools');
+}
+
+function loadSettings() {
+  try {
+    if (fs.existsSync(SETTINGS_PATH)) {
+      const data = fs.readFileSync(SETTINGS_PATH, 'utf-8');
+      return JSON.parse(data);
+    }
+  } catch (e) {
+    console.warn('[Settings] Failed to load settings:', e.message);
+  }
+  return {
+    outputFolder: getDefaultOutputFolder(),
+    timezone: '-07:00'  // Default to VoApps Time (UTC-7)
+  };
+}
+
+function saveSettings(settings) {
+  try {
+    const dir = path.dirname(SETTINGS_PATH);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf-8');
+    console.log('[Settings] Saved to', SETTINGS_PATH);
+    return true;
+  } catch (e) {
+    console.error('[Settings] Failed to save settings:', e.message);
+    return false;
+  }
+}
+
+function getOutputFolder() {
+  const settings = loadSettings();
+  return settings.outputFolder || getDefaultOutputFolder();
+}
+
+function setOutputFolder(folderPath) {
+  const settings = loadSettings();
+  settings.outputFolder = folderPath;
+  return saveSettings(settings);
+}
+
+function getTimezone() {
+  const settings = loadSettings();
+  // Default to VoApps Time (constant UTC-7) for consistency
+  // Migrate legacy offset format to IANA timezone names
+  const tz = settings.timezone || 'VoApps';
+  const legacyMapping = {
+    '-05:00': 'America/New_York',
+    '-06:00': 'America/Chicago',
+    '-07:00': 'VoApps',  // Keep as VoApps for constant UTC-7
+    '-08:00': 'America/Los_Angeles',
+    '+00:00': 'UTC'
+  };
+  return legacyMapping[tz] || tz;
+}
+
+function setTimezone(timezone) {
+  const settings = loadSettings();
+  settings.timezone = timezone;
+  return saveSettings(settings);
+}
+
 function createOutputFolders() {
-  const base = path.join(os.homedir(), "Downloads", "VoApps Tools");
+  const base = getOutputFolder();
   const logs = path.join(base, "Logs");
   const output = path.join(base, "Output");
   const phoneHistory = path.join(output, "Phone Number History");
   const combineCampaigns = path.join(output, "Combine Campaigns");
   const bulkExport = path.join(output, "Bulk Campaign Export");
+  const executiveSummary = path.join(output, "Executive Summary");
 
-  for (const dir of [base, logs, output, phoneHistory, combineCampaigns, bulkExport]) {
+  for (const dir of [base, logs, output, phoneHistory, combineCampaigns, bulkExport, executiveSummary]) {
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  return { base, logs, phoneHistory, combineCampaigns, bulkExport };
+  return { base, logs, phoneHistory, combineCampaigns, bulkExport, executiveSummary };
 }
 
 function createLogger(logPath, errorPath, verbosity = "normal", jobId = null) {
@@ -820,58 +1308,52 @@ async function callVoAppsApi(endpoint, apiKey, logger = null, verbosity = "norma
     logger(`[API] ${url}`);
     logger(`      curl -H "Authorization: Bearer ${maskedKey}" -H "Content-Type: application/json" -H "Accept: application/json" "${url}"`);
   }
-  
+
   // Debug logging for troubleshooting
   console.log(`[API Request] ${url}`);
   console.log(`[API Request] Auth header length: ${apiKey.length} chars`);
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
-
   try {
-    const response = await fetch(url, {
+    // Use cross-platform fetch for Windows compatibility
+    const response = await crossPlatformFetch(url, {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
         Accept: "application/json"
-      },
-      signal: controller.signal
+      }
     });
-
-    clearTimeout(timeoutId);
 
     if (!response.ok) {
       let errorDetails = '';
       let responseHeaders = {};
-      
+
       try {
         // Capture headers
         response.headers.forEach((value, key) => {
           responseHeaders[key] = value;
         });
-        
+
         const contentType = response.headers.get('content-type') || 'unknown';
         const text = await response.text();
         errorDetails = text || response.statusText || 'No error details';
-        
+
         // Enhanced logging
         console.error(`[VoApps API Error] ${response.status} ${url}`);
         console.error(`[VoApps API Error] Content-Type: ${contentType}`);
         console.error(`[VoApps API Error] Response Headers:`, responseHeaders);
         console.error(`[VoApps API Error] Response Body (length ${text.length}): ${text.substring(0, 500)}`);
-        
+
       } catch (e) {
         errorDetails = response.statusText || 'Could not read error response';
         console.error(`[VoApps API Error] Failed to read response:`, e.message);
       }
-      
+
       throw new Error(`HTTP ${response.status}: ${errorDetails}`);
     }
 
     return await response.json();
   } catch (err) {
-    clearTimeout(timeoutId);
-    if (err.name === "AbortError") throw new Error("Request timeout (30s)");
+    console.error(`[API Error] ${url}:`, err.message);
     throw err;
   }
 }
@@ -926,6 +1408,37 @@ async function fetchAllAccounts(apiKey, logger = null, verbosity = "normal", fil
     }
     throw err;
   }
+}
+
+/**
+ * Fetch account names from API
+ * Returns a map of accountId -> accountName
+ */
+async function fetchAccountNames(apiKey, accountIds, logger = null, verbosity = "normal") {
+  const accountNames = {};
+
+  try {
+    const data = await retryableApiCall('/accounts', apiKey, logger, verbosity);
+
+    if (Array.isArray(data.accounts)) {
+      for (const account of data.accounts) {
+        const accountId = String(account.id);
+        if (accountIds.includes(accountId)) {
+          accountNames[accountId] = account.name || '';
+        }
+      }
+    }
+
+    if (logger && verbosity !== 'minimal') {
+      logger(`✅ Fetched account names for ${Object.keys(accountNames).length} account(s)`);
+    }
+  } catch (err) {
+    if (logger) {
+      logger(`⚠️  Could not fetch account names: ${err.message}`);
+    }
+  }
+
+  return accountNames;
 }
 
 /**
@@ -989,7 +1502,7 @@ async function fetchCallerNumbers(apiKey, accountIds, logger = null, verbosity =
 }
 
 async function fetchAllCampaigns(apiKey, accountIds, startDate, endDate, logger = null, verbosity = "normal", jobId = null) {
-  const bufferDays = 30;
+  const bufferDays = 7;
   const start = new Date(startDate);
   start.setDate(start.getDate() - bufferDays);
   const bufferedStart = dateToYMD(start);
@@ -1211,13 +1724,16 @@ async function runNumberSearch(config) {
 
     log(`\n📊 Found ${campaigns.length} campaigns to search`);
 
-    // Fetch caller numbers, messages, and account timezones
+    // Fetch caller numbers, messages, account timezones, and account names
     const callerNumberNames = include_caller
       ? await fetchCallerNumbers(api_key, account_ids, log, "normal")
       : {};
 
     // Fetch account timezones for discrepancy detection
     const accountTimezones = await fetchAccountTimezones(api_key, account_ids, log, "normal");
+
+    // Fetch account names
+    const accountNames = await fetchAccountNames(api_key, account_ids, log, "normal");
 
     const messageInfo = {};
     if (include_message_meta) {
@@ -1242,7 +1758,16 @@ async function runNumberSearch(config) {
 
     // Search campaigns
     const allMatches = [];
-    const numberSet = new Set(numbers.map(n => String(n).trim()));
+    // Normalize phone numbers - strip non-digits, handle +1 prefix
+    const normalizedNumbers = numbers.map(n => {
+      let num = String(n).replace(/\D/g, '');
+      // Remove leading 1 if 11 digits starting with 1
+      if (num.length === 11 && num.startsWith('1')) {
+        num = num.slice(1);
+      }
+      return num;
+    }).filter(n => n.length === 10);
+    const numberSet = new Set(normalizedNumbers);
 
     log(`\n🔍 Searching ${campaigns.length} campaigns for ${numberSet.size} numbers...`);
 
@@ -1319,6 +1844,7 @@ async function runNumberSearch(config) {
             allMatches.push({
               number: num,
               account_id: accountId,
+              account_name: accountNames[accountId] || '',
               campaign_id: campaignId,
               campaign_name: campaign.name || '',
               caller_number: callerNum,
@@ -1328,7 +1854,7 @@ async function runNumberSearch(config) {
               message_description: messageInfo[messageKey]?.description || '',
               voapps_result: row.voapps_result || '',
               voapps_code: row.voapps_code || '',
-              voapps_timestamp: row.voapps_timestamp || '',
+              voapps_timestamp: normalizeToVoAppsTime(row.voapps_timestamp || ''),
               campaign_url: `https://directdropvoicemail.voapps.com/accounts/${accountId}/campaigns/${campaignId}`,
               target_date: campaign.target_date || ''
             });
@@ -1358,7 +1884,7 @@ async function runNumberSearch(config) {
       csvPath = path.join(folders.phoneHistory, `${filePrefix}phone_search_${suffix}.csv`);
 
       const headers = [
-        'number', 'account_id', 'campaign_id', 'campaign_name',
+        'number', 'account_id', 'account_name', 'campaign_id', 'campaign_name',
         'caller_number', 'caller_number_name', 'message_id', 'message_name', 'message_description',
         'voapps_result', 'voapps_code', 'voapps_timestamp', 'campaign_url'
       ];
@@ -1391,6 +1917,276 @@ async function runNumberSearch(config) {
       matches: allMatches.length,
       wasSplit,
       fileCount
+    };
+  } catch (err) {
+    log(`\n❌ Fatal error: ${err.message}`, true);
+    close();
+    throw err;
+  }
+}
+
+/**
+ * Generate Executive Summary - aggregate campaign statistics into deliverability report
+ * Produces a CSV with per-campaign statistics:
+ * campaign_id, campaign_name, account_id, target_date, records, deliverable,
+ * successful_deliveries, expired, canceled, duplicate, unsuccessful_attempts, restricted, delivery_pct
+ */
+async function generateExecutiveSummary(config) {
+  const {
+    api_key,
+    account_ids,
+    start_date,
+    end_date,
+    job_id = null
+  } = config;
+
+  const folders = createOutputFolders();
+  const suffix = getFilenameSuffix(folders.logs, 'voapps_log');
+  const logPath = path.join(folders.logs, `voapps_log_${suffix}.txt`);
+  const errorPath = path.join(folders.logs, `voapps_errors_${suffix}.txt`);
+
+  const { log, close } = createLogger(logPath, errorPath, "normal", job_id);
+
+  // Initialize job tracking with SSE support
+  if (job_id) {
+    jobs.set(job_id, {
+      id: job_id,
+      cancelled: false,
+      stream: null,
+      progress: 0,
+      status: 'starting',
+      current: 0,
+      total: 0,
+      message: 'Generating Executive Summary...',
+      logs: [],
+      logPath,
+      errorPath
+    });
+  }
+
+  // Get user's timezone preference
+  const userTimezone = getTimezone();
+  const userTimezoneLabel = getTimezoneLabel(userTimezone);
+
+  log(`📊 Executive Summary Report`);
+  log(`Accounts: ${account_ids.join(", ")}`);
+  log(`Date Range: ${start_date} to ${end_date}`);
+  log(`Timezone: ${userTimezoneLabel} (${userTimezone})`);
+
+  try {
+    // Fetch account names for the report
+    const accountNames = await fetchAccountNames(api_key, account_ids, log, "normal");
+
+    // Fetch campaigns
+    const campaigns = await fetchAllCampaigns(api_key, account_ids, start_date, end_date, log, "normal", job_id);
+
+    if (campaigns.length === 0) {
+      log("\n⚠️  No campaigns found in date range");
+      close();
+      throw new Error("No campaigns found in specified date range");
+    }
+
+    log(`\n📊 Found ${campaigns.length} campaigns to analyze`);
+
+    // Initialize progress
+    if (job_id) {
+      sendProgress(job_id, {
+        status: 'running',
+        total: campaigns.length,
+        current: 0,
+        message: 'Analyzing campaigns...'
+      });
+    }
+
+    const summaryRows = [];
+    let totalRecords = 0;
+
+    for (let i = 0; i < campaigns.length; i++) {
+      if (job_id && jobs.get(job_id)?.cancelled) {
+        throw new Error("Cancelled");
+      }
+
+      const campaign = campaigns[i];
+      const accountId = campaign.account_id;
+      const campaignId = campaign.id;
+
+      log(`\n[${i + 1}/${campaigns.length}] ${campaign.name || 'Unnamed'}`);
+
+      // Update progress
+      if (job_id) {
+        sendProgress(job_id, {
+          current: i + 1,
+          message: `Analyzing: ${campaign.name || `Campaign ${campaignId}`}`
+        });
+      }
+
+      try {
+        // Get campaign detail to extract export URL
+        const detail = await fetchCampaignDetail(api_key, accountId, campaignId);
+        const exportUrl = detail.export || detail.campaign?.export || null;
+
+        if (!exportUrl) {
+          log(`   ⚠️  No export URL available`);
+          continue;
+        }
+
+        // Fetch CSV from S3 (NO authentication)
+        const expResp = await fetch(exportUrl);
+        if (!expResp.ok) {
+          throw new Error(`Failed to download CSV: HTTP ${expResp.status}`);
+        }
+
+        const csvText = await expResp.text();
+        const { rows } = parseCsv(csvText);
+
+        // Count results by voapps_code
+        // Based on VoApps result codes:
+        // 200 = Successfully delivered -> successful_deliveries (deliverable)
+        // 300 = Expired -> expired (deliverable)
+        // 301 = Canceled -> canceled (deliverable)
+        // 400 = Unsuccessful delivery attempt -> unsuccessful_attempts (deliverable)
+        // 401 = Not a wireless number -> (not deliverable, just a record)
+        // 402 = Duplicate number -> duplicate (not deliverable)
+        // 403 = Not a valid US number -> (not deliverable, just a record)
+        // 404 = Undeliverable -> (not deliverable, just a record)
+        // 405 = Not in service -> unsuccessful_attempts (deliverable)
+        // 406 = Voicemail not setup -> unsuccessful_attempts (deliverable)
+        // 407 = Voicemail full -> unsuccessful_attempts (deliverable)
+        // 408 = Invalid caller number -> unfinished (deliverable)
+        // 409 = Invalid message id -> unfinished (deliverable)
+        // 410 = Prohibited self call -> unfinished (deliverable)
+        // 500-504 = Restricted variants -> restricted (not deliverable)
+        const resultCounts = {
+          successful_deliveries: 0,
+          expired: 0,
+          canceled: 0,
+          unsuccessful_attempts: 0,
+          duplicate: 0,
+          restricted: 0,
+          unfinished: 0
+        };
+
+        for (const row of rows) {
+          const code = String(row.voapps_code || '').trim();
+
+          switch (code) {
+            case '200':
+              resultCounts.successful_deliveries++;
+              break;
+            case '300':
+              resultCounts.expired++;
+              break;
+            case '301':
+              resultCounts.canceled++;
+              break;
+            case '400':  // Unsuccessful delivery attempt
+            case '405':  // Not in service
+            case '406':  // Voicemail not setup
+            case '407':  // Voicemail full
+              resultCounts.unsuccessful_attempts++;
+              break;
+            case '402':
+              resultCounts.duplicate++;
+              break;
+            case '408':  // Invalid caller number
+            case '409':  // Invalid message id
+            case '410':  // Prohibited self call
+              resultCounts.unfinished++;
+              break;
+            case '500':  // Restricted
+            case '501':  // Restricted for frequency
+            case '502':  // Restricted geographical region
+            case '503':  // Restricted individual number
+            case '504':  // Restricted WebRecon
+              resultCounts.restricted++;
+              break;
+            // 401, 403, 404 are just counted as records (not categorized)
+            default:
+              break;
+          }
+        }
+
+        const records = rows.length;
+        totalRecords += records;
+
+        // Deliverable = successful + expired + canceled + unsuccessful + unfinished
+        // (NOT duplicate, restricted, or the non-deliverable codes 401/403/404)
+        const deliverable = resultCounts.successful_deliveries +
+                           resultCounts.expired +
+                           resultCounts.canceled +
+                           resultCounts.unsuccessful_attempts +
+                           resultCounts.unfinished;
+
+        // Delivery % = successful / deliverable (avoid divide by zero)
+        const deliveryPct = deliverable > 0 ? resultCounts.successful_deliveries / deliverable : 0;
+
+        // Normalize target_date to user's selected timezone
+        const normalizedTargetDate = campaign.target_date
+          ? normalizeToVoAppsTime(campaign.target_date, userTimezone)
+          : '';
+
+        summaryRows.push({
+          campaign_id: campaignId,
+          campaign_name: campaign.name || '',
+          account_id: accountId,
+          account_name: accountNames[accountId] || '',
+          target_date: normalizedTargetDate,
+          records: records,
+          deliverable: deliverable,
+          successful_deliveries: resultCounts.successful_deliveries,
+          expired: resultCounts.expired,
+          canceled: resultCounts.canceled,
+          duplicate: resultCounts.duplicate,
+          unsuccessful_attempts: resultCounts.unsuccessful_attempts,
+          unfinished: resultCounts.unfinished,
+          restricted: resultCounts.restricted,
+          delivery_pct: deliveryPct,
+          campaign_url: `https://directdropvoicemail.voapps.com/accounts/${accountId}/campaigns/${campaignId}`
+        });
+
+        log(`   ✅ ${records.toLocaleString()} records, ${(deliveryPct * 100).toFixed(1)}% delivery rate`);
+      } catch (err) {
+        log(`   ❌ Error: ${err.message}`, true);
+      }
+    }
+
+    log(`\n📊 Total: ${summaryRows.length} campaigns, ${totalRecords.toLocaleString()} records`);
+
+    // Write CSV to Executive Summary folder
+    const suffix = getFilenameSuffix(folders.executiveSummary, 'executive_summary');
+    const csvPath = path.join(folders.executiveSummary, `executive_summary_${suffix}.csv`);
+
+    const headers = [
+      'campaign_id', 'campaign_name', 'account_id', 'account_name', 'target_date', 'records',
+      'deliverable', 'successful_deliveries', 'expired', 'canceled', 'duplicate',
+      'unsuccessful_attempts', 'unfinished', 'restricted', 'delivery_pct', 'campaign_url'
+    ];
+
+    let csvContent = headers.join(',') + '\n';
+    for (const row of summaryRows) {
+      const values = headers.map(h => {
+        const val = row[h];
+        if (h === 'delivery_pct') return (val * 100).toFixed(2) + '%';
+        if (typeof val === 'string' && (val.includes(',') || val.includes('"'))) {
+          return `"${val.replace(/"/g, '""')}"`;
+        }
+        return val;
+      });
+      csvContent += values.join(',') + '\n';
+    }
+
+    fs.writeFileSync(csvPath, csvContent, 'utf8');
+    log(`\n✅ Saved: ${path.basename(csvPath)}`);
+
+    lastArtifacts.csvPath = csvPath;
+    lastArtifacts.logPath = logPath;
+
+    close();
+    return {
+      csvPath,
+      logPath,
+      campaignCount: summaryRows.length,
+      totalRecords
     };
   } catch (err) {
     log(`\n❌ Fatal error: ${err.message}`, true);
@@ -1465,13 +2261,16 @@ async function runCombineCampaigns(config) {
 
     log(`\n📊 Found ${campaigns.length} campaigns to combine`);
 
-    // Fetch caller numbers, messages, and account timezones
+    // Fetch caller numbers, messages, account timezones, and account names
     const callerNumberNames = include_caller
       ? await fetchCallerNumbers(api_key, account_ids, log, "normal")
       : {};
 
     // Fetch account timezones for discrepancy detection
     const accountTimezones = await fetchAccountTimezones(api_key, account_ids, log, "normal");
+
+    // Fetch account names
+    const accountNames = await fetchAccountNames(api_key, account_ids, log, "normal");
 
     const messageInfo = {};
     if (include_message_meta) {
@@ -1564,6 +2363,7 @@ async function runCombineCampaigns(config) {
           allRows.push({
             number: num,
             account_id: accountId,
+            account_name: accountNames[accountId] || '',
             campaign_id: campaignId,
             campaign_name: campaign.name || '',
             caller_number: callerNum,
@@ -1573,7 +2373,7 @@ async function runCombineCampaigns(config) {
             message_description: messageInfo[messageKey]?.description || '',
             voapps_result: row.voapps_result || '',
             voapps_code: row.voapps_code || '',
-            voapps_timestamp: row.voapps_timestamp || '',
+            voapps_timestamp: normalizeToVoAppsTime(row.voapps_timestamp || ''),
             campaign_url: `https://directdropvoicemail.voapps.com/accounts/${accountId}/campaigns/${campaignId}`,
             target_date: campaign.target_date || ''
           });
@@ -1587,6 +2387,45 @@ async function runCombineCampaigns(config) {
 
     log(`\n📊 Total rows: ${allRows.length.toLocaleString()}`);
 
+    // Fill missing voapps_timestamp from nearest same-campaign record (by row proximity),
+    // falling back to target_date if no campaign record has any timestamp.
+    {
+      const ctsMap = new Map();
+      for (let i = 0; i < allRows.length; i++) {
+        const ts = allRows[i].voapps_timestamp;
+        if (ts) {
+          const cid = allRows[i].campaign_id || '__none__';
+          if (!ctsMap.has(cid)) ctsMap.set(cid, []);
+          ctsMap.get(cid).push({ idx: i, ts });
+        }
+      }
+      // Binary search helper — find nearest ts by row index within a campaign
+      const nearestTs = (list, targetIdx) => {
+        if (!list || list.length === 0) return null;
+        let lo = 0, hi = list.length - 1;
+        while (lo < hi) { const mid = (lo + hi) >> 1; if (list[mid].idx < targetIdx) lo = mid + 1; else hi = mid; }
+        const prev = lo > 0 ? list[lo - 1] : null;
+        const next = lo < list.length ? list[lo] : null;
+        if (!prev) return next.ts;
+        if (!next) return prev.ts;
+        return Math.abs(prev.idx - targetIdx) <= Math.abs(next.idx - targetIdx) ? prev.ts : next.ts;
+      };
+      let filled = 0;
+      for (let i = 0; i < allRows.length; i++) {
+        if (!allRows[i].voapps_timestamp) {
+          const cid = allRows[i].campaign_id || '__none__';
+          const ts = nearestTs(ctsMap.get(cid), i);
+          if (ts) { allRows[i].voapps_timestamp = ts; filled++; }
+          else if (allRows[i].target_date) {
+            allRows[i].voapps_timestamp = `${allRows[i].target_date} 00:00:00 UTC`;
+            filled++;
+          }
+        }
+      }
+      ctsMap.clear();
+      if (filled > 0) log(`   ✅ Filled ${filled.toLocaleString()} missing timestamp(s) from campaign proximity`);
+    }
+
     // Save to database if requested
     if (output_mode === "database" || output_mode === "both") {
       log(`\n💾 Saving to database...`);
@@ -1599,60 +2438,85 @@ async function runCombineCampaigns(config) {
     let allCsvFiles = [];
     let wasSplit = false;
     let fileCount = 1;
+    let tempAnalysisCsvFiles = []; // temp files created only for analysis in database-only mode
+
+    const CSV_HEADERS = [
+      'number', 'account_id', 'account_name', 'campaign_id', 'campaign_name',
+      'caller_number', 'caller_number_name', 'message_id', 'message_name', 'message_description',
+      'voapps_result', 'voapps_code', 'voapps_timestamp', 'campaign_url'
+    ];
 
     if (output_mode === "csv" || output_mode === "both") {
       csvPath = path.join(folders.combineCampaigns, `${filePrefix}combined_${suffix}.csv`);
-
-      const headers = [
-        'number', 'account_id', 'campaign_id', 'campaign_name',
-        'caller_number', 'caller_number_name', 'message_id', 'message_name', 'message_description',
-        'voapps_result', 'voapps_code', 'voapps_timestamp', 'campaign_url'
-      ];
-
-      const csvResult = await writeCsv(csvPath, allRows, headers, log, MAX_ROWS_PER_FILE);
+      const csvResult = await writeCsv(csvPath, allRows, CSV_HEADERS, log, MAX_ROWS_PER_FILE);
       allCsvFiles = csvResult.files;
       wasSplit = csvResult.wasSplit;
       fileCount = csvResult.fileCount;
-
       lastArtifacts.csvPath = csvPath;
+    } else if (generate_trend_analysis) {
+      // Database-only output but analysis was requested: write a temporary CSV so the
+      // worker can read from disk (same pattern as CSV mode). Deleted after analysis.
+      log(`\n📊 Writing temporary CSV for analysis (database-only output)...`);
+      const tmpCsvPath = path.join(folders.combineCampaigns, `${filePrefix}combined_${suffix}_analysis_tmp.csv`);
+      const csvResult = await writeCsv(tmpCsvPath, allRows, CSV_HEADERS, log, MAX_ROWS_PER_FILE);
+      allCsvFiles = csvResult.files;
+      tempAnalysisCsvFiles = csvResult.files;
     }
+
+    // Capture row count then free the in-memory rows array before spawning the worker.
+    // This is critical for large datasets: the worker reads from the CSV files on disk,
+    // so holding allRows in memory at the same time would double memory usage and OOM.
+    const totalRows = allRows.length;
+    allRows.length = 0;
 
     // Generate trend analysis if requested
     let analysisPath = null;
-    if (generate_trend_analysis && (output_mode === "csv" || output_mode === "both")) {
+    if (generate_trend_analysis && allCsvFiles.length > 0) {
       log(`\n📊 Generating trend analysis...`);
-      
+
       const analysisFilename = `${filePrefix}number_analysis_${suffix}.xlsx`;
       analysisPath = path.join(folders.combineCampaigns, analysisFilename);
 
-      // Use allCsvFiles if split, otherwise pass rows directly
-      const analysisInput = wasSplit ? allCsvFiles : allRows;
-      
-      await generateTrendAnalysis(
-        analysisInput,
+      // Always pass file paths (never raw rows) so the worker reads from disk
+      // while the main thread keeps no large array in memory.
+      const userTimezone = getTimezone();
+      const userTimezoneLabel = getTimezoneLabel(userTimezone);
+
+      await runAnalysisInWorker(
+        allCsvFiles,
         analysisPath,
         min_consec_unsuccessful,
         min_run_span_days,
         messageInfo,
         callerNumberNames,
-        accountTimezones
+        accountTimezones,
+        userTimezone,
+        userTimezoneLabel
       );
 
       lastArtifacts.analysisPath = analysisPath;
       log(`✅ Analysis generated: ${analysisFilename}`);
+
+      // Remove temp CSVs that were created only to feed the analysis worker
+      if (tempAnalysisCsvFiles.length > 0) {
+        for (const f of tempAnalysisCsvFiles) {
+          try { fs.unlinkSync(f); } catch {}
+        }
+        log(`🗑️  Removed ${tempAnalysisCsvFiles.length} temporary analysis CSV file(s)`);
+      }
     }
 
     log(`\n✅ Combine complete!`);
-    
+
     // Send completion signal
     if (job_id) {
       sendProgress(job_id, {
         status: 'complete',
         progress: 100,
-        message: `Combine complete! Total: ${allRows.length.toLocaleString()} rows`
+        message: `Combine complete! Total: ${totalRows.toLocaleString()} rows`
       });
     }
-    
+
     close();
 
     return {
@@ -1660,13 +2524,14 @@ async function runCombineCampaigns(config) {
       allCsvFiles,
       logPath,
       analysisPath,
-      totalRows: allRows.length,
+      totalRows,
       wasSplit,
       fileCount
     };
   } catch (err) {
     log(`\n❌ Fatal error: ${err.message}`, true);
     close();
+    err.logPath = logPath;
     throw err;
   }
 }
@@ -1886,49 +2751,87 @@ async function runBulkCampaignExport(config) {
 }
 
 /**
- * Helper: Export subset of database to CSV
+ * Helper: Export subset of database to CSV using streaming to avoid OOM
  */
 async function exportDatabaseSubset(numbers, accountIds, startDate, endDate, outputPath) {
+  if (!isDatabaseAvailable()) {
+    return { success: false, error: 'Database not available' };
+  }
   if (!dbReady) await initDatabase();
-  
+
   const numberList = numbers.map(n => `'${n}'`).join(',');
   const accountList = accountIds.map(a => `'${a}'`).join(',');
-  
-  const sql = `
-    SELECT * FROM campaign_results
+
+  // Build base WHERE clause
+  const whereClause = `
     WHERE number IN (${numberList})
       AND account_id IN (${accountList})
       AND target_date >= '${startDate}'
       AND target_date <= '${endDate}'
-    ORDER BY target_date DESC, voapps_timestamp DESC
   `;
-  
-  const rows = await runQuery(sql);
-  
-  if (rows.length === 0) {
+
+  // Get count first
+  const countResult = await runQuery(`SELECT COUNT(*) as cnt FROM campaign_results ${whereClause}`);
+  const totalRows = Number(countResult[0]?.cnt || 0);
+
+  if (totalRows === 0) {
     return { success: false, error: 'No data found' };
   }
-  
-  const headers = Object.keys(rows[0]).filter(h => h !== 'row_id' && h !== 'created_at' && h !== 'updated_at');
-  const csvContent = [
-    headers.join(','),
-    ...rows.map(row => headers.map(h => {
-      const val = row[h];
-      // Handle null/undefined
-      if (val === null || val === undefined) return '';
-      // Convert to string (handles numbers, BigInt, dates, etc.)
-      const str = String(val);
-      // Escape if contains comma or quote
-      return str.includes(',') || str.includes('"') ? `"${str.replace(/"/g, '""')}"` : str;
-    }).join(','))
-  ].join('\n');
-  
-  await fsp.writeFile(outputPath, csvContent, 'utf-8');
-  
+
+  // Get column names, excluding internal columns
+  const schemaResult = await runQuery(`
+    SELECT column_name FROM information_schema.columns
+    WHERE table_name = 'campaign_results'
+      AND column_name NOT IN ('row_id', 'created_at', 'updated_at')
+    ORDER BY ordinal_position
+  `);
+  const headers = schemaResult.map(r => r.column_name);
+
+  // Create write stream for memory-efficient export
+  const writeStream = fs.createWriteStream(outputPath, { encoding: 'utf-8' });
+  writeStream.write(headers.join(',') + '\n');
+
+  // Stream rows in batches to avoid OOM
+  const BATCH_SIZE = 50000;
+  let offset = 0;
+  let rowCount = 0;
+
+  while (offset < totalRows) {
+    const batchRows = await runQuery(`
+      SELECT ${headers.join(', ')} FROM campaign_results
+      ${whereClause}
+      ORDER BY target_date DESC, voapps_timestamp DESC
+      LIMIT ${BATCH_SIZE} OFFSET ${offset}
+    `);
+
+    if (batchRows.length === 0) break;
+
+    for (const row of batchRows) {
+      const line = headers.map(h => {
+        let val = row[h];
+        if (val === null || val === undefined) return '';
+        // Normalize timestamps to VoApps Time (UTC-7)
+        if (h === 'voapps_timestamp' && val) {
+          val = normalizeToVoAppsTime(val);
+        }
+        const str = String(val);
+        return str.includes(',') || str.includes('"') ? `"${str.replace(/"/g, '""')}"` : str;
+      }).join(',');
+      writeStream.write(line + '\n');
+    }
+
+    rowCount += batchRows.length;
+    offset += BATCH_SIZE;
+  }
+
+  await new Promise((resolve, reject) => {
+    writeStream.end((err) => err ? reject(err) : resolve());
+  });
+
   return {
     success: true,
     path: outputPath,
-    rowCount: rows.length
+    rowCount
   };
 }
 
@@ -1956,15 +2859,93 @@ function createHttpServer() {
       return sendJson(res, 200, { ok: true, message: "VoApps Tools Server", version: VERSION, versionName: VERSION_NAME });
     }
 
+    // Settings - Get output folder
+    if (req.method === "GET" && pathname === "/api/settings/output-folder") {
+      return sendJson(res, 200, { ok: true, folder: getOutputFolder() });
+    }
+
+    // Settings - Set output folder
+    if (req.method === "POST" && pathname === "/api/settings/output-folder") {
+      try {
+        const body = await readJson(req);
+        const { folder } = body;
+        if (!folder) {
+          return sendJson(res, 400, { ok: false, error: "Folder path required" });
+        }
+        // Validate the folder exists or can be created
+        try {
+          fs.mkdirSync(folder, { recursive: true });
+        } catch (e) {
+          return sendJson(res, 400, { ok: false, error: `Cannot create folder: ${e.message}` });
+        }
+        const success = setOutputFolder(folder);
+        if (success) {
+          return sendJson(res, 200, { ok: true, folder });
+        } else {
+          return sendJson(res, 500, { ok: false, error: "Failed to save settings" });
+        }
+      } catch (e) {
+        return sendJson(res, 500, { ok: false, error: e.message });
+      }
+    }
+
+    // Settings - Ensure output folder exists (creates it if needed)
+    if (req.method === "POST" && pathname === "/api/settings/ensure-folder") {
+      try {
+        const folder = getOutputFolder();
+        fs.mkdirSync(folder, { recursive: true });
+        return sendJson(res, 200, { ok: true, folder, exists: true });
+      } catch (e) {
+        return sendJson(res, 500, { ok: false, error: e.message });
+      }
+    }
+
+    // Settings - Get timezone
+    if (req.method === "GET" && pathname === "/api/settings/timezone") {
+      const timezone = getTimezone();
+      const label = getTimezoneLabel(timezone);
+      return sendJson(res, 200, { ok: true, timezone, label });
+    }
+
+    // Settings - Set timezone
+    if (req.method === "POST" && pathname === "/api/settings/timezone") {
+      try {
+        const body = await readJson(req);
+        const { timezone } = body;
+        if (!timezone) {
+          return sendJson(res, 400, { ok: false, error: "Timezone required" });
+        }
+        // Validate format - accept IANA names, 'VoApps', 'UTC', or legacy offset format
+        const validTimezones = ['VoApps', 'UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles'];
+        const isValidIANA = validTimezones.includes(timezone);
+        const isValidOffset = /^[+-]\d{2}:\d{2}$/.test(timezone);
+        if (!isValidIANA && !isValidOffset) {
+          return sendJson(res, 400, { ok: false, error: "Invalid timezone. Use IANA name (e.g., 'America/New_York') or 'VoApps'" });
+        }
+        const success = setTimezone(timezone);
+        if (success) {
+          const label = getTimezoneLabel(timezone);
+          return sendJson(res, 200, { ok: true, timezone, label });
+        } else {
+          return sendJson(res, 500, { ok: false, error: "Failed to save settings" });
+        }
+      } catch (e) {
+        return sendJson(res, 500, { ok: false, error: e.message });
+      }
+    }
+
     // Accounts endpoint
     if (req.method === "POST" && pathname === "/api/accounts") {
       try {
         const body = await readJson(req);
+        console.log('[API] /api/accounts - Starting request, platform:', process.platform);
         const accounts = await fetchAllAccounts(body.api_key || "", null, "minimal", body.filter);
+        console.log('[API] /api/accounts - Success, found', accounts?.length || 0, 'accounts');
         return sendJson(res, 200, { ok: true, accounts });
       } catch (e) {
-        console.error('[API Error - /api/accounts]', e.message, e.stack);
-        return sendJson(res, 500, { ok: false, error: e.message });
+        const errorDetail = `${e.message} | Code: ${e.code || 'none'}`;
+        console.error('[API Error - /api/accounts]', errorDetail, e.stack);
+        return sendJson(res, 500, { ok: false, error: e.message, code: e.code, platform: process.platform });
       }
     }
 
@@ -2145,6 +3126,11 @@ function createHttpServer() {
       }
     }
 
+    // Open database backups folder
+    if (req.method === "GET" && pathname === "/api/database/backups-folder") {
+      return sendJson(res, 200, { ok: true, path: DB_DIR });
+    }
+
     // Search endpoint
     if (req.method === "POST" && pathname === "/api/search") {
       try {
@@ -2219,6 +3205,38 @@ function createHttpServer() {
       } catch (e) {
         console.error('[API Error - /api/combine]', e.message, e.stack);
         const cancelled = e.message === "Cancelled";
+        const errLogPath = e.logPath || lastArtifacts.logPath || null;
+        return sendJson(res, cancelled ? 499 : 500, { ok: false, error: e.message, artifacts: { logPath: errLogPath } });
+      }
+    }
+
+    // Executive Summary endpoint
+    if (req.method === "POST" && pathname === "/api/executive-summary") {
+      try {
+        const body = await readJson(req);
+        const out = await generateExecutiveSummary({
+          api_key: body.api_key || "",
+          account_ids: body.account_ids || [],
+          start_date: body.start_date || "",
+          end_date: body.end_date || "",
+          job_id: body.job_id || null
+        });
+
+        return sendJson(res, 200, {
+          ok: true,
+          message: "Executive Summary complete",
+          artifacts: {
+            csvPath: out.csvPath,
+            logPath: out.logPath
+          },
+          stats: {
+            campaignCount: out.campaignCount,
+            totalRecords: out.totalRecords
+          }
+        });
+      } catch (e) {
+        console.error('[API Error - /api/executive-summary]', e.message, e.stack);
+        const cancelled = e.message === "Cancelled";
         return sendJson(res, cancelled ? 499 : 500, { ok: false, error: e.message });
       }
     }
@@ -2231,63 +3249,90 @@ function createHttpServer() {
 
         const chunks = [];
         for await (const chunk of req) chunks.push(chunk);
-        const body = Buffer.concat(chunks).toString();
+        const bodyBuf = Buffer.concat(chunks);
 
-        const parts = body.split(`--${boundary}`);
-        let csvText = '';
+        // Parse multipart on Buffers to avoid huge string allocations
+        const boundaryBuf = Buffer.from(`--${boundary}`);
+        const crlf = Buffer.from('\r\n');
+        const crlfcrlf = Buffer.from('\r\n\r\n');
+
+        const csvTexts = [];
         let minConsec = 4;
         let minSpan = 30;
 
-        for (const part of parts) {
-          if (part.includes('name="csv"')) {
-            const contentStart = part.indexOf('\r\n\r\n') + 4;
-            const contentEnd = part.lastIndexOf('\r\n');
-            csvText = part.substring(contentStart, contentEnd);
-          } else if (part.includes('name="min_consec_unsuccessful"')) {
-            const val = part.split('\r\n\r\n')[1]?.split('\r\n')[0];
-            minConsec = parseInt(val) || 4;
-          } else if (part.includes('name="min_run_span_days"')) {
-            const val = part.split('\r\n\r\n')[1]?.split('\r\n')[0];
-            minSpan = parseInt(val) || 30;
+        let searchStart = 0;
+        while (searchStart < bodyBuf.length) {
+          const boundaryPos = bodyBuf.indexOf(boundaryBuf, searchStart);
+          if (boundaryPos === -1) break;
+          const headerStart = boundaryPos + boundaryBuf.length + crlf.length; // skip \r\n after boundary
+          const headerEnd = bodyBuf.indexOf(crlfcrlf, headerStart);
+          if (headerEnd === -1) break;
+          const header = bodyBuf.slice(headerStart, headerEnd).toString();
+          const contentStart = headerEnd + crlfcrlf.length;
+          // Find next boundary to know where content ends
+          const nextBoundary = bodyBuf.indexOf(boundaryBuf, contentStart);
+          const contentEnd = nextBoundary === -1 ? bodyBuf.length : nextBoundary - crlf.length;
+          searchStart = nextBoundary === -1 ? bodyBuf.length : nextBoundary;
+
+          if (header.includes('name="csv"')) {
+            const text = bodyBuf.slice(contentStart, contentEnd).toString('utf8');
+            if (text.trim()) csvTexts.push(text);
+          } else if (header.includes('name="min_consec_unsuccessful"')) {
+            minConsec = parseInt(bodyBuf.slice(contentStart, contentEnd).toString()) || 4;
+          } else if (header.includes('name="min_run_span_days"')) {
+            minSpan = parseInt(bodyBuf.slice(contentStart, contentEnd).toString()) || 30;
           }
         }
 
-        if (!csvText) throw new Error("No CSV data found");
+        if (csvTexts.length === 0) throw new Error("No CSV data found");
 
-        const { headers, rows } = parseCsv(csvText);
+        // Parse all CSVs and combine rows (use headers from first file)
+        const parsedFiles = csvTexts.map(t => parseCsv(t));
+        const headers = parsedFiles[0].headers;
+        const allRows = parsedFiles.flatMap(pf => pf.rows);
+
         const folders = createOutputFolders();
         const outDir = folders.combineCampaigns;
-        
-        if (rows.length > MAX_ROWS_PER_FILE) {
-          const suffix = getFilenameSuffix(outDir, 'UploadedCSV');
-          const tempCsvPath = path.join(outDir, `UploadedCSV_${suffix}.csv`);
-          const csvResult = await writeCsv(tempCsvPath, rows, headers, null, MAX_ROWS_PER_FILE);
-          
-          const analysisFilename = `NumberAnalysis_${suffix}.xlsx`;
-          const analysisPath = path.join(outDir, analysisFilename);
-          
-          await generateTrendAnalysis(csvResult.files, analysisPath, minConsec, minSpan, {}, {});
-          
-          lastArtifacts.analysisPath = analysisPath;
-          
-          return sendJson(res, 200, {
-            ok: true,
-            message: `Analysis complete (${csvResult.totalRows.toLocaleString()} rows across ${csvResult.fileCount} files)`,
-            artifacts: { analysisPath }
-          });
-        }
-        
-        const suffix = getFilenameSuffix(outDir, 'NumberAnalysis');
+
+        // Get user's timezone for report
+        const userTz = getTimezone();
+        const userTzLabel = getTimezoneLabel(userTz);
+
+        const suffix = getFilenameSuffix(outDir, 'UploadedCSV');
         const analysisFilename = `NumberAnalysis_${suffix}.xlsx`;
         const analysisPath = path.join(outDir, analysisFilename);
 
-        await generateTrendAnalysis(rows, analysisPath, minConsec, minSpan, {}, {});
+        // Dynamic row limit: target ~50MB of string data per split file.
+        // Estimate avg bytes per row based on column count (each col ~20 chars avg).
+        const colCount = headers.length || 14;
+        const avgBytesPerRow = colCount * 20;
+        const targetBytesPerFile = 50 * 1024 * 1024; // 50MB
+        const dynamicRowLimit = Math.max(50000, Math.min(MAX_ROWS_PER_FILE, Math.floor(targetBytesPerFile / avgBytesPerRow)));
+
+        if (allRows.length > dynamicRowLimit) {
+          const tempCsvPath = path.join(outDir, `UploadedCSV_${suffix}.csv`);
+          const csvResult = await writeCsv(tempCsvPath, allRows, headers, null, dynamicRowLimit);
+
+          await runAnalysisInWorker(csvResult.files, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel);
+
+          lastArtifacts.analysisPath = analysisPath;
+
+          const fileWord = csvTexts.length > 1 ? `${csvTexts.length} files` : '1 file';
+          return sendJson(res, 200, {
+            ok: true,
+            message: `Analysis complete (${allRows.length.toLocaleString()} rows from ${fileWord})`,
+            artifacts: { analysisPath }
+          });
+        }
+
+        await runAnalysisInWorker(allRows, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel);
 
         lastArtifacts.analysisPath = analysisPath;
 
+        const fileWord = csvTexts.length > 1 ? `${csvTexts.length} files` : '1 file';
         return sendJson(res, 200, {
           ok: true,
-          message: "Analysis complete",
+          message: `Analysis complete (${allRows.length.toLocaleString()} rows from ${fileWord})`,
           artifacts: { analysisPath }
         });
       } catch (e) {
@@ -2312,65 +3357,146 @@ function createHttpServer() {
           throw new Error("Database not ready");
         }
 
-        // Query database for rows in date range
-        console.log(`[DB Analysis] Querying database for ${start_date} to ${end_date}...`);
-
-        const query = `
-          SELECT
-            number, account_id, campaign_id, campaign_name,
-            caller_number, caller_number_name, message_id, message_name, message_description,
-            voapps_result, voapps_code, voapps_timestamp, campaign_url
-          FROM campaign_results
-          WHERE voapps_timestamp >= '${start_date}' AND voapps_timestamp <= '${end_date}T23:59:59'
-          ORDER BY voapps_timestamp
-        `;
-
-        const rows = [];
-        await new Promise((resolve, reject) => {
-          db.all(query, (err, result) => {
-            if (err) return reject(err);
-            for (const row of result) {
-              rows.push(row);
-            }
-            resolve();
-          });
-        });
-
-        console.log(`[DB Analysis] Found ${rows.length.toLocaleString()} rows`);
-
-        if (rows.length === 0) {
-          throw new Error("No data found in database for the specified date range");
-        }
-
-        // Generate analysis
         const folders = createOutputFolders();
-        const suffix = getFilenameSuffix(folders.combineCampaigns, 'db_analysis');
+        const suffix = getFilenameSuffix(folders.logs, 'db_analysis');
+        const logPath = path.join(folders.logs, `db_analysis_log_${suffix}.txt`);
+        const errorPath = path.join(folders.logs, `db_analysis_errors_${suffix}.txt`);
+        const { log, close } = createLogger(logPath, errorPath, "normal", null);
+
+        log(`📊 Delivery Intelligence Report — Database`);
+        log(`Date Range: ${start_date} to ${end_date}`);
+        log(`Thresholds: min_consec=${min_consec_unsuccessful}, min_span=${min_run_span_days} days`);
+
+        // Stream rows from DB into split CSV temp files to avoid loading 1M+ rows into RAM
         const filePrefix = client_prefix ? `${client_prefix}_` : "";
         const analysisFilename = `${filePrefix}db_analysis_${suffix}.xlsx`;
         const analysisPath = path.join(folders.combineCampaigns, analysisFilename);
 
-        console.log(`[DB Analysis] Generating analysis: ${analysisFilename}`);
+        const csvHeaders = [
+          'number', 'account_id', 'account_name', 'campaign_id', 'campaign_name',
+          'caller_number', 'caller_number_name', 'message_id', 'message_name', 'message_description',
+          'voapps_result', 'voapps_code', 'voapps_timestamp', 'campaign_url'
+        ];
 
-        await generateTrendAnalysis(
-          rows,
+        const escapeCsvVal = (val) => {
+          if (val === null || val === undefined) return '';
+          const str = String(val);
+          return str.includes(',') || str.includes('"') || str.includes('\n')
+            ? `"${str.replace(/"/g, '""')}"` : str;
+        };
+
+        const tempCsvFiles = [];
+        let totalRows = 0;
+
+        // Count rows first using existing runQuery helper
+        const countResult = await runQuery(
+          `SELECT COUNT(*) as cnt FROM campaign_results WHERE target_date >= '${start_date}' AND target_date <= '${end_date}'`
+        );
+        const expectedRows = Number(countResult[0]?.cnt || 0);
+
+        if (expectedRows === 0) {
+          close();
+          throw new Error(`No data found in database for ${start_date} to ${end_date}`);
+        }
+
+        log(`\n💾 Streaming ${expectedRows.toLocaleString()} rows from database...`);
+
+        // Stream in batches using LIMIT/OFFSET — avoids holding everything in RAM
+        // and keeps the event loop alive between batches.
+        const BATCH_SIZE = 50000;
+        let offset = 0;
+        let currentStream = null;
+        let currentPath = null;
+        let currentFileIndex = 1;
+        let currentRowCount = 0;
+
+        const openNewCsvFile = () => {
+          if (currentStream) currentStream.end();
+          currentPath = path.join(folders.combineCampaigns,
+            `${filePrefix}db_analysis_temp_${suffix}_part${currentFileIndex}.csv`);
+          currentStream = fs.createWriteStream(currentPath, { encoding: 'utf8' });
+          currentStream.write(csvHeaders.join(',') + '\n');
+          tempCsvFiles.push(currentPath);
+          currentFileIndex++;
+          currentRowCount = 0;
+        };
+
+        openNewCsvFile();
+
+        while (offset < expectedRows) {
+          const batchRows = await runQuery(`
+            SELECT number, account_id, account_name, campaign_id, campaign_name,
+              caller_number, caller_number_name, message_id, message_name, message_description,
+              voapps_result, voapps_code, voapps_timestamp, campaign_url
+            FROM campaign_results
+            WHERE target_date >= '${start_date}' AND target_date <= '${end_date}'
+            LIMIT ${BATCH_SIZE} OFFSET ${offset}
+          `);
+
+          if (batchRows.length === 0) break;
+
+          for (const row of batchRows) {
+            const line = csvHeaders.map(h => escapeCsvVal(row[h])).join(',') + '\n';
+            currentStream.write(line);
+            totalRows++;
+            currentRowCount++;
+            if (currentRowCount >= MAX_ROWS_PER_FILE) openNewCsvFile();
+          }
+
+          offset += batchRows.length;
+          const pct = Math.round((offset / expectedRows) * 100);
+          log(`  Streamed ${offset.toLocaleString()} / ${expectedRows.toLocaleString()} rows (${pct}%)`);
+
+          // Yield to event loop between batches
+          await new Promise(r => setTimeout(r, 0));
+        }
+
+        if (currentStream) currentStream.end();
+        log(`✅ Streamed ${totalRows.toLocaleString()} rows into ${tempCsvFiles.length} temp file(s)`);
+
+        // Get user's timezone for report
+        const userTz = getTimezone();
+        const userTzLabel = getTimezoneLabel(userTz);
+
+        log(`\n📊 Generating Delivery Intelligence Report...`);
+        log(`Output: ${analysisFilename}`);
+
+        await runAnalysisInWorker(
+          tempCsvFiles,
           analysisPath,
           min_consec_unsuccessful,
           min_run_span_days,
           {},  // messageMap
-          {}   // callerMap
+          {},  // callerMap
+          {},  // accountTimezones
+          userTz,
+          userTzLabel
         );
 
+        // Clean up temp CSV files
+        for (const f of tempCsvFiles) {
+          try { fs.unlinkSync(f); } catch (_) {}
+        }
+
         lastArtifacts.analysisPath = analysisPath;
+        lastArtifacts.logPath = logPath;
+
+        log(`\n✅ Complete! ${totalRows.toLocaleString()} rows analyzed.`);
+        close();
 
         return sendJson(res, 200, {
           ok: true,
-          message: "Database analysis complete",
-          rowCount: rows.length,
-          artifacts: { analysisPath }
+          message: `Database analysis complete (${totalRows.toLocaleString()} rows)`,
+          rowCount: totalRows,
+          artifacts: { analysisPath, logPath }
         });
       } catch (e) {
         console.error('[API Error - /api/analyze-database]', e.message, e.stack);
-        return sendJson(res, 500, { ok: false, error: e.message });
+        // Attempt to close the log and return its path so the UI can still open it
+        try { if (typeof close === 'function') { log(`\n❌ Error: ${e.message}`); close(); } } catch (_) {}
+        const errLogPath = typeof logPath !== 'undefined' ? logPath : null;
+        if (errLogPath) lastArtifacts.logPath = errLogPath;
+        return sendJson(res, 500, { ok: false, error: e.message, artifacts: { logPath: errLogPath } });
       }
     }
 
@@ -2499,6 +3625,9 @@ async function startServer() {
   }
 
   serverInstance = createHttpServer();
+  // Allow long-running requests (DB analysis can take many minutes on large datasets)
+  serverInstance.timeout = 0;          // No timeout on the server socket
+  serverInstance.keepAliveTimeout = 0; // Don't drop idle connections
 
   await new Promise((resolve, reject) => {
     serverInstance.once("error", reject);

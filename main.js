@@ -1,8 +1,11 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const path = require('path');
 const { startServer, stopServer, getLastArtifacts, getDatabaseStats } = require('./server');
 const { VERSION } = require('./version');
 const https = require('https');
+
+// Track current zoom level
+let currentZoom = 1.0;
 
 // Suppress macOS CoreText font warnings
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
@@ -103,17 +106,27 @@ function checkForUpdates() {
             const isNewer = compareVersions(latestVersion, currentVersion) > 0;
 
             if (isNewer) {
-              // Find DMG asset
-              const dmgAsset = release.assets.find(asset => 
-                asset.name.endsWith('.dmg') || asset.name.endsWith('-arm64.dmg')
-              );
+              // Find platform-specific asset
+              let downloadAsset = null;
+
+              if (process.platform === 'win32') {
+                // Windows: Find .exe installer
+                downloadAsset = release.assets.find(asset =>
+                  asset.name.endsWith('.exe') && !asset.name.includes('portable')
+                ) || release.assets.find(asset => asset.name.endsWith('.exe'));
+              } else {
+                // macOS: Find .dmg installer
+                downloadAsset = release.assets.find(asset =>
+                  asset.name.endsWith('.dmg') || asset.name.endsWith('-arm64.dmg')
+                );
+              }
 
               resolve({
                 updateAvailable: true,
                 latestVersion,
                 currentVersion,
                 releaseUrl: release.html_url,
-                downloadUrl: dmgAsset ? dmgAsset.browser_download_url : release.html_url,
+                downloadUrl: downloadAsset ? downloadAsset.browser_download_url : release.html_url,
                 releaseNotes: release.body,
                 releaseName: release.name
               });
@@ -205,4 +218,52 @@ ipcMain.handle('get-database-stats', async () => {
   } catch (error) {
     return { ok: false, error: error.message };
   }
+});
+
+// Quit app handler
+ipcMain.handle('quit-app', async () => {
+  try {
+    await stopServer();
+    app.quit();
+    return { ok: true };
+  } catch (error) {
+    app.quit();
+    return { ok: false, error: error.message };
+  }
+});
+
+// Folder picker handler
+ipcMain.handle('select-folder', async () => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory', 'createDirectory'],
+      title: 'Select Output Folder',
+      buttonLabel: 'Select Folder'
+    });
+
+    if (result.canceled || !result.filePaths.length) {
+      return { ok: false, cancelled: true };
+    }
+
+    return { ok: true, folder: result.filePaths[0] };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+// Zoom handlers
+ipcMain.handle('set-zoom', async (event, level) => {
+  try {
+    currentZoom = Math.max(0.5, Math.min(2.0, level)); // Clamp between 50% and 200%
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.setZoomFactor(currentZoom);
+    }
+    return { ok: true, zoom: currentZoom };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-zoom', async () => {
+  return { ok: true, zoom: currentZoom };
 });

@@ -10,9 +10,9 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '3.2.0',
-  VERSION_NAME: 'Delivery Intelligence Platform',
-  RELEASE_DATE: '2026-02-07',
+  VERSION: '3.4.1',
+  VERSION_NAME: 'Memory & Stability Improvements',
+  RELEASE_DATE: '2026-02-27',
   AUTHOR: 'Brett Menzie',
 
   // -----------------------------
@@ -22,7 +22,7 @@ module.exports = {
   // - Toggle major subsystems without ripping out code.
   // - Keep UI + backend behavior aligned by reading flags from here.
   FEATURES: {
-    // DuckDB is still enabled in 3.1.0 (it’s a superset release on top of 3.0.0).
+    // DuckDB is conditionally enabled - safely loads with fallback for Windows
     DUCKDB_ENABLED: true,
 
     // SQL query UI / interface is part of the DuckDB + logging workstream.
@@ -31,8 +31,8 @@ module.exports = {
     // Auto backup prior to destructive DB actions remains supported.
     AUTO_BACKUP: true,
 
-    // Not yet released / validated.
-    WINDOWS_SUPPORT: false // Coming in future version
+    // Windows support added in 3.2.1 with graceful DuckDB fallback
+    WINDOWS_SUPPORT: true
   },
 
   // -----------------------------
@@ -50,11 +50,106 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '3.4.1': {
+      date: '2026-02-27',
+      title: 'Memory & Stability Improvements',
+      changes: [
+        'Row caps (100K max per detail tab) prevent ExcelJS from exhausting heap on large datasets',
+        'Pre-compute all aggregate metrics in one pass then free numberSummaryArray before workbook creation — frees up to 1 GB before Excel generation begins',
+        'Progressive memory release: filteredHealth/Variability/Summary arrays freed immediately after each tab\'s addRows()',
+        'Phase 1 campaignTsMap now stores only first/last timestamped row per campaign instead of every row — saves 80-100 MB on multi-million-row datasets',
+        'Replaced JS Arrays with Uint16Array for hourCounts and dayOfWeekCounts across all number data objects',
+        'Eliminated firstRawTimestamp/lastRawTimestamp string fields; epoch ms stored and formatted at write time',
+        'Delivery Intelligence Report now runs correctly when Combine Campaigns output mode is set to Database',
+        'Analysis button no longer shows green state from a previous run when a new combine job starts',
+        'Column C descriptions added to Executive Summary for key metrics and TN Health Distribution rows',
+        'Executive Summary column B widened to 50, column C widened to 130'
+      ],
+      features: [
+        'Detail tab row caps (100K rows per tab) with log message when truncation occurs',
+        'Database-only combine mode now generates Delivery Intelligence Report via temp CSV'
+      ],
+      fixes: [
+        'Fixed Delivered % showing NaN% (ns.successCount → ns.successful — wrong property name in pre-compute loop)',
+        'Fixed minDate/maxDate/fourteenDaysAgo not being set in the row-array analysis path',
+        'Fixed Analysis button remaining green/active after switching to a new combine run',
+        'Fixed Delivery Intelligence Report not triggering when output mode is Database'
+      ]
+    },
+
+    '3.4.0': {
+      date: '2026-02-12',
+      title: 'Executive Summary & Timezone Selection',
+      changes: [
+        'Executive Summary search type - aggregate campaign statistics into deliverability report',
+        'Added account_name column to Phone Number Search, Combine Campaigns, and Executive Summary',
+        'Added campaign_url column to Executive Summary for direct links to campaigns',
+        'DST-aware timezone selection (ET, CT, MT, PT adjust for Daylight Saving)',
+        'VoApps Time option - constant UTC-7 for consistent day slicing (no DST)',
+        'Reorganized Report Output drawer combining headers, folder, and timezone settings',
+        'Delivery Intelligence reports now show dynamic version from version.js',
+        'Renamed "Number Trend Analyzer" to "Delivery Intelligence Report" throughout app'
+      ],
+      features: [
+        'Executive Summary report with delivery metrics per campaign',
+        'Account name included in all CSV exports',
+        'Timezone selection in Report Output settings',
+        'Unified Report Output settings panel'
+      ],
+      fixes: [
+        'Fixed Windows update checker downloading .dmg instead of .exe',
+        'Fixed hardcoded version 3.2.0 in Delivery Intelligence Excel reports',
+        'Fixed Global Insights (Time) tab showing wrong timezone label',
+        'Fixed SSL certificate errors on macOS with VPN (uses Apple Keychain)'
+      ]
+    },
+
+    '3.3.1': {
+      date: '2026-02-09',
+      title: 'Timestamp Normalization',
+      changes: [
+        'All timestamps normalized to VoApps Time (UTC-7) for consistent day slicing',
+        'Timestamps in combine campaigns, phone search, and database exports now use VoApps Time',
+        'Added VoApps Time explanation to Delivery Intelligence glossary'
+      ],
+      features: [
+        'Consistent UTC-7 timestamps across all outputs'
+      ],
+      fixes: []
+    },
+
+    '3.3.0': {
+      date: '2026-02-09',
+      title: 'Cross-Platform Release',
+      changes: [
+        'Windows x64 support with cross-platform HTTPS fetch',
+        'Configurable output folder (Documents by default instead of Downloads)',
+        'Folder chooser in sidebar for easy output location selection',
+        'Zoom controls with Ctrl+Plus/Minus keyboard shortcuts',
+        'Zoom indicator in header',
+        'Streaming database export to prevent OOM on large datasets',
+        'Success rate calculation now only counts actual delivery attempts'
+      ],
+      features: [
+        'Windows x64 compatibility',
+        'Configurable output folder with folder picker',
+        'Zoom controls (Ctrl+Plus/Minus)',
+        'Cross-platform database storage'
+      ],
+      fixes: [
+        'Fixed fetch error on Windows (now uses native https module)',
+        'Fixed Quit button hanging (properly stops server before quitting)',
+        'Fixed database path for Windows (AppData\\Local) and macOS (Library/Application Support)',
+        'Fixed OOM crash when exporting large databases',
+        'Fixed success rate - only counts delivery attempts (has timestamp), not filtered results'
+      ]
+    },
+
     '3.2.0': {
       date: '2026-02-07',
       title: 'Delivery Intelligence Platform',
       changes: [
-        'Complete rewrite of Number Trend Analyzer as Delivery Intelligence Platform',
+        'Complete rewrite as Delivery Intelligence Platform',
         'Attempt Index tracking per TN (resets after success)',
         'Success Probability decay curve by attempt number',
         'TN Health Classification (Healthy/Degrading/Toxic)',
@@ -193,7 +288,7 @@ module.exports = {
       title: 'Caller Number Names & Enhanced Reporting',
       changes: [
         'Added caller_number_name column with API fetching',
-        'Enhanced Number Trend Analyzer with Report Overview tab',
+        'Enhanced Delivery Intelligence with Report Overview tab',
         'Message and caller performance insights',
         'Sorted Number Summary by total attempts',
         'Message/caller name display throughout reports',
@@ -203,9 +298,9 @@ module.exports = {
 
     '2.3.0': {
       date: '2026-01-20',
-      title: 'Number Trend Analyzer Integration',
+      title: 'Delivery Intelligence Integration',
       changes: [
-        'Built-in Number Trend Analyzer (no separate app needed)',
+        'Built-in Delivery Intelligence Report (no separate app needed)',
         'Generate comprehensive Excel analysis workbooks',
         'Success rate by hour and day of week',
         'Call cadence pattern analysis',

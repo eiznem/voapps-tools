@@ -1,7 +1,8 @@
-// trendAnalyzer.js - Delivery Intelligence Platform v3.2.0
+// trendAnalyzer.js - Delivery Intelligence Report
+// Analyzes phone numbers, caller numbers, and messages for delivery insights
 // Generates comprehensive Excel analysis workbooks from campaign data
 //
-// v3.2.0 - Delivery Intelligence Platform
+// Features:
 // - Attempt Index tracking per TN (resets after success)
 // - Success Probability by attempt number (decay curve)
 // - TN Health Classification (Healthy/Degrading/Toxic)
@@ -23,7 +24,8 @@ const Papa = require('papaparse');
 const fs = require('fs');
 const path = require('path');
 
-const VERSION = '3.2.0';
+// Import VERSION from central source of truth
+const { VERSION } = require('./version');
 
 // VoApps brand colors (official palette)
 const VOAPPS_DARK_NAVY = '0D053F';     // Header background (darkest)
@@ -190,6 +192,112 @@ function extractTimezone(timestamp) {
 }
 
 /**
+ * Parse a voapps_timestamp into { utcDate, localHour, localDayOfWeek } without
+ * relying on JavaScript's system timezone. The timestamp already encodes the local
+ * time (either as " UTC" or as " -07:00" etc.), so we read hour/day directly from
+ * the string to avoid system-timezone corruption.
+ *
+ * Formats handled:
+ *   "2025-11-16 14:47:05 UTC"        → UTC local time
+ *   "2025-11-16 09:47:05 -07:00"     → local time at -07:00
+ */
+function parseTimestampLocal(timestamp) {
+  if (!timestamp || typeof timestamp !== 'string') return null;
+  const ts = timestamp.trim();
+
+  // Match: YYYY-MM-DD HH:MM:SS (UTC | ±HH:MM)
+  const match = ts.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})\s+(?:UTC|([+-]\d{2}:\d{2}))$/);
+  if (!match) return null;
+
+  const [, year, month, day, hour, minute, second, offsetStr] = match;
+  const localHour = parseInt(hour, 10);
+
+  // Compute UTC ms so we can derive day-of-week in the LOCAL timezone
+  const offsetMinutes = offsetStr
+    ? (parseInt(offsetStr.slice(0, 3), 10) * 60 + parseInt(offsetStr.slice(4), 10) * Math.sign(parseInt(offsetStr, 10) || 1))
+    : 0; // UTC = 0 offset
+
+  // Build UTC Date by subtracting the local offset
+  const localMs = Date.UTC(
+    parseInt(year), parseInt(month) - 1, parseInt(day),
+    parseInt(hour), parseInt(minute), parseInt(second)
+  );
+  const utcMs = localMs - offsetMinutes * 60 * 1000;
+  const utcDate = new Date(utcMs);
+
+  // Day of week in local time: shift UTC date back to local then read getUTCDay()
+  const localDate = new Date(utcMs + offsetMinutes * 60 * 1000);
+  const localDayOfWeek = localDate.getUTCDay();  // 0=Sun … 6=Sat in local time
+
+  return { utcDate, localHour, localDayOfWeek };
+}
+
+/**
+ * Normalize a raw voapps_timestamp string: replace "+00:00" suffix with "UTC".
+ * All other offsets (e.g. "-05:00") are left unchanged.
+ */
+function formatTimestamp(ts) {
+  if (!ts || typeof ts !== 'string') return ts;
+  return ts.replace(/\s\+00:00$/, ' UTC');
+}
+
+/**
+ * Binary-search a campaign timestamp list (sorted by row index) to find the
+ * entry whose index is closest to targetIdx. Returns the timestamp string or null.
+ * tsList: Array<{ idx: number, ts: string }>, sorted ascending by idx.
+ */
+function findNearestTs(tsList, targetIdx) {
+  if (!tsList || tsList.length === 0) return null;
+  let lo = 0, hi = tsList.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (tsList[mid].idx < targetIdx) lo = mid + 1;
+    else hi = mid;
+  }
+  // lo = first entry with idx >= targetIdx
+  const prev = lo > 0 ? tsList[lo - 1] : null;
+  const next = lo < tsList.length ? tsList[lo] : null;
+  if (!prev && !next) return null;
+  if (!prev) return next.ts;
+  if (!next) return prev.ts;
+  const dp = Math.abs(prev.idx - targetIdx);
+  const dn = Math.abs(next.idx - targetIdx);
+  return dp <= dn ? prev.ts : next.ts;
+}
+
+/**
+ * Convert a ms-epoch number to a "YYYY-MM-DD HH:MM:SS UTC" timestamp string.
+ * Used to reconstruct a filled timestamp from campaignTsMap epoch entries.
+ */
+function epochToTimestamp(ms) {
+  const d = new Date(ms);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ` +
+         `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC`;
+}
+
+/**
+ * Like findNearestTs but for lists whose entries carry { idx, tsMs } (epoch ms number)
+ * instead of { idx, ts } (string).  Returns epoch ms or null.
+ * Storing epoch numbers in campaignTsMap instead of strings saves ~80 bytes per entry
+ * (~100 MB for a 1.4 M-row dataset) and reduces GC pressure during Phase 2 startup.
+ */
+function findNearestTsMs(tsList, targetIdx) {
+  if (!tsList || tsList.length === 0) return null;
+  let lo = 0, hi = tsList.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (tsList[mid].idx < targetIdx) lo = mid + 1; else hi = mid;
+  }
+  const prev = lo > 0 ? tsList[lo - 1] : null;
+  const next = lo < tsList.length ? tsList[lo] : null;
+  if (!prev && !next) return null;
+  if (!prev) return next.tsMs;
+  if (!next) return prev.tsMs;
+  return Math.abs(prev.idx - targetIdx) <= Math.abs(next.idx - targetIdx) ? prev.tsMs : next.tsMs;
+}
+
+/**
  * Get friendly timezone name from IANA or offset
  */
 function getTimezoneDisplayName(tzInfo) {
@@ -233,19 +341,50 @@ function getDayUsagePattern(dayOfWeekCounts) {
   const usedDays = [];
   const total = dayOfWeekCounts.reduce((sum, c) => sum + c, 0);
 
+  if (total === 0) return { limited: false, days: [] };
+
   for (let i = 0; i < 7; i++) {
-    if (dayOfWeekCounts[i] > total * 0.1) { // At least 10% on this day
+    if (dayOfWeekCounts[i] > total * 0.1) { // At least 10% of volume on this day
       usedDays.push(dayNames[i]);
     }
   }
 
-  // Check for problematic patterns (only 1-2 days, excluding Sunday)
-  const workdays = usedDays.filter(d => d !== 'Sunday');
-  if (workdays.length <= 2 && total > 0) {
+  // Flag as limited only if 1-2 days qualify (at the 10% threshold), excluding Sunday-only patterns
+  const nonSundayUsed = usedDays.filter(d => d !== 'Sunday');
+
+  if (nonSundayUsed.length === 0 && usedDays.length === 0) {
+    // No day meets 10% threshold — very sparse data
+    return { limited: false, days: [] };
+  }
+
+  if (nonSundayUsed.length <= 2 && usedDays.length <= 3) {
+    // Truly limited to 1-3 days total (not just proportionally light on some days)
+    const dayList = usedDays.length > 0 ? usedDays : nonSundayUsed;
+    if (dayList.length === 0) return { limited: false, days: usedDays };
     return {
       limited: true,
-      days: workdays,
-      recommendation: `Only used on ${workdays.join(' and ')}. Consider spreading DDVM attempts across more days of the week for better deliverability.`
+      days: usedDays,
+      recommendation: `Only used on ${dayList.join(' and ')}. Consider spreading DDVM attempts across more days of the week for better deliverability.`
+    };
+  }
+
+  // Check for severely disproportionate day usage (one day < 5% when all days used)
+  const dominantDays = [];
+  const lightDays = [];
+  for (let i = 0; i < 7; i++) {
+    const pct = dayOfWeekCounts[i] / total;
+    if (pct > 0 && pct < 0.05 && dayNames[i] !== 'Sunday') {
+      lightDays.push(`${dayNames[i]} (${(pct * 100).toFixed(1)}%)`);
+    } else if (pct >= 0.2) {
+      dominantDays.push(dayNames[i]);
+    }
+  }
+
+  if (lightDays.length > 0 && dominantDays.length > 0) {
+    return {
+      limited: true,
+      days: usedDays,
+      recommendation: `Day distribution is heavily skewed — ${lightDays.join(', ')} received very little volume. Consider balancing DDVM attempts more evenly across the week.`
     };
   }
 
@@ -325,7 +464,26 @@ function detectTimezoneDiscrepancies(accountTimezones, accountResultTimezones) {
  * @param {Object} messageMap - Map of message_id to message metadata
  * @param {Object} callerMap - Map of caller_number to caller name
  * @param {Object} accountTimezones - Map of account_id to IANA timezone (e.g., { "12345": "America/Denver" })
+ * @param {string} userTimezone - User's selected timezone (IANA name or 'VoApps')
+ * @param {string} userTimezoneLabel - User's timezone label (e.g., "VoApps", "ET", "MT")
  */
+
+// Results that represent an actual delivery attempt (phone was reached / attempted).
+// Non-deliverable results (401 not wireless, 402 duplicate, 403 invalid US number,
+// 404 undeliverable, 500–504 restricted) are excluded — they never touch the carrier.
+const DELIVERY_ATTEMPT_RESULTS = new Set([
+  'successfully delivered',        // 200
+  'expired',                       // 300
+  'canceled',                      // 301
+  'unsuccessful delivery attempt', // 400
+  'not in service',                // 405
+  'voicemail not setup',           // 406
+  'voicemail full',                // 407
+  'invalid caller number',         // 408
+  'invalid message id',            // 409
+  'prohibited self call',          // 410
+]);
+
 async function generateTrendAnalysis(
   csvInput,
   outputPath,
@@ -333,245 +491,510 @@ async function generateTrendAnalysis(
   minRunSpanDays = 30,
   messageMap = {},
   callerMap = {},
-  accountTimezones = {}
+  accountTimezones = {},
+  userTimezone = 'VoApps',
+  userTimezoneLabel = 'VoApps'
 ) {
   log(`Starting Delivery Intelligence Analysis (v${VERSION})`);
 
-  let csvRows = [];
+  // ── Shared containers populated by whichever input path runs below ──────────
+  const numberData = {};
+  const timezoneCounts = {};
+  const accountResultTimezones = {};
+  const CONFIG_ERROR_RESULTS = new Set([
+    'invalid message id',
+    'invalid caller number',
+    'prohibited self call'
+  ]);
+  const configErrors = {
+    'invalid message id':    { byCallerNumber: {}, byMessageId: {}, total: 0 },
+    'invalid caller number': { byCallerNumber: {}, byMessageId: {}, total: 0 },
+    'prohibited self call':  { byCallerNumber: {}, byMessageId: {}, total: 0 }
+  };
+  let minDate = null, maxDate = null, fourteenDaysAgo = null;
+  let detectedTimezone = 'Unknown (timestamps may be UTC)';
+  let timezoneDiscrepancies = [];
+  let accountMostCommonOffset = {};
+  let totalValidRows = 0;
 
-  // Handle different input types
-  if (Array.isArray(csvInput)) {
-    if (csvInput.length > 0 && typeof csvInput[0] === 'string') {
-      const files = csvInput;
-      log(`Processing ${files.length} CSV file(s) with streaming...`);
+  // Non-deliverable row counts — for Executive Summary breakdown
+  const nonDeliverableCounts = {
+    'not a wireless number': 0,   // 401
+    'not a valid us number': 0,   // 403
+    'duplicate number':      0,   // 402
+    'undeliverable':         0,   // 404
+    'restricted':            0,   // 500-504 combined
+  };
+  let notUSPlaceholderRows = 0;   // 403 rows where the number is all-zero digits (e.g. 0000000000)
 
-      for (const csvFile of files) {
-        log(`Reading: ${path.basename(csvFile)}`);
-        const fileStream = fs.createReadStream(csvFile, { encoding: 'utf8' });
+  // Account / message / caller / time stats — populated inline during row processing
+  const accountStats = {};
+  const messageStats = {};
+  const callerStats = {};
+  const globalHourlyStats = {};
+  for (let h = 0; h < 24; h++) globalHourlyStats[h] = { successful: 0, unsuccessful: 0, total: 0 };
+  const globalDayStats = {};
+  for (let d = 0; d < 7; d++) globalDayStats[d] = { successful: 0, unsuccessful: 0, total: 0 };
 
-        await new Promise((resolve, reject) => {
-          Papa.parse(fileStream, {
-            header: true,
-            skipEmptyLines: true,
-            transformHeader: (h) => h.trim().toLowerCase(),
-            chunk: (results) => {
-              for (const row of results.data) {
-                if (row.number) csvRows.push(row);
+  // Normalise single-file string to one-element array so we always use the file-path path
+  if (typeof csvInput === 'string') csvInput = [csvInput];
+
+  if (Array.isArray(csvInput) && csvInput.length > 0 && typeof csvInput[0] === 'string') {
+    // ═══════════════════════════════════════════════════════════════════════════
+    // FILE-PATH INPUT — Two-phase streaming avoids loading 1M+ rows into RAM.
+    // Phase 1 builds a campaign→timestamp index (compact).
+    // Phase 2 streams rows directly into numberData (no csvRows array).
+    // ═══════════════════════════════════════════════════════════════════════════
+    const files = csvInput;
+    log(`Processing ${files.length} CSV file(s) with streaming...`);
+
+    // ── Phase 1: light scan — record first & last timestamped row per campaign ─
+    log('  Phase 1/2: Scanning campaign timestamps...');
+    // campaign_id → { firstIdx, firstMs, lastIdx, lastMs }
+    // Storing only the first and last timestamped row per campaign (rather than every
+    // row) reduces this map from ~1.26 M objects to one object per campaign, saving
+    // ~80-100 MB of heap for a 1.4 M-row dataset.
+    const campaignTsMap = new Map();
+    let scanIdx = 0;
+    for (const csvFile of files) {
+      await new Promise((resolve, reject) => {
+        Papa.parse(fs.createReadStream(csvFile, { encoding: 'utf8' }), {
+          header: true, skipEmptyLines: true,
+          transformHeader: h => h.trim().toLowerCase(),
+          chunk: results => {
+            for (const row of results.data) {
+              const ts = (row.voapps_timestamp || '').trim();
+              if (ts) {
+                const cid = (row.campaign_id || '').trim() || '__none__';
+                const parsed = parseTimestampLocal(formatTimestamp(ts));
+                const ms = parsed ? parsed.utcDate.getTime() : new Date(ts).getTime();
+                if (!isNaN(ms)) {
+                  if (!campaignTsMap.has(cid)) {
+                    campaignTsMap.set(cid, { firstIdx: scanIdx, firstMs: ms, lastIdx: scanIdx, lastMs: ms });
+                  } else {
+                    const e = campaignTsMap.get(cid);
+                    // scanIdx always increases, so firstIdx never needs updating
+                    if (scanIdx > e.lastIdx) { e.lastIdx = scanIdx; e.lastMs = ms; }
+                  }
+                }
               }
-            },
-            complete: () => {
-              log(`  -> Loaded ${csvRows.length.toLocaleString()} rows so far`);
-              resolve();
-            },
-            error: (error) => reject(error)
-          });
+              scanIdx++;
+            }
+          },
+          complete: resolve, error: reject
+        });
+      });
+    }
+
+    // ── Phase 2: stream directly into numberData — no csvRows accumulation ────
+    log('  Phase 2/2: Processing rows...');
+    let rowIdx = 0;
+    for (const csvFile of files) {
+      log(`Reading: ${path.basename(csvFile)}`);
+      await new Promise((resolve, reject) => {
+        Papa.parse(fs.createReadStream(csvFile, { encoding: 'utf8' }), {
+          header: true, skipEmptyLines: true,
+          transformHeader: h => h.trim().toLowerCase(),
+          chunk: results => {
+            for (const row of results.data) {
+              if (!row.number || !row.voapps_result) { rowIdx++; continue; }
+
+              // ── Resolve and validate phone number ─────────────────────────────
+              const num = String(row.number).trim();
+              if (num.replace(/\D/g, '').length < 7) { rowIdx++; continue; } // skip malformed (e.g. "0")
+
+              // ── Fill and normalise timestamp ──────────────────────────────────
+              let ts = (row.voapps_timestamp || '').trim();
+              if (!ts) {
+                // Fill missing timestamp from the campaign's first/last known timestamp.
+                // Using the closer of the two (by row index) gives a reasonable estimate
+                // without holding all 1.26 M per-row objects in memory.
+                const cid = (row.campaign_id || '').trim() || '__none__';
+                const e = campaignTsMap.get(cid);
+                if (e) {
+                  const useFirst = Math.abs(e.firstIdx - rowIdx) <= Math.abs(e.lastIdx - rowIdx);
+                  ts = epochToTimestamp(useFirst ? e.firstMs : e.lastMs);
+                } else if (row.target_date) {
+                  ts = `${row.target_date.trim()} 00:00:00 UTC`; // target_date fallback
+                }
+              } else {
+                ts = formatTimestamp(ts); // normalise +00:00 → UTC
+              }
+
+              // ── Parse timestamp ───────────────────────────────────────────────
+              const parsed       = ts ? parseTimestampLocal(ts) : null;
+              const parsedDate   = parsed ? parsed.utcDate : (ts ? new Date(ts) : new Date(0));
+              const pdOk         = parsedDate && !isNaN(parsedDate.getTime());
+              const localHour    = parsed ? parsed.localHour    : (pdOk ? parsedDate.getHours() : 0);
+              const localDow     = parsed ? parsed.localDayOfWeek : (pdOk ? parsedDate.getDay()  : 0);
+              const resultNorm   = String(row.voapps_result || '').trim().toLowerCase();
+              const isSuccess    = resultNorm === 'successfully delivered';
+              const isDelivery   = !!ts && DELIVERY_ATTEMPT_RESULTS.has(resultNorm);
+
+              // ── Non-deliverable tracking ──────────────────────────────────────
+              if (!isDelivery) {
+                if      (resultNorm === 'not a wireless number') nonDeliverableCounts['not a wireless number']++;
+                else if (resultNorm === 'not a valid us number') {
+                  nonDeliverableCounts['not a valid us number']++;
+                  if (/^0+$/.test(num.replace(/\D/g, ''))) notUSPlaceholderRows++;
+                }
+                else if (resultNorm === 'duplicate number')     nonDeliverableCounts['duplicate number']++;
+                else if (resultNorm === 'undeliverable')        nonDeliverableCounts['undeliverable']++;
+                else if (resultNorm.startsWith('restricted'))   nonDeliverableCounts['restricted']++;
+              }
+
+              // ── Timezone tracking ─────────────────────────────────────────────
+              if (ts) {
+                const tz = extractTimezone(ts);
+                if (tz) {
+                  timezoneCounts[tz.offset] = (timezoneCounts[tz.offset] || 0) + 1;
+                  const aid = row.account_id || 'Unknown';
+                  if (!accountResultTimezones[aid]) accountResultTimezones[aid] = {};
+                  accountResultTimezones[aid][tz.offset] = (accountResultTimezones[aid][tz.offset] || 0) + 1;
+                }
+              }
+
+              // ── Config error tracking ─────────────────────────────────────────
+              if (CONFIG_ERROR_RESULTS.has(resultNorm)) {
+                const entry = configErrors[resultNorm];
+                entry.total++;
+                const caller = row.caller_number || 'Unknown';
+                const msgId  = row.message_id   || 'Unknown';
+                entry.byCallerNumber[caller] = (entry.byCallerNumber[caller] || 0) + 1;
+                entry.byMessageId[msgId]     = (entry.byMessageId[msgId]     || 0) + 1;
+              }
+
+              // ── Global date range ─────────────────────────────────────────────
+              if (pdOk) {
+                if (!minDate || parsedDate < minDate) minDate = parsedDate;
+                if (!maxDate || parsedDate > maxDate) maxDate = parsedDate;
+              }
+
+              // ── Build / update numberData entry ───────────────────────────────
+              if (!numberData[num]) {
+                numberData[num] = {
+                  number: num, attempts: [], attemptIndex: 0,
+                  consecutiveFailures: 0, totalAttempts: 0,
+                  successCount: 0, unsuccessfulCount: 0, lastSuccessTimestamp: null,
+                  messageIds: {}, callerNumbers: {}, accountIds: {},
+                  hourCounts: new Uint16Array(24), dayOfWeekCounts: new Uint16Array(7),
+                  backToBackIdentical: 0, lastMessageId: null,
+                  _fpMs: null, _lpMs: null  // first/last attempt ms-epoch (replaces string storage)
+                };
+              }
+              const nd = numberData[num];
+              if (isDelivery) { nd.totalAttempts++; nd.attemptIndex++; }
+
+              // Track first/last attempt epoch ms — formatted to string at write time
+              if (ts && pdOk) {
+                const pdMs = parsedDate.getTime();
+                if (nd._fpMs === null || pdMs < nd._fpMs) nd._fpMs = pdMs;
+                if (nd._lpMs === null || pdMs > nd._lpMs) nd._lpMs = pdMs;
+              }
+
+              // Only push delivery attempts — non-deliverable rows (401, 403, 404, etc.) are
+              // never used in sort / consecRuns / attemptStats and excluding them saves
+              // hundreds of thousands of object allocations for large datasets.
+              if (isDelivery) {
+                nd.attempts.push({
+                  ts:          pdOk ? parsedDate.getTime() : 0,
+                  isSuccess,
+                  attemptIndex: nd.attemptIndex   // already incremented above
+                });
+              }
+              const msgId = row.message_id || 'Unknown';
+              nd.messageIds[msgId] = (nd.messageIds[msgId] || 0) + 1;
+              if (nd.lastMessageId && nd.lastMessageId === msgId) nd.backToBackIdentical++;
+              nd.lastMessageId = msgId;
+              nd.callerNumbers[row.caller_number || 'Unknown'] = (nd.callerNumbers[row.caller_number || 'Unknown'] || 0) + 1;
+              nd.accountIds[row.account_id || 'Unknown']       = (nd.accountIds[row.account_id || 'Unknown']       || 0) + 1;
+              if (isDelivery) { nd.hourCounts[localHour]++; nd.dayOfWeekCounts[localDow]++; }
+              if (isSuccess) {
+                nd.successCount++; nd.consecutiveFailures = 0;
+                nd.attemptIndex = 0; nd.lastSuccessTimestamp = pdOk ? parsedDate.getTime() : null;
+              } else if (isDelivery) {
+                nd.unsuccessfulCount++; nd.consecutiveFailures++;
+              }
+
+              // ── Inline account / message / caller / time stats ─────────────────
+              if (isDelivery) {
+                const aId = row.account_id || 'Unknown';
+                if (!accountStats[aId]) accountStats[aId] = { account_id: aId, successful: 0, unsuccessful: 0, total: 0, uniqueNumbers: 0, dayOfWeekCounts: new Uint16Array(7) };
+                accountStats[aId].total++; accountStats[aId].dayOfWeekCounts[localDow]++;
+                if (isSuccess) accountStats[aId].successful++; else accountStats[aId].unsuccessful++;
+
+                const mId = row.message_id || 'Unknown';
+                const mName = row.message_name || messageMap[mId]?.name || '';
+                if (!messageStats[mId]) messageStats[mId] = { message_id: mId, message_name: mName, intent: inferMessageIntent(mName), successful: 0, unsuccessful: 0, total: 0, uniqueNumbers: 0, dayOfWeekCounts: new Uint16Array(7) };
+                messageStats[mId].total++; messageStats[mId].dayOfWeekCounts[localDow]++;
+                if (isSuccess) messageStats[mId].successful++; else messageStats[mId].unsuccessful++;
+
+                const cNum = row.caller_number || 'Unknown';
+                const cName = row.caller_number_name || callerMap[cNum] || '';
+                if (!callerStats[cNum]) callerStats[cNum] = { caller_number: cNum, caller_name: cName, successful: 0, unsuccessful: 0, total: 0, uniqueNumbers: 0, dayOfWeekCounts: new Uint16Array(7) };
+                callerStats[cNum].total++; callerStats[cNum].dayOfWeekCounts[localDow]++;
+                if (isSuccess) callerStats[cNum].successful++; else callerStats[cNum].unsuccessful++;
+
+                globalHourlyStats[localHour].total++;
+                if (isSuccess) globalHourlyStats[localHour].successful++; else globalHourlyStats[localHour].unsuccessful++;
+                globalDayStats[localDow].total++;
+                if (isSuccess) globalDayStats[localDow].successful++; else globalDayStats[localDow].unsuccessful++;
+              }
+
+              totalValidRows++;
+              rowIdx++;
+            }
+          },
+          complete: () => { log(`  -> Processed ${totalValidRows.toLocaleString()} rows so far`); resolve(); },
+          error: reject
+        });
+      });
+    }
+
+    campaignTsMap.clear();
+    log(`Combined ${totalValidRows.toLocaleString()} valid records from ${files.length} file(s)`);
+
+    // ── Sort each number's attempts by timestamp, recompute order-dependent fields ──
+    // Streaming may encounter rows out of chronological order within a number,
+    // so we sort here before any downstream code relies on ordering.
+    log('Sorting per-number attempts and recomputing attempt indices...');
+    for (const num in numberData) {
+      const nd = numberData[num];
+      nd._fpMs = null; nd._lpMs = null; // null not delete — avoids V8 dictionary-mode transition
+      if (nd.attempts.length > 1) {
+        nd.attempts.sort((a, b) => a.ts - b.ts);
+        let aidx = 0, consecFails = 0, lastSuccTs = null;
+        for (const att of nd.attempts) {
+          att.attemptIndex = ++aidx;
+          if (att.isSuccess) { aidx = 0; consecFails = 0; lastSuccTs = att.ts; }
+          else consecFails++;
+        }
+        nd.consecutiveFailures = consecFails;
+        nd.attemptIndex = aidx;
+        if (lastSuccTs !== null) nd.lastSuccessTimestamp = lastSuccTs; // stored as ms-epoch
+      }
+    }
+
+    // ── Derive timezone variables from data collected during streaming ────────
+    for (const [aid, offsets] of Object.entries(accountResultTimezones)) {
+      let maxAcc = 0, best = null;
+      for (const [off, cnt] of Object.entries(offsets)) { if (cnt > maxAcc) { maxAcc = cnt; best = off; } }
+      accountMostCommonOffset[aid] = best;
+    }
+    let maxTzCnt = 0, bestOffset = null;
+    for (const [off, cnt] of Object.entries(timezoneCounts)) { if (cnt > maxTzCnt) { maxTzCnt = cnt; bestOffset = off; } }
+    detectedTimezone = bestOffset ? getTimezoneDisplayName({ offset: bestOffset }) : 'Unknown (timestamps may be UTC)';
+    log(`Detected timezone: ${detectedTimezone} (from ${maxTzCnt.toLocaleString()} timestamps)`);
+    timezoneDiscrepancies = detectTimezoneDiscrepancies(accountTimezones, accountMostCommonOffset);
+    if (timezoneDiscrepancies.length > 0) log(`⚠️  Found ${timezoneDiscrepancies.length} timezone discrepancy(ies) between account settings and results`);
+    fourteenDaysAgo = maxDate ? new Date(maxDate.getTime() - 14 * 24 * 60 * 60 * 1000) : null;
+
+  } else {
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ROW-ARRAY INPUT — existing flow with missing-timestamp pre-fill added.
+    // ═══════════════════════════════════════════════════════════════════════════
+    const csvRows = Array.isArray(csvInput) ? csvInput : [];
+    log(`Processing ${csvRows.length.toLocaleString()} row objects`);
+    if (csvRows.length === 0) throw new Error('No data found in CSV input');
+
+    // ── Pre-fill missing timestamps using campaign proximity lookup ───────────
+    {
+      const ctsMap = new Map();
+      for (let i = 0; i < csvRows.length; i++) {
+        const ts = (csvRows[i].voapps_timestamp || '').trim();
+        if (ts) {
+          const cid = (csvRows[i].campaign_id || '').trim() || '__none__';
+          if (!ctsMap.has(cid)) ctsMap.set(cid, []);
+          ctsMap.get(cid).push({ idx: i, ts: formatTimestamp(ts) });
+        }
+      }
+      for (let i = 0; i < csvRows.length; i++) {
+        const ts = (csvRows[i].voapps_timestamp || '').trim();
+        if (!ts) {
+          const cid = (csvRows[i].campaign_id || '').trim() || '__none__';
+          const filled = findNearestTs(ctsMap.get(cid), i);
+          if (filled) {
+            csvRows[i].voapps_timestamp = filled;
+          } else if (csvRows[i].target_date) {
+            csvRows[i].voapps_timestamp = `${csvRows[i].target_date.trim()} 00:00:00 UTC`;
+          }
+        } else {
+          csvRows[i].voapps_timestamp = formatTimestamp(ts);
+        }
+      }
+      ctsMap.clear();
+    }
+
+    // ── Filter and enrich ─────────────────────────────────────────────────────
+    const validRows = csvRows.filter(row => row.number && row.voapps_result && String(row.number).replace(/\D/g, '').length >= 7);
+    log(`Valid rows: ${validRows.length.toLocaleString()}`);
+
+    for (const row of validRows) {
+      const tz = extractTimezone(row.voapps_timestamp);
+      if (tz) {
+        timezoneCounts[tz.offset] = (timezoneCounts[tz.offset] || 0) + 1;
+        const aid = row.account_id || 'Unknown';
+        if (!accountResultTimezones[aid]) accountResultTimezones[aid] = {};
+        accountResultTimezones[aid][tz.offset] = (accountResultTimezones[aid][tz.offset] || 0) + 1;
+      }
+    }
+    for (const [aid, offsets] of Object.entries(accountResultTimezones)) {
+      let maxAcc = 0, best = null;
+      for (const [off, cnt] of Object.entries(offsets)) { if (cnt > maxAcc) { maxAcc = cnt; best = off; } }
+      accountMostCommonOffset[aid] = best;
+    }
+    let maxTzCnt2 = 0, bestOffset2 = null;
+    for (const [off, cnt] of Object.entries(timezoneCounts)) { if (cnt > maxTzCnt2) { maxTzCnt2 = cnt; bestOffset2 = off; } }
+    detectedTimezone = bestOffset2 ? getTimezoneDisplayName({ offset: bestOffset2 }) : 'Unknown (timestamps may be UTC)';
+    log(`Detected timezone: ${detectedTimezone} (from ${maxTzCnt2.toLocaleString()} timestamps)`);
+    timezoneDiscrepancies = detectTimezoneDiscrepancies(accountTimezones, accountMostCommonOffset);
+    if (timezoneDiscrepancies.length > 0) log(`⚠️  Found ${timezoneDiscrepancies.length} timezone discrepancy(ies) between account settings and results`);
+
+    // Enrich, sort, and process in as few passes as possible to keep peak memory low.
+    // Key savings vs. original:
+    //   • row.parsedMs (epoch number, 8 bytes) replaces row.parsedDate (Date object, ~128 bytes)
+    //     → saves ~168 MB for 1.4 M rows
+    //   • Three separate passes merged into two (enrich → sort → build numberData)
+    //   • validRows[i] nulled out as each row is consumed so GC can collect incrementally
+    //   • Only delivery attempts pushed to nd.attempts (same as streaming path)
+
+    log('Parsing timestamps and enriching data...');
+    for (const row of validRows) {
+      const parsed = parseTimestampLocal(row.voapps_timestamp);
+      const _pd    = parsed ? parsed.utcDate : new Date(row.voapps_timestamp);
+      const _ok    = _pd && !isNaN(_pd.getTime());
+      row.parsedMs      = _ok ? _pd.getTime() : null; // epoch number — no long-lived Date on row
+      row.localHour     = parsed ? parsed.localHour      : (_ok ? _pd.getHours() : 0);
+      row.localDayOfWeek = parsed ? parsed.localDayOfWeek : (_ok ? _pd.getDay()   : 0);
+      row.voapps_result_normalized = String(row.voapps_result || '').trim().toLowerCase();
+      row.isSuccess        = row.voapps_result_normalized === 'successfully delivered';
+      row.isDeliveryAttempt = !!(row.voapps_timestamp && row.voapps_timestamp.trim()) &&
+        DELIVERY_ATTEMPT_RESULTS.has(row.voapps_result_normalized);
+
+      // Non-deliverable tracking
+      if (!row.isDeliveryAttempt) {
+        const rn   = row.voapps_result_normalized;
+        const num2 = String(row.number).trim();
+        if      (rn === 'not a wireless number') nonDeliverableCounts['not a wireless number']++;
+        else if (rn === 'not a valid us number') {
+          nonDeliverableCounts['not a valid us number']++;
+          if (/^0+$/.test(num2.replace(/\D/g, ''))) notUSPlaceholderRows++;
+        }
+        else if (rn === 'duplicate number')   nonDeliverableCounts['duplicate number']++;
+        else if (rn === 'undeliverable')      nonDeliverableCounts['undeliverable']++;
+        else if (rn.startsWith('restricted')) nonDeliverableCounts['restricted']++;
+      }
+    }
+
+    log('Sorting rows by date...');
+    validRows.sort((a, b) => (a.parsedMs || 0) - (b.parsedMs || 0));
+
+    // Single pass: build numberData + config errors + date range.
+    // validRows[i] is nulled after each row is consumed so GC can reclaim row objects
+    // incrementally rather than holding all 1.4 M in memory until the loop ends.
+    log('Building number-level data with attempt indexing...');
+    let minMs = null, maxMs = null;
+    for (let _i = 0; _i < validRows.length; _i++) {
+      const row = validRows[_i];
+      validRows[_i] = null; // release reference — allows GC to collect this row object
+
+      // Config error tracking (merged from separate loop)
+      if (CONFIG_ERROR_RESULTS.has(row.voapps_result_normalized)) {
+        const entry = configErrors[row.voapps_result_normalized];
+        entry.total++;
+        entry.byCallerNumber[row.caller_number || 'Unknown'] = (entry.byCallerNumber[row.caller_number || 'Unknown'] || 0) + 1;
+        entry.byMessageId[row.message_id || 'Unknown']       = (entry.byMessageId[row.message_id || 'Unknown']       || 0) + 1;
+      }
+
+      // Date range (merged from separate loop)
+      if (row.parsedMs) {
+        if (minMs === null || row.parsedMs < minMs) minMs = row.parsedMs;
+        if (maxMs === null || row.parsedMs > maxMs) maxMs = row.parsedMs;
+      }
+
+      const num = row.number;
+      if (!numberData[num]) {
+        numberData[num] = {
+          number: num, attempts: [], attemptIndex: 0,
+          consecutiveFailures: 0, totalAttempts: 0,
+          successCount: 0, unsuccessfulCount: 0, lastSuccessTimestamp: null,
+          messageIds: {}, callerNumbers: {}, accountIds: {},
+          hourCounts: new Uint16Array(24), dayOfWeekCounts: new Uint16Array(7),
+          backToBackIdentical: 0, lastMessageId: null,
+          _fpMs: null, _lpMs: null  // first/last attempt ms-epoch
+        };
+      }
+      const nd = numberData[num];
+      if (row.isDeliveryAttempt) { nd.totalAttempts++; nd.attemptIndex++; }
+
+      // Only push delivery attempts — non-deliverable rows never appear in consecRuns
+      // or attemptStats, and excluding them saves substantial memory for large datasets.
+      if (row.isDeliveryAttempt) {
+        nd.attempts.push({
+          ts:          row.parsedMs || 0,
+          isSuccess:   row.isSuccess,
+          attemptIndex: nd.attemptIndex   // already incremented above
         });
       }
 
-      log(`Combined ${csvRows.length.toLocaleString()} total records from ${files.length} file(s)`);
-    } else {
-      csvRows = csvInput;
-      log(`Processing ${csvRows.length.toLocaleString()} row objects`);
-    }
-  } else if (typeof csvInput === 'string') {
-    log(`Reading: ${path.basename(csvInput)}`);
-    const fileStream = fs.createReadStream(csvInput, { encoding: 'utf8' });
-
-    await new Promise((resolve, reject) => {
-      Papa.parse(fileStream, {
-        header: true,
-        skipEmptyLines: true,
-        transformHeader: (h) => h.trim().toLowerCase(),
-        chunk: (results) => {
-          for (const row of results.data) {
-            if (row.number) csvRows.push(row);
-          }
-        },
-        complete: () => resolve(),
-        error: (error) => reject(error)
-      });
-    });
-
-    log(`Loaded ${csvRows.length.toLocaleString()} records`);
-  } else {
-    throw new Error('Invalid input type for csvInput');
-  }
-
-  if (csvRows.length === 0) {
-    throw new Error('No data found in CSV input');
-  }
-
-  // Normalize and validate rows
-  const validRows = csvRows.filter(row => row.number && row.voapps_result && row.voapps_timestamp);
-  log(`Valid rows: ${validRows.length.toLocaleString()}`);
-
-  // Detect timezone from timestamps - both global and per-account
-  let detectedTimezone = null;
-  const timezoneCounts = {};
-  const accountResultTimezones = {};  // Track most common offset per account
-
-  for (const row of validRows) {
-    const tz = extractTimezone(row.voapps_timestamp);
-    if (tz) {
-      const key = tz.offset;
-      timezoneCounts[key] = (timezoneCounts[key] || 0) + 1;
-
-      // Track per-account timezone from results
-      const accountId = row.account_id || 'Unknown';
-      if (!accountResultTimezones[accountId]) {
-        accountResultTimezones[accountId] = {};
+      // Track first/last attempt epoch ms — formatted to string at write time
+      if (row.parsedMs) {
+        if (nd._fpMs === null || row.parsedMs < nd._fpMs) nd._fpMs = row.parsedMs;
+        if (nd._lpMs === null || row.parsedMs > nd._lpMs) nd._lpMs = row.parsedMs;
       }
-      accountResultTimezones[accountId][key] = (accountResultTimezones[accountId][key] || 0) + 1;
-    }
-  }
-
-  // Find most common timezone per account
-  const accountMostCommonOffset = {};
-  for (const [accountId, offsets] of Object.entries(accountResultTimezones)) {
-    let maxAccountCount = 0;
-    let mostCommon = null;
-    for (const [offset, count] of Object.entries(offsets)) {
-      if (count > maxAccountCount) {
-        maxAccountCount = count;
-        mostCommon = offset;
+      const msgId = row.message_id || 'Unknown';
+      nd.messageIds[msgId] = (nd.messageIds[msgId] || 0) + 1;
+      if (nd.lastMessageId && nd.lastMessageId === msgId) nd.backToBackIdentical++;
+      nd.lastMessageId = msgId;
+      nd.callerNumbers[row.caller_number || 'Unknown'] = (nd.callerNumbers[row.caller_number || 'Unknown'] || 0) + 1;
+      nd.accountIds[row.account_id || 'Unknown']       = (nd.accountIds[row.account_id || 'Unknown']       || 0) + 1;
+      if (row.isDeliveryAttempt) { nd.hourCounts[row.localHour]++; nd.dayOfWeekCounts[row.localDayOfWeek]++; }
+      if (row.isSuccess) {
+        nd.successCount++; nd.consecutiveFailures = 0;
+        nd.attemptIndex = 0; nd.lastSuccessTimestamp = row.parsedMs || null;
+      } else if (row.isDeliveryAttempt) {
+        nd.unsuccessfulCount++; nd.consecutiveFailures++;
       }
+
+      // ── Inline account / message / caller / time stats (same as file-path path) ──
+      if (row.isDeliveryAttempt) {
+        const num2 = row.number; // already available as `num` above
+        const aId = row.account_id || 'Unknown';
+        if (!accountStats[aId]) accountStats[aId] = { account_id: aId, successful: 0, unsuccessful: 0, total: 0, uniqueNumbers: 0, dayOfWeekCounts: new Uint16Array(7) };
+        accountStats[aId].total++; accountStats[aId].dayOfWeekCounts[row.localDayOfWeek]++;
+        if (row.isSuccess) accountStats[aId].successful++; else accountStats[aId].unsuccessful++;
+
+        const mId = row.message_id || 'Unknown';
+        const mName = row.message_name || messageMap[mId]?.name || '';
+        if (!messageStats[mId]) messageStats[mId] = { message_id: mId, message_name: mName, intent: inferMessageIntent(mName), successful: 0, unsuccessful: 0, total: 0, uniqueNumbers: 0, dayOfWeekCounts: new Uint16Array(7) };
+        messageStats[mId].total++; messageStats[mId].dayOfWeekCounts[row.localDayOfWeek]++;
+        if (row.isSuccess) messageStats[mId].successful++; else messageStats[mId].unsuccessful++;
+
+        const cNum = row.caller_number || 'Unknown';
+        const cName = row.caller_number_name || callerMap[cNum] || '';
+        if (!callerStats[cNum]) callerStats[cNum] = { caller_number: cNum, caller_name: cName, successful: 0, unsuccessful: 0, total: 0, uniqueNumbers: 0, dayOfWeekCounts: new Uint16Array(7) };
+        callerStats[cNum].total++; callerStats[cNum].dayOfWeekCounts[row.localDayOfWeek]++;
+        if (row.isSuccess) callerStats[cNum].successful++; else callerStats[cNum].unsuccessful++;
+
+        globalHourlyStats[row.localHour].total++;
+        if (row.isSuccess) globalHourlyStats[row.localHour].successful++; else globalHourlyStats[row.localHour].unsuccessful++;
+        globalDayStats[row.localDayOfWeek].total++;
+        if (row.isSuccess) globalDayStats[row.localDayOfWeek].successful++; else globalDayStats[row.localDayOfWeek].unsuccessful++;
+      }
+
+      totalValidRows++;
     }
-    accountMostCommonOffset[accountId] = mostCommon;
+    // Convert epoch extremes → Date objects used by shared code below
+    minDate         = minMs ? new Date(minMs) : null;
+    maxDate         = maxMs ? new Date(maxMs) : null;
+    fourteenDaysAgo = maxDate ? new Date(maxDate.getTime() - 14 * 24 * 60 * 60 * 1000) : null;
+
+    // Free raw row arrays — numberData holds all per-number state
+    csvRows.length = 0;
+    validRows.length = 0;
   }
 
-  // Find most common timezone globally
-  let maxCount = 0;
-  let mostCommonOffset = null;
-  for (const [offset, count] of Object.entries(timezoneCounts)) {
-    if (count > maxCount) {
-      maxCount = count;
-      mostCommonOffset = offset;
-    }
-  }
-
-  if (mostCommonOffset) {
-    detectedTimezone = getTimezoneDisplayName({ offset: mostCommonOffset });
-  } else {
-    detectedTimezone = 'Unknown (timestamps may be UTC)';
-  }
-
-  log(`Detected timezone: ${detectedTimezone} (from ${maxCount.toLocaleString()} timestamps)`);
-
-  // Detect timezone discrepancies between account settings and results
-  const timezoneDiscrepancies = detectTimezoneDiscrepancies(accountTimezones, accountMostCommonOffset);
-  if (timezoneDiscrepancies.length > 0) {
-    log(`⚠️  Found ${timezoneDiscrepancies.length} timezone discrepancy(ies) between account settings and results`);
-  }
-
-  // Parse timestamps and enrich data
-  log('Parsing timestamps and enriching data...');
-  for (const row of validRows) {
-    row.parsedDate = new Date(row.voapps_timestamp);
-    row.voapps_result_normalized = String(row.voapps_result || '').trim().toLowerCase();
-    row.isSuccess = row.voapps_result_normalized.includes('success');
-  }
-
-  // Sort by timestamp
-  log('Sorting rows by date...');
-  validRows.sort((a, b) => a.parsedDate - b.parsedDate);
-
-  // Calculate date range
-  let minDate = null, maxDate = null;
-  for (const row of validRows) {
-    const d = row.parsedDate;
-    if (!d || isNaN(d.getTime())) continue;
-    if (minDate === null || d < minDate) minDate = d;
-    if (maxDate === null || d > maxDate) maxDate = d;
-  }
-  const fourteenDaysAgo = maxDate ? new Date(maxDate.getTime() - 14 * 24 * 60 * 60 * 1000) : null;
-
-  // ============================================================================
-  // BUILD NUMBER-LEVEL DATA WITH ATTEMPT INDEX
-  // ============================================================================
-
-  log('Building number-level data with attempt indexing...');
-  const numberData = {};
-
-  for (const row of validRows) {
-    const num = row.number;
-
-    if (!numberData[num]) {
-      numberData[num] = {
-        number: num,
-        attempts: [],
-        attemptIndex: 0,  // Resets after success
-        consecutiveFailures: 0,
-        totalAttempts: 0,
-        successCount: 0,
-        unsuccessfulCount: 0,
-        lastSuccessTimestamp: null,
-        messageIds: {},
-        callerNumbers: {},
-        accountIds: {},
-        hourCounts: new Array(24).fill(0),
-        dayOfWeekCounts: new Array(7).fill(0),
-        backToBackIdentical: 0,
-        lastMessageId: null
-      };
-    }
-
-    const nd = numberData[num];
-    nd.totalAttempts++;
-
-    // Increment attempt index (resets after success)
-    nd.attemptIndex++;
-
-    const attempt = {
-      timestamp: row.parsedDate,
-      result: row.voapps_result_normalized,
-      isSuccess: row.isSuccess,
-      hour: row.parsedDate.getHours(),
-      dayOfWeek: row.parsedDate.getDay(),
-      message_id: row.message_id || '',
-      message_name: row.message_name || '',
-      caller_number: row.caller_number || '',
-      caller_number_name: row.caller_number_name || '',
-      account_id: row.account_id || '',
-      campaign_id: row.campaign_id || '',
-      campaign_name: row.campaign_name || '',
-      attemptIndex: nd.attemptIndex
-    };
-
-    nd.attempts.push(attempt);
-
-    // Track message usage
-    const msgId = attempt.message_id || 'Unknown';
-    nd.messageIds[msgId] = (nd.messageIds[msgId] || 0) + 1;
-
-    // Check for back-to-back identical messages
-    if (nd.lastMessageId && nd.lastMessageId === msgId) {
-      nd.backToBackIdentical++;
-    }
-    nd.lastMessageId = msgId;
-
-    // Track caller usage
-    const callerNum = attempt.caller_number || 'Unknown';
-    nd.callerNumbers[callerNum] = (nd.callerNumbers[callerNum] || 0) + 1;
-
-    // Track account usage
-    const accountId = attempt.account_id || 'Unknown';
-    nd.accountIds[accountId] = (nd.accountIds[accountId] || 0) + 1;
-
-    // Track time distribution
-    nd.hourCounts[attempt.hour]++;
-    nd.dayOfWeekCounts[attempt.dayOfWeek]++;
-
-    if (row.isSuccess) {
-      nd.successCount++;
-      nd.consecutiveFailures = 0;
-      nd.attemptIndex = 0;  // Reset attempt index after success
-      nd.lastSuccessTimestamp = row.parsedDate;
-    } else {
-      nd.unsuccessfulCount++;
-      nd.consecutiveFailures++;
-    }
-  }
-
+  const hasConfigErrors = Object.values(configErrors).some(e => e.total > 0);
   const uniqueNumbers = Object.keys(numberData).length;
   log(`Analyzed ${uniqueNumbers.toLocaleString()} unique numbers`);
 
@@ -611,86 +1034,9 @@ async function generateTrendAnalysis(
   // ============================================================================
   // BUILD ACCOUNT AND MESSAGE LEVEL STATS WITH DAY-OF-WEEK ANALYSIS
   // ============================================================================
-
+  // Stats are built inline during row processing above — no separate pass needed.
   log('Building account and message level stats...');
 
-  // Global account stats
-  const accountStats = {};
-  const messageStats = {};
-  const callerStats = {};
-
-  // Global hourly stats
-  const globalHourlyStats = {};
-  for (let h = 0; h < 24; h++) globalHourlyStats[h] = { successful: 0, unsuccessful: 0, total: 0 };
-
-  for (const num in numberData) {
-    for (const attempt of numberData[num].attempts) {
-      // Account stats
-      const accountId = attempt.account_id || 'Unknown';
-      if (!accountStats[accountId]) {
-        accountStats[accountId] = {
-          account_id: accountId,
-          successful: 0,
-          unsuccessful: 0,
-          total: 0,
-          uniqueNumbers: new Set(),
-          dayOfWeekCounts: new Array(7).fill(0)
-        };
-      }
-      accountStats[accountId].total++;
-      accountStats[accountId].uniqueNumbers.add(num);
-      accountStats[accountId].dayOfWeekCounts[attempt.dayOfWeek]++;
-      if (attempt.isSuccess) accountStats[accountId].successful++;
-      else accountStats[accountId].unsuccessful++;
-
-      // Message stats
-      const msgId = attempt.message_id || 'Unknown';
-      const msgName = attempt.message_name || messageMap[msgId]?.name || '';
-      if (!messageStats[msgId]) {
-        messageStats[msgId] = {
-          message_id: msgId,
-          message_name: msgName,
-          intent: inferMessageIntent(msgName),
-          successful: 0,
-          unsuccessful: 0,
-          total: 0,
-          uniqueNumbers: new Set(),
-          dayOfWeekCounts: new Array(7).fill(0)
-        };
-      }
-      messageStats[msgId].total++;
-      messageStats[msgId].uniqueNumbers.add(num);
-      messageStats[msgId].dayOfWeekCounts[attempt.dayOfWeek]++;
-      if (attempt.isSuccess) messageStats[msgId].successful++;
-      else messageStats[msgId].unsuccessful++;
-
-      // Caller stats
-      const callerNum = attempt.caller_number || 'Unknown';
-      const callerName = attempt.caller_number_name || callerMap[callerNum] || '';
-      if (!callerStats[callerNum]) {
-        callerStats[callerNum] = {
-          caller_number: callerNum,
-          caller_name: callerName,
-          successful: 0,
-          unsuccessful: 0,
-          total: 0,
-          uniqueNumbers: new Set(),
-          dayOfWeekCounts: new Array(7).fill(0)
-        };
-      }
-      callerStats[callerNum].total++;
-      callerStats[callerNum].uniqueNumbers.add(num);
-      callerStats[callerNum].dayOfWeekCounts[attempt.dayOfWeek]++;
-      if (attempt.isSuccess) callerStats[callerNum].successful++;
-      else callerStats[callerNum].unsuccessful++;
-
-      // Global hourly stats
-      const h = attempt.hour;
-      globalHourlyStats[h].total++;
-      if (attempt.isSuccess) globalHourlyStats[h].successful++;
-      else globalHourlyStats[h].unsuccessful++;
-    }
-  }
 
   // Check for day-of-week patterns in accounts and messages
   const accountDayRecommendations = [];
@@ -732,6 +1078,9 @@ async function generateTrendAnalysis(
 
   for (const num in numberData) {
     const nd = numberData[num];
+    // Skip numbers that only ever appeared in non-deliverable rows (e.g. 0000000000 / 403-only).
+    // They have no delivery attempt data to analyze and would pollute the summary.
+    if (nd.totalAttempts === 0) continue;
     const successRate = nd.totalAttempts > 0 ? nd.successCount / nd.totalAttempts : 0;
 
     // Check for recent success (within 14 days of max date)
@@ -816,11 +1165,9 @@ async function generateTrendAnalysis(
     // Day distribution string
     const dayDistribution = formatDayDistribution(nd.dayOfWeekCounts, nd.totalAttempts);
 
-    // First and last attempt
-    const firstAttempt = nd.attempts[0]?.timestamp;
-    const lastAttempt = nd.attempts[nd.attempts.length - 1]?.timestamp;
-    const validFirstAttempt = firstAttempt && !isNaN(firstAttempt.getTime()) ? firstAttempt : null;
-    const validLastAttempt = lastAttempt && !isNaN(lastAttempt.getTime()) ? lastAttempt : null;
+    // First and last attempt — format epoch ms to UTC timestamp string at write time
+    const validFirstAttempt = nd._fpMs ? epochToTimestamp(nd._fpMs) : null;
+    const validLastAttempt  = nd._lpMs ? epochToTimestamp(nd._lpMs) : null;
 
     // Infer intent from top message
     const messageIntent = inferMessageIntent(topMsgName);
@@ -874,6 +1221,9 @@ async function generateTrendAnalysis(
 
   log('Building consecutive unsuccessful runs...');
   const consecRuns = [];
+  // O(1) lookups instead of O(n) .find() calls inside loops over 271K+ numbers
+  const numSummaryMap = new Map(numberSummaryArray.map(ns => [ns.number, ns]));
+  const inConsecRuns  = new Set(); // tracks numbers already added to consecRuns
 
   for (const num in numberData) {
     const nd = numberData[num];
@@ -886,19 +1236,20 @@ async function generateTrendAnalysis(
       } else {
         // Check if the run meets criteria
         if (currentRun.length >= minConsecUnsuccessful) {
-          const runStart = currentRun[0].timestamp;
-          const runEnd = currentRun[currentRun.length - 1].timestamp;
+          const runStart = currentRun[0].ts ? new Date(currentRun[0].ts) : null;
+          const runEnd = currentRun[currentRun.length - 1].ts ? new Date(currentRun[currentRun.length - 1].ts) : null;
           const spanDays = runStart && runEnd ? (runEnd - runStart) / (1000 * 60 * 60 * 24) : 0;
 
           // Include if span is >= minRunSpanDays OR if we have many consecutive failures
           if (spanDays >= minRunSpanDays || currentRun.length >= 6) {
-            const ns = numberSummaryArray.find(n => n.number === num);
+            const ns = numSummaryMap.get(num);
             consecRuns.push({
               number: num,
               count: currentRun.length,
               runStart, runEnd, spanDays,
               tnHealth: ns?.tnHealth || 'Unknown'
             });
+            inConsecRuns.add(num);
           }
         }
         currentRun = [];
@@ -907,31 +1258,30 @@ async function generateTrendAnalysis(
 
     // Check final run (if the number ends with consecutive failures)
     if (currentRun.length >= minConsecUnsuccessful) {
-      const runStart = currentRun[0].timestamp;
-      const runEnd = currentRun[currentRun.length - 1].timestamp;
+      const runStart = currentRun[0].ts ? new Date(currentRun[0].ts) : null;
+      const runEnd = currentRun[currentRun.length - 1].ts ? new Date(currentRun[currentRun.length - 1].ts) : null;
       const spanDays = runStart && runEnd ? (runEnd - runStart) / (1000 * 60 * 60 * 24) : 0;
 
       // Include regardless of span if consecutive failures are high
-      const ns = numberSummaryArray.find(n => n.number === num);
+      const ns = numSummaryMap.get(num);
       consecRuns.push({
         number: num,
         count: currentRun.length,
         runStart, runEnd, spanDays,
         tnHealth: ns?.tnHealth || 'Unknown'
       });
+      inConsecRuns.add(num);
     }
   }
 
   // Also add all numbers with current consecutive failures >= threshold (that aren't already included)
   for (const ns of numberSummaryArray) {
     if (ns.consecutiveFailures >= minConsecUnsuccessful) {
-      // Check if already in consecRuns
-      const existing = consecRuns.find(r => r.number === ns.number);
-      if (!existing) {
+      if (!inConsecRuns.has(ns.number)) {
         const nd = numberData[ns.number];
         const recentFailures = nd.attempts.slice(-ns.consecutiveFailures);
-        const runStart = recentFailures[0]?.timestamp;
-        const runEnd = recentFailures[recentFailures.length - 1]?.timestamp;
+        const runStart = recentFailures[0]?.ts ? new Date(recentFailures[0].ts) : null;
+        const runEnd = recentFailures[recentFailures.length - 1]?.ts ? new Date(recentFailures[recentFailures.length - 1].ts) : null;
         const spanDays = runStart && runEnd ? (runEnd - runStart) / (1000 * 60 * 60 * 24) : 0;
 
         consecRuns.push({
@@ -947,12 +1297,118 @@ async function generateTrendAnalysis(
   consecRuns.sort((a, b) => b.count - a.count);
   log(`  Found ${consecRuns.length.toLocaleString()} consecutive unsuccessful patterns`);
 
+  // Free attempt arrays — all stats now extracted, no longer needed
+  for (const num in numberData) {
+    numberData[num].attempts = null;
+  }
+
+  // ── Count unique numbers per account / message / caller ──────────────────────
+  // uniqueNumbers was tracked as a plain counter (0) during streaming to avoid
+  // large Sets.  nd.messageIds / callerNumbers / accountIds are already keyed by
+  // phone number (one entry per unique number per entity), so iterating them
+  // gives accurate unique-number counts with O(n) time and O(1) extra memory.
+  log('Counting unique numbers per account / message / caller...');
+  for (const num in numberData) {
+    const nd = numberData[num];
+    for (const msgId    in nd.messageIds)     { if (messageStats[msgId])     messageStats[msgId].uniqueNumbers++;     }
+    for (const callerNum in nd.callerNumbers) { if (callerStats[callerNum])  callerStats[callerNum].uniqueNumbers++;  }
+    for (const acctId   in nd.accountIds)     { if (accountStats[acctId])    accountStats[acctId].uniqueNumbers++;    }
+    // Free per-number dictionaries — no longer needed after this pass
+    nd.messageIds = null; nd.callerNumbers = null; nd.accountIds = null;
+  }
+  // numberData itself is no longer needed — all per-number stats are in numberSummaryArray
+  // Freeing it here recovers ~50–100 MB before Excel generation begins.
+  // (overallSuccessRate uses numberSummaryArray which is already fully built)
+  for (const num in numberData) delete numberData[num];
+
+  // ============================================================================
+  // PRE-COMPUTE FILTERED SETS (used in Executive Summary + detail tabs)
+  // Analysis always runs on ALL numbers; these subsets control what rows appear
+  // in detail tabs so that large datasets don't generate unmanageable sheets.
+  // ============================================================================
+
+  // TN Health tab: only Toxic + Degrading (Healthy = no action needed)
+  const filteredHealth = numberSummaryArray
+    .filter(ns => ns.tnHealth === 'Toxic' || ns.tnHealth === 'Degrading')
+    .sort((a, b) => (a.tnHealth === 'Toxic' ? 0 : 1) - (b.tnHealth === 'Toxic' ? 0 : 1));
+
+  // Variability Analysis tab: only variability score < 60, and only for numbers
+  // with more than 1 attempt. Single-attempt numbers get a neutral score of 50 by
+  // default — there is no actionable diversity issue with just one attempt.
+  const filteredVariability = numberSummaryArray
+    .filter(ns => ns.totalAttempts > 1 && ns.variabilityScore < 60)
+    .sort((a, b) => a.variabilityScore - b.variabilityScore);
+
+  // Number Summary tab: fail at least one criterion.
+  // Variability flag only applies to multi-attempt numbers (same reasoning as above).
+  const filteredSummary = numberSummaryArray.filter(ns =>
+    ns.tnHealth === 'Toxic' ||
+    ns.tnHealth === 'Degrading' ||
+    (ns.totalAttempts > 1 && ns.variabilityScore < 60)
+  );
+
+  // Capture true pre-cap counts — used in key metrics and log messages below.
+  const healthTotalCount  = filteredHealth.length;
+  const varTotalCount     = filteredVariability.length;
+  const summaryTotalCount = filteredSummary.length;
+
+  // Cap each detail tab at MAX_DETAIL_ROWS to bound ExcelJS Cell accumulation.
+  // ExcelJS holds all rows in memory as Cell objects (~3,200 bytes/row × columns).
+  // 3 tabs × 100K rows × ~3,200 bytes ≈ 960 MB — fits under the effective ~2 GB heap limit.
+  // Truncating via .length = N releases array slots above N immediately (GC-eligible).
+  const MAX_DETAIL_ROWS = 100_000;
+  if (filteredHealth.length     > MAX_DETAIL_ROWS) filteredHealth.length     = MAX_DETAIL_ROWS;
+  if (filteredVariability.length > MAX_DETAIL_ROWS) filteredVariability.length = MAX_DETAIL_ROWS;
+  if (filteredSummary.length    > MAX_DETAIL_ROWS) filteredSummary.length    = MAX_DETAIL_ROWS;
+
+  // Helper: "100,000 of 342,819 (capped at 100,000)" or just "18,432"
+  const fmtCapped = (shown, total) =>
+    total > MAX_DETAIL_ROWS
+      ? `${shown.toLocaleString()} of ${total.toLocaleString()} (capped at ${MAX_DETAIL_ROWS.toLocaleString()})`
+      : shown.toLocaleString();
+
+  log(`\nDetail tab filters (analysis ran on all ${numberSummaryArray.length.toLocaleString()} numbers):`);
+  log(`  TN Health tab:          ${fmtCapped(filteredHealth.length, healthTotalCount)} numbers (Toxic/Degrading)`);
+  log(`  Variability tab:        ${fmtCapped(filteredVariability.length, varTotalCount)} numbers (score < 60)`);
+  log(`  Number Summary tab:     ${fmtCapped(filteredSummary.length, summaryTotalCount)} numbers (any flag)`);
+
+  // ============================================================================
+  // PRE-COMPUTE ALL METRICS THAT NEED THE FULL numberSummaryArray, THEN FREE IT
+  // ============================================================================
+  // Do this in one single pass to avoid multiple scans over potentially 1M+ objects,
+  // then immediately release the large array so GC can recover memory before ExcelJS
+  // starts building the workbook (which can peak at 1-2 GB of XML/buffer data).
+  log('Pre-computing aggregates from full number set...');
+  const totalUniqueInSummary = numberSummaryArray.length;
+  let _totalAttempts = 0, _totalSuccess = 0, _sumVariability = 0;
+  let _backToBackIssueCount = 0, _lowDayVarietyCount = 0;
+  for (const ns of numberSummaryArray) {
+    _totalAttempts        += ns.totalAttempts;
+    _totalSuccess         += ns.successful;   // stored as 'successful' in the push, not 'successCount'
+    _sumVariability       += ns.variabilityScore;
+    if (ns.backToBackIdentical > 2) _backToBackIssueCount++;
+    if (ns.dayEntropy < 0.3 && ns.totalAttempts > 2) _lowDayVarietyCount++;
+  }
+  const totalAttempts      = _totalAttempts;
+  const avgVariability     = totalUniqueInSummary > 0 ? _sumVariability / totalUniqueInSummary : 0;
+  const overallSuccessRate = _totalAttempts > 0 ? (_totalSuccess / _totalAttempts * 100) : 0;
+  const backToBackIssues   = _backToBackIssueCount;
+  const lowDayVariety      = _lowDayVarietyCount;
+  const flaggedCount       = summaryTotalCount;  // pre-cap — reflects all flagged numbers, not just the capped subset written to Excel
+  const flaggedPct         = totalUniqueInSummary > 0 ? (flaggedCount / totalUniqueInSummary * 100) : 0;
+
+  // Release unflagged ns objects — filteredX arrays keep flagged ones alive;
+  // Healthy/high-variability entries not in any tab become GC-eligible here.
+  numSummaryMap.clear();
+  numberSummaryArray.length = 0;
+  log(`  Released ${(totalUniqueInSummary - flaggedCount).toLocaleString()} unflagged number entries from memory`);
+
   // ============================================================================
   // CREATE WORKBOOK
   // ============================================================================
 
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'VoApps Delivery Intelligence Platform v3.2.0';
+  workbook.creator = `VoApps Number Analysis and Delivery Intelligence Report v${VERSION}`;
   workbook.created = new Date();
 
   // VoApps-branded styles
@@ -999,7 +1455,7 @@ async function generateTrendAnalysis(
 
   // Title
   execSheet.mergeCells('A1:C1');
-  execSheet.getCell('A1').value = 'Delivery Intelligence Report v3.2.0';
+  execSheet.getCell('A1').value = `Number Analysis and Delivery Intelligence Report v${VERSION}`;
   execSheet.getCell('A1').style = headerStyle;
   execSheet.getRow(1).height = 35;
 
@@ -1011,31 +1467,138 @@ async function generateTrendAnalysis(
   execSheet.getCell(`A${row}`).style = sectionHeaderStyle;
   row++;
 
-  // Calculate overall success rate
-  let totalSuccess = 0, totalAttempts = validRows.length;
-  for (const r of validRows) if (r.isSuccess) totalSuccess++;
-  const overallSuccessRate = totalAttempts > 0 ? (totalSuccess / totalAttempts * 100) : 0;
-
-  // Calculate average variability score
-  const avgVariability = numberSummaryArray.reduce((sum, n) => sum + n.variabilityScore, 0) / numberSummaryArray.length;
-
+  // All aggregates pre-computed and numberSummaryArray freed above
   const keyMetrics = [
     ['Total DDVM Attempts', totalAttempts.toLocaleString()],
     ['Unique Phone Numbers', uniqueNumbers.toLocaleString()],
     ['Delivered %', `${overallSuccessRate.toFixed(1)}%`],
     ['Never Delivered %', `${neverDeliveredPct.toFixed(1)}%`],
-    ['Average Variability Score', `${avgVariability.toFixed(0)}/100`],
-    ['List Quality Grade', listGrade],
+    ['Average Variability Score', `${avgVariability.toFixed(0)}/100`,
+      '0–100 composite score measuring call pattern diversity — message rotation, caller variety, time-of-day spread, and day-of-week distribution. Below 60 is flagged; below 40 suggests repetitive, robocall-like patterns that risk carrier detection.'],
+    ['List Quality Grade', listGrade,
+      'A: >80% Healthy, <5% Toxic, <10% Never Delivered — Excellent.  B: >60% Healthy, <10% Toxic, <20% Never Delivered — Good.  C: >40% Healthy, <20% Toxic — Fair.  D: All other cases — Poor.'],
+    ['Numbers Flagged in Detail Tabs', `${flaggedCount.toLocaleString()} of ${totalUniqueInSummary.toLocaleString()} (${flaggedPct.toFixed(1)}%) — Toxic/Degrading or variability < 60`,
+      'Any number failing at least one threshold — classified Toxic/Degrading by TN Health, OR variability score below 60. A Healthy number with poor call diversity is still flagged. See TN Health and Variability Analysis tabs for the full breakdown.'],
     ['Date Range', `${formatDate(minDate)} - ${formatDate(maxDate)}`],
     ['Timezone', detectedTimezone]
   ];
 
-  for (const [label, value] of keyMetrics) {
+  for (const [label, value, desc] of keyMetrics) {
     execSheet.getCell(`A${row}`).value = label;
     execSheet.getCell(`A${row}`).font = { bold: true };
     execSheet.getCell(`B${row}`).value = value;
     if (label === 'List Quality Grade') {
       execSheet.getCell(`B${row}`).style = listGrade === 'A' || listGrade === 'B' ? successStyle : warningStyle;
+    }
+    if (desc) {
+      execSheet.getCell(`C${row}`).value = desc;
+      execSheet.getCell(`C${row}`).font = { italic: true, size: 9, color: { argb: 'FF555555' } };
+      execSheet.getCell(`C${row}`).alignment = { wrapText: true };
+    }
+    row++;
+  }
+
+  row++; // Blank row
+
+  // Non-Deliverable Records
+  const totalNonDeliverable = Object.values(nonDeliverableCounts).reduce((s, v) => s + v, 0);
+  if (totalNonDeliverable > 0) {
+    execSheet.mergeCells(`A${row}:C${row}`);
+    execSheet.getCell(`A${row}`).value = 'Non-Deliverable Records (Excluded from Delivery Analysis)';
+    execSheet.getCell(`A${row}`).style = sectionHeaderStyle;
+    row++;
+
+    const notUSTotal = nonDeliverableCounts['not a valid us number'];
+    const notUSReal  = notUSTotal - notUSPlaceholderRows;
+
+    const nonDelivRows = [
+      ['Not a wireless number (401)',   nonDeliverableCounts['not a wireless number'],
+        'Confirmed US numbers that are landlines or VoIP — cannot receive DDVM.'],
+      ['Not a valid US number (403)',   notUSTotal,
+        notUSTotal > 0
+          ? `Includes ${notUSPlaceholderRows.toLocaleString()} placeholder/invalid entries (e.g. all-zero numbers) ` +
+            `and ${notUSReal.toLocaleString()} real but non-US numbers (e.g. international contacts). ` +
+            `Both are treated identically — VoApps only delivers to wireless US numbers.`
+          : ''],
+      ['Duplicate number (402)',        nonDeliverableCounts['duplicate number'],
+        'Number appeared more than once in the submitted contact list.'],
+      ['Undeliverable (404)',           nonDeliverableCounts['undeliverable'],
+        'Number too short, too long, or contained an illegal NPA/NXX.'],
+      ['Restricted (500–504)',          nonDeliverableCounts['restricted'],
+        'Blocked by frequency, geographic, individual, or WebRecon restriction.'],
+    ];
+
+    for (const [label, count, note] of nonDelivRows) {
+      if (count === 0) continue;
+      execSheet.getCell(`A${row}`).value = label;
+      execSheet.getCell(`A${row}`).font = { bold: true };
+      execSheet.getCell(`B${row}`).value = count.toLocaleString();
+      execSheet.getCell(`C${row}`).value = note;
+      execSheet.getCell(`C${row}`).font = { italic: true, size: 9 };
+      row++;
+    }
+
+    execSheet.getCell(`A${row}`).value = 'Total non-deliverable rows';
+    execSheet.getCell(`A${row}`).font = { bold: true };
+    execSheet.getCell(`B${row}`).value = totalNonDeliverable.toLocaleString();
+    row++;
+  }
+
+  row++; // Blank row
+
+  // Configuration Error Results (if any)
+  if (hasConfigErrors) {
+    execSheet.mergeCells(`A${row}:C${row}`);
+    execSheet.getCell(`A${row}`).value = '⚠️ Configuration Error Results';
+    execSheet.getCell(`A${row}`).style = sectionHeaderStyle;
+    row++;
+
+    const errorResultLabels = {
+      'invalid message id':    'Invalid Message ID',
+      'invalid caller number': 'Invalid Caller Number',
+      'prohibited self call':  'Prohibited Self Call'
+    };
+
+    for (const [resultKey, label] of Object.entries(errorResultLabels)) {
+      const entry = configErrors[resultKey];
+      if (entry.total === 0) continue;
+
+      // Summary line
+      execSheet.getCell(`A${row}`).value = label;
+      execSheet.getCell(`A${row}`).font = { bold: true };
+      execSheet.getCell(`B${row}`).value = `${entry.total.toLocaleString()} occurrences`;
+      execSheet.getCell(`B${row}`).style = warningStyle;
+      row++;
+
+      // By caller number (top 10)
+      const callerEntries = Object.entries(entry.byCallerNumber)
+        .sort((a, b) => b[1] - a[1]).slice(0, 10);
+      if (callerEntries.length > 0) {
+        execSheet.getCell(`A${row}`).value = '  By Caller Number:';
+        execSheet.getCell(`A${row}`).font = { italic: true };
+        row++;
+        for (const [caller, count] of callerEntries) {
+          execSheet.getCell(`A${row}`).value = `    ${caller}`;
+          execSheet.getCell(`B${row}`).value = count.toLocaleString();
+          row++;
+        }
+      }
+
+      // By message ID (top 10)
+      const msgEntries = Object.entries(entry.byMessageId)
+        .sort((a, b) => b[1] - a[1]).slice(0, 10);
+      if (msgEntries.length > 0 && resultKey !== 'invalid caller number') {
+        execSheet.getCell(`A${row}`).value = '  By Message ID:';
+        execSheet.getCell(`A${row}`).font = { italic: true };
+        row++;
+        for (const [msgId, count] of msgEntries) {
+          execSheet.getCell(`A${row}`).value = `    ${msgId}`;
+          execSheet.getCell(`B${row}`).value = count.toLocaleString();
+          row++;
+        }
+      }
+
+      row++; // spacing between error types
     }
     row++;
   }
@@ -1049,13 +1612,17 @@ async function generateTrendAnalysis(
   row++;
 
   const healthDist = [
-    ['Healthy', `${healthyCount.toLocaleString()} (${healthyPct.toFixed(1)}%)`],
-    ['Degrading', `${degradingCount.toLocaleString()} (${degradingPct.toFixed(1)}%)`],
-    ['Toxic', `${toxicCount.toLocaleString()} (${toxicPct.toFixed(1)}%)`],
-    ['Never Delivered', `${neverDeliveredCount.toLocaleString()} (${neverDeliveredPct.toFixed(1)}%)`]
+    ['Healthy', `${healthyCount.toLocaleString()} (${healthyPct.toFixed(1)}%)`,
+      'Acceptable success rate with no sustained consecutive-failure streak. Good deliverability — no immediate action required. Monitor variability score to avoid repetitive call patterns.'],
+    ['Degrading', `${degradingCount.toLocaleString()} (${degradingPct.toFixed(1)}%)`,
+      'Success rate below 25% with 2+ consecutive failures, or below 40% with 3+ consecutive failures. Delivery is declining — review messaging frequency, caller rotation, and list hygiene.'],
+    ['Toxic', `${toxicCount.toLocaleString()} (${toxicPct.toFixed(1)}%)`,
+      'Success rate below 10% with 4+ consecutive failures; or 6+ consecutive failures regardless of rate; or 5+ attempts with zero successes. Remove from active DDVM campaigns immediately.'],
+    ['Never Delivered', `${neverDeliveredCount.toLocaleString()} (${neverDeliveredPct.toFixed(1)}%)`,
+      'Zero successful deliveries across all attempts in this dataset. Overlaps with all health categories — a number with only 1–2 attempts and no consecutive failures can be Healthy yet never have a successful delivery on record. % is of all unique numbers.']
   ];
 
-  for (const [label, value] of healthDist) {
+  for (const [label, value, desc] of healthDist) {
     execSheet.getCell(`A${row}`).value = label;
     execSheet.getCell(`A${row}`).font = { bold: true };
     execSheet.getCell(`B${row}`).value = value;
@@ -1063,6 +1630,11 @@ async function generateTrendAnalysis(
       execSheet.getCell(`B${row}`).style = warningStyle;
     } else if (label === 'Healthy') {
       execSheet.getCell(`B${row}`).style = successStyle;
+    }
+    if (desc) {
+      execSheet.getCell(`C${row}`).value = desc;
+      execSheet.getCell(`C${row}`).font = { italic: true, size: 9, color: { argb: 'FF555555' } };
+      execSheet.getCell(`C${row}`).alignment = { wrapText: true };
     }
     row++;
   }
@@ -1104,14 +1676,12 @@ async function generateTrendAnalysis(
     actions.push(`IMPROVE ROTATION: Average variability score of ${avgVariability.toFixed(0)} is low. Increase message and caller diversity.`);
   }
 
-  // Check for back-to-back issues
-  const backToBackIssues = numberSummaryArray.filter(n => n.backToBackIdentical > 2).length;
+  // Check for back-to-back issues (backToBackIssues pre-computed above)
   if (backToBackIssues > uniqueNumbers * 0.1) {
     actions.push(`MESSAGE FATIGUE: ${backToBackIssues.toLocaleString()} numbers received back-to-back identical messages. Vary your messaging.`);
   }
 
-  // Check day distribution
-  const lowDayVariety = numberSummaryArray.filter(n => n.dayEntropy < 0.3 && n.totalAttempts > 2).length;
+  // Check day distribution (lowDayVariety pre-computed above)
   if (lowDayVariety > uniqueNumbers * 0.2) {
     actions.push(`WEEKDAY VARIANCE: ${lowDayVariety.toLocaleString()} numbers have DDVM attempts on the same days. Spread attempts across the week.`);
   }
@@ -1127,6 +1697,17 @@ async function generateTrendAnalysis(
   // Add timezone discrepancy warning
   if (timezoneDiscrepancies.length > 0) {
     actions.push(`TIMEZONE SETTINGS: ${timezoneDiscrepancies.length} account(s) have timezone mismatches between account settings and results. Check DirectDrop Voicemail account settings to ensure the "Use account timezone in results file" checkbox is enabled for consistent reporting.`);
+  }
+
+  // Add config error warnings
+  if (configErrors['invalid message id'].total > 0) {
+    actions.push(`INVALID MESSAGE ID: ${configErrors['invalid message id'].total.toLocaleString()} attempts failed due to an invalid message ID. Verify message IDs are correct in your campaign configuration. See Executive Summary for breakdown by caller number.`);
+  }
+  if (configErrors['invalid caller number'].total > 0) {
+    actions.push(`INVALID CALLER NUMBER: ${configErrors['invalid caller number'].total.toLocaleString()} attempts failed due to an invalid caller number. Verify caller numbers are active and correctly configured in your account.`);
+  }
+  if (configErrors['prohibited self call'].total > 0) {
+    actions.push(`PROHIBITED SELF CALL: ${configErrors['prohibited self call'].total.toLocaleString()} attempts were blocked as self-calls. Ensure caller numbers do not match destination numbers in your campaigns.`);
   }
 
   if (actions.length === 0) {
@@ -1188,8 +1769,8 @@ async function generateTrendAnalysis(
   }
 
   execSheet.getColumn(1).width = 30;
-  execSheet.getColumn(2).width = 25;
-  execSheet.getColumn(3).width = 30;
+  execSheet.getColumn(2).width = 50.83;  // renders as 50
+  execSheet.getColumn(3).width = 130.83; // renders as 130
 
   // ========================================
   // TAB 2: RETRY DECAY CURVE
@@ -1255,52 +1836,47 @@ async function generateTrendAnalysis(
     cell.style = tableHeaderStyle;
   });
 
-  // Sort by health (Toxic first, then Degrading, then Healthy)
-  const healthSorted = [...numberSummaryArray].sort((a, b) => {
-    const healthOrder = { 'Toxic': 0, 'Degrading': 1, 'Healthy': 2 };
-    return healthOrder[a.tnHealth] - healthOrder[b.tnHealth];
-  });
+  log(`  TN Health: ${filteredHealth.length.toLocaleString()} critical numbers shown (Healthy excluded)`);
 
-  let healthRow = 2;
-  for (const ns of healthSorted) {
-    let action = '';
-    if (ns.tnHealth === 'Toxic') action = 'Suppress immediately';
-    else if (ns.tnHealth === 'Degrading') action = 'Monitor / Consider removal';
-    else action = 'Continue';
+  // Column-level numFmt (one call per column instead of N per-cell calls)
+  healthSheet.getColumn(4).numFmt = '0.0%';  // D - Success Rate
 
-    healthSheet.getRow(healthRow).values = [
-      Number(ns.number),
-      ns.tnHealth,
-      ns.neverDelivered ? 'Yes' : 'No',
-      ns.successRate,
-      ns.totalAttempts,
-      ns.consecutiveFailures,
-      ns.attemptIndex,
-      ns.lastSuccessTimestamp,
-      ns.variabilityScore,
-      action
+  const healthRows = filteredHealth.map(ns => {
+    const action = ns.tnHealth === 'Toxic' ? 'Suppress immediately' : 'Monitor / Consider removal';
+    // lastSuccessTimestamp is stored as ms-epoch number (or Date from older code paths)
+    const lastSuccStr = ns.lastSuccessTimestamp
+      ? (ns.lastSuccessTimestamp instanceof Date
+          ? ns.lastSuccessTimestamp.toISOString().split('T')[0]
+          : new Date(ns.lastSuccessTimestamp).toISOString().split('T')[0])
+      : '';
+    return [
+      ns.number, ns.tnHealth, ns.neverDelivered ? 'Yes' : 'No',
+      ns.successRate, ns.totalAttempts, ns.consecutiveFailures,
+      ns.attemptIndex, lastSuccStr, ns.variabilityScore, action
     ];
+  });
+  healthSheet.addRows(healthRows);
+  const healthLastRow = healthRows.length + 1;
+  // Free source data — ExcelJS has its own internal copy now
+  filteredHealth.length = 0; healthRows.length = 0;
 
-    healthSheet.getCell(`D${healthRow}`).numFmt = '0.0%';
-    if (ns.lastSuccessTimestamp) {
-      healthSheet.getCell(`H${healthRow}`).numFmt = 'yyyy-mm-dd';
-    }
-
-    // Color coding
-    if (ns.tnHealth === 'Toxic') {
-      healthSheet.getCell(`B${healthRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC7CE' } };
-    } else if (ns.tnHealth === 'Degrading') {
-      healthSheet.getCell(`B${healthRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEB9C' } };
-    } else {
-      healthSheet.getCell(`B${healthRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'C6EFCE' } };
-    }
-
-    if (ns.neverDelivered) {
-      healthSheet.getCell(`C${healthRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC7CE' } };
-    }
-
-    healthRow++;
-  }
+  // Conditional formatting — one rule set for the whole column (no per-cell fill)
+  healthSheet.addConditionalFormatting({
+    ref: `B2:B${healthLastRow}`,
+    rules: [
+      { type: 'cellIs', operator: 'equal', formulae: ['"Toxic"'],    priority: 1,
+        style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFC7CE' } } } },
+      { type: 'cellIs', operator: 'equal', formulae: ['"Degrading"'], priority: 2,
+        style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFEB9C' } } } }
+    ]
+  });
+  healthSheet.addConditionalFormatting({
+    ref: `C2:C${healthLastRow}`,
+    rules: [
+      { type: 'cellIs', operator: 'equal', formulae: ['"Yes"'], priority: 1,
+        style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFC7CE' } } } }
+    ]
+  });
 
   healthSheet.getColumn(1).width = 15;
   healthSheet.getColumn(2).width = 12;
@@ -1330,45 +1906,41 @@ async function generateTrendAnalysis(
     cell.style = tableHeaderStyle;
   });
 
-  // Sort by variability score (lowest first to highlight problems)
-  const varSorted = [...numberSummaryArray].sort((a, b) => a.variabilityScore - b.variabilityScore);
+  log(`  Variability Analysis: ${filteredVariability.length.toLocaleString()} numbers shown (score < 60)`);
 
-  let varRow = 2;
-  for (const ns of varSorted) {
-    varSheet.getRow(varRow).values = [
-      Number(ns.number),
-      ns.variabilityScore,
-      ns.topMsgPct,
-      ns.uniqueMsgCount,
-      ns.topCallerPct,
-      ns.uniqueCallerCount,
-      ns.backToBackIdentical,
-      ns.dayEntropy,
-      ns.hourEntropy,
-      ns.dayDistribution
-    ];
+  // Column-level numFmt — one call per column instead of N per-cell calls
+  varSheet.getColumn(3).numFmt = '0.0%';   // C - Top Msg %
+  varSheet.getColumn(5).numFmt = '0.0%';   // E - Top Caller %
+  varSheet.getColumn(8).numFmt = '0.00';   // H - Day Entropy
+  varSheet.getColumn(9).numFmt = '0.00';   // I - Hour Entropy
 
-    varSheet.getCell(`C${varRow}`).numFmt = '0.0%';
-    varSheet.getCell(`E${varRow}`).numFmt = '0.0%';
-    varSheet.getCell(`H${varRow}`).numFmt = '0.00';
-    varSheet.getCell(`I${varRow}`).numFmt = '0.00';
+  const varRows = filteredVariability.map(ns => [
+    ns.number, ns.variabilityScore, ns.topMsgPct, ns.uniqueMsgCount,
+    ns.topCallerPct, ns.uniqueCallerCount, ns.backToBackIdentical,
+    ns.dayEntropy, ns.hourEntropy, ns.dayDistribution
+  ]);
+  varSheet.addRows(varRows);
+  const varLastRow = varRows.length + 1;
+  // Free source data — ExcelJS has its own internal copy now
+  filteredVariability.length = 0; varRows.length = 0;
 
-    // Color code variability score
-    if (ns.variabilityScore < 30) {
-      varSheet.getCell(`B${varRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC7CE' } };
-    } else if (ns.variabilityScore < 50) {
-      varSheet.getCell(`B${varRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEB9C' } };
-    } else {
-      varSheet.getCell(`B${varRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'C6EFCE' } };
-    }
-
-    // Highlight back-to-back issues
-    if (ns.backToBackIdentical > 2) {
-      varSheet.getCell(`G${varRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEB9C' } };
-    }
-
-    varRow++;
-  }
+  // Conditional formatting for variability score and back-to-back
+  varSheet.addConditionalFormatting({
+    ref: `B2:B${varLastRow}`,
+    rules: [
+      { type: 'cellIs', operator: 'lessThan',           formulae: ['30'], priority: 1,
+        style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFC7CE' } } } },
+      { type: 'cellIs', operator: 'lessThanOrEqual',    formulae: ['60'], priority: 2,
+        style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFEB9C' } } } }
+    ]
+  });
+  varSheet.addConditionalFormatting({
+    ref: `G2:G${varLastRow}`,
+    rules: [
+      { type: 'cellIs', operator: 'greaterThan', formulae: ['2'], priority: 1,
+        style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFEB9C' } } } }
+    ]
+  });
 
   varSheet.getColumn(1).width = 15;
   varSheet.getColumn(2).width = 16;
@@ -1401,30 +1973,29 @@ async function generateTrendAnalysis(
     cell.style = tableHeaderStyle;
   });
 
-  let sumRow = 2;
-  for (const ns of numberSummaryArray) {
-    summarySheet.getRow(sumRow).values = [
-      Number(ns.number), ns.totalAttempts, ns.successful, ns.unsuccessful, ns.successRate,
-      ns.tnHealth, ns.variabilityScore, ns.firstAttempt, ns.lastAttempt,
-      Number(ns.topMsgId) || ns.topMsgId, ns.topMsgName, ns.topMsgPct, ns.uniqueMsgCount,
-      ns.topCallerNum, ns.topCallerName, ns.topCallerPct, ns.uniqueCallerCount,
-      ns.messageIntent, ns.dayDistribution
-    ];
+  log(`  Number Summary: ${filteredSummary.length.toLocaleString()} numbers shown (any flag)`);
 
-    summarySheet.getCell(`E${sumRow}`).numFmt = '0.0%';
-    if (ns.firstAttempt) summarySheet.getCell(`H${sumRow}`).numFmt = 'yyyy-mm-dd hh:mm';
-    if (ns.lastAttempt) summarySheet.getCell(`I${sumRow}`).numFmt = 'yyyy-mm-dd hh:mm';
-    summarySheet.getCell(`L${sumRow}`).numFmt = '0.0%';
-    summarySheet.getCell(`P${sumRow}`).numFmt = '0.0%';
+  // Column-level numFmt — one call per column instead of N per-cell calls
+  summarySheet.getColumn(5).numFmt  = '0.0%';  // E - Success Rate
+  summarySheet.getColumn(12).numFmt = '0.0%';  // L - Top Msg %
+  summarySheet.getColumn(16).numFmt = '0.0%';  // P - Top Caller %
 
-    sumRow++;
-  }
+  const summaryRows = filteredSummary.map(ns => [
+    ns.number, ns.totalAttempts, ns.successful, ns.unsuccessful, ns.successRate,
+    ns.tnHealth, ns.variabilityScore, ns.firstAttempt, ns.lastAttempt,
+    Number(ns.topMsgId) || ns.topMsgId, ns.topMsgName, ns.topMsgPct, ns.uniqueMsgCount,
+    ns.topCallerNum, ns.topCallerName, ns.topCallerPct, ns.uniqueCallerCount,
+    ns.messageIntent, ns.dayDistribution
+  ]);
+  summarySheet.addRows(summaryRows);
+  // Free source data — ExcelJS has its own internal copy now
+  filteredSummary.length = 0; summaryRows.length = 0;
 
   // Set column widths
   const widths = [15, 18, 10, 12, 11, 10, 10, 16, 16, 12, 22, 10, 10, 14, 22, 11, 12, 12, 55];
   widths.forEach((w, idx) => summarySheet.getColumn(idx + 1).width = w);
 
-  log(`  Number Summary: ${numberSummaryArray.length.toLocaleString()} rows`);
+  log(`  Number Summary: ${filteredSummary.length.toLocaleString()} flagged rows written`);
 
   // ========================================
   // TAB 6: MESSAGE INSIGHTS
@@ -1438,7 +2009,7 @@ async function generateTrendAnalysis(
 
   const messageArray = Object.values(messageStats).map(m => ({
     ...m,
-    uniqueNumbers: m.uniqueNumbers.size,
+    uniqueNumbers: m.uniqueNumbers,
     success_rate: m.total > 0 ? m.successful / m.total : 0,
     dayPattern: getDayUsagePattern(m.dayOfWeekCounts)
   })).sort((a, b) => b.total - a.total);
@@ -1488,7 +2059,7 @@ async function generateTrendAnalysis(
 
   const callerArray = Object.values(callerStats).map(c => ({
     ...c,
-    uniqueNumbers: c.uniqueNumbers.size,
+    uniqueNumbers: c.uniqueNumbers,
     success_rate: c.total > 0 ? c.successful / c.total : 0,
     dayPattern: getDayUsagePattern(c.dayOfWeekCounts)
   })).sort((a, b) => b.total - a.total);
@@ -1535,8 +2106,23 @@ async function generateTrendAnalysis(
     views: [{ state: 'frozen', xSplit: 0, ySplit: 1 }]
   });
 
-  // Timezone notice at top
-  timeSheet.getCell('A1').value = `Timezone: ${detectedTimezone}`;
+  // Timezone notice at top - show user's selected timezone with label
+  // Handle IANA timezone names vs legacy offset format
+  let userTzDisplay;
+  if (userTimezone === 'VoApps') {
+    userTzDisplay = 'VoApps Time (UTC-7, constant)';
+  } else if (userTimezone === 'UTC') {
+    userTzDisplay = 'UTC';
+  } else if (userTimezone.startsWith('America/')) {
+    // IANA timezone name - show label with DST note
+    userTzDisplay = `${userTimezoneLabel} (DST-aware)`;
+  } else if (userTimezone.startsWith('-') || userTimezone.startsWith('+')) {
+    // Legacy offset format
+    userTzDisplay = userTimezoneLabel ? `${userTimezoneLabel} (UTC${userTimezone})` : `UTC${userTimezone}`;
+  } else {
+    userTzDisplay = userTimezoneLabel || userTimezone;
+  }
+  timeSheet.getCell('A1').value = `Report Timezone: ${userTzDisplay}`;
   timeSheet.getCell('A1').font = { bold: true, size: 12, color: { argb: VOAPPS_PURPLE } };
   timeSheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: VOAPPS_PURPLE_PALE } };
   timeSheet.mergeCells('A1:E1');
@@ -1567,18 +2153,9 @@ async function generateTrendAnalysis(
   timeSheet.getCell(`A${dayStartRow}`).value = 'Daily Success Patterns';
   timeSheet.getCell(`A${dayStartRow}`).font = { bold: true, size: 12 };
 
-  const dailyStats = {};
+  // Use pre-computed globalDayStats (accumulated during the stats loop above)
+  const dailyStats = globalDayStats;
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  for (let d = 0; d < 7; d++) dailyStats[d] = { successful: 0, unsuccessful: 0, total: 0 };
-
-  for (const num in numberData) {
-    for (const attempt of numberData[num].attempts) {
-      const d = attempt.dayOfWeek;
-      dailyStats[d].total++;
-      if (attempt.isSuccess) dailyStats[d].successful++;
-      else dailyStats[d].unsuccessful++;
-    }
-  }
 
   const dayHeaderRow = dayStartRow + 1;
   timeSheet.getRow(dayHeaderRow).values = ['Day of Week', 'Total DDVM Attempts', 'Successful', 'Unsuccessful', 'Success Rate'];
@@ -1685,7 +2262,7 @@ async function generateTrendAnalysis(
   const glossarySheet = workbook.addWorksheet('Glossary');
 
   glossarySheet.mergeCells('A1:B1');
-  glossarySheet.getCell('A1').value = 'Delivery Intelligence Platform v3.2.0 - Glossary';
+  glossarySheet.getCell('A1').value = `Number Analysis and Delivery Intelligence Report v${VERSION} - Glossary`;
   glossarySheet.getCell('A1').style = headerStyle;
   glossarySheet.getRow(1).height = 35;
 
@@ -1699,6 +2276,7 @@ async function generateTrendAnalysis(
 
   const coreConcepts = [
     ['DDVM', 'DirectDrop Voicemail - VoApps patented technology that delivers voicemail messages directly to mobile carrier voicemail platforms without ringing the phone.'],
+    ['VoApps Time', 'A constant UTC-7 timezone (no DST adjustment) used by VoApps to slice days consistently for campaign scheduling. When VoApps Time is selected, timestamps always show UTC-7 regardless of season. US timezone options (ET, CT, MT, PT) are DST-aware and show the correct offset for each timestamp based on its date.'],
     ['Attempt Index', 'The number of DDVM delivery attempts to a phone number since the last successful delivery. Resets to 0 after each success. Higher values indicate declining deliverability.'],
     ['TN Health', 'Classification of phone number health: Healthy (good deliverability), Degrading (declining performance), or Toxic (should be suppressed).'],
     ['Never Delivered', 'A phone number that has never received a successful DDVM delivery across all attempts.'],
@@ -1759,7 +2337,7 @@ async function generateTrendAnalysis(
     ['400 - Unsuccessful delivery attempt', 'Unable to connect to the voicemail platform to deliver the message.'],
     ['401 - Not a wireless number', 'DDVM can only deliver to mobile phones. The number provided is not identified as wireless.'],
     ['402 - Duplicate number', 'An identical phone number was in the submitted contact records.'],
-    ['403 - Not a valid US number', 'Phone number is outside the United States or formatted incorrectly.'],
+    ['403 - Not a valid US number', 'The number cannot be identified as a wireless US number. This category covers two very different cases: (1) obviously invalid placeholders such as 0000000000 that are not real telephone numbers at all, and (2) real, valid phone numbers belonging to contacts outside the United States (e.g. a customer in Portugal with a legitimate Portuguese mobile number). VoApps can only deliver to wireless numbers within the US, so both cases are treated identically — neither will ever receive a message, and neither counts as a delivery attempt. See the Non-Deliverable Records section of the Executive Summary for a breakdown.'],
     ['404 - Undeliverable', 'Phone number unable to be attempted. Number likely too short, too long, or contained an illegal NPA_NXX.'],
     ['405 - Not in service', 'Phone number is not in service and unable to accept voicemails.'],
     ['406 - Voicemail not setup', 'The voicemail box for this phone number has not been setup.'],
@@ -1822,7 +2400,7 @@ async function generateTrendAnalysis(
   log(`Delivery Intelligence Analysis complete: ${path.basename(outputPath)}`);
 
   return {
-    totalRecords: validRows.length,
+    totalRecords: totalValidRows,
     uniqueNumbers,
     overallSuccessRate,
     listGrade,
