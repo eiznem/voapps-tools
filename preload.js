@@ -1,5 +1,5 @@
 /**
- * VoApps Tools v3.4.1 — Electron Preload
+ * VoApps Tools v3.4.2 — Electron Preload
  *
  * WHAT THIS DOES
  * - Exposes a safe, minimal bridge to the renderer (index.html)
@@ -21,6 +21,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('voapps', {
   getLastArtifacts: () => ipcRenderer.invoke('get-last-artifacts'),
   openPath: (filePath) => ipcRenderer.invoke('open-path', filePath),
+  showItemInFolder: (filePath) => ipcRenderer.invoke('show-item-in-folder', filePath),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   openUpdateUrl: (url) => ipcRenderer.invoke('open-update-url', url),
   getDatabaseStats: () => ipcRenderer.invoke('get-database-stats'),

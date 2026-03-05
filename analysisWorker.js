@@ -5,7 +5,7 @@ const { workerData, parentPort } = require('worker_threads');
 const { generateTrendAnalysis } = require('./trendAnalyzer');
 
 async function run() {
-  const { inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel } = workerData;
+  const { inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel, includeDetailTabs = false, transcriptMap = {} } = workerData;
 
   try {
     await generateTrendAnalysis(
@@ -17,7 +17,9 @@ async function run() {
       callerMap || {},
       accountMap || {},
       userTz,
-      userTzLabel
+      userTzLabel,
+      includeDetailTabs,
+      transcriptMap
     );
     parentPort.postMessage({ ok: true });
   } catch (err) {

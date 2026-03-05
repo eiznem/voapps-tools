@@ -2,7 +2,7 @@
 // VoApps Tools Version Management
 //
 // Notes:
-// - Current version reflects the newest release (3.2.0).
+// - Current version reflects the newest release (4.1.0).
 // - Keeps feature flags + author from the original "DuckDB Edition" file.
 // - Changelog is unified so each version can include: changes/features, fixes, and breaking changes.
 
@@ -10,9 +10,9 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '3.4.1',
-  VERSION_NAME: 'Memory & Stability Improvements',
-  RELEASE_DATE: '2026-02-27',
+  VERSION: '4.1.0',
+  VERSION_NAME: 'AI Polish & Report Accuracy',
+  RELEASE_DATE: '2026-03-04',
   AUTHOR: 'Brett Menzie',
 
   // -----------------------------
@@ -50,57 +50,143 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '4.1.0': {
+      date: '2026-03-04',
+      title: 'AI Polish & Report Accuracy',
+      changes: [
+        'Transcript Cache browser — view all cached transcriptions in a searchable table directly from the AI settings panel; edit transcript, intent, and summary inline; delete individual entries',
+        'AI transcription accuracy caveat added to both the AI settings panel and the Executive Summary Message Intelligence section',
+        'Message summaries capped at 6 words with no filler — local extractive summary truncated to first 6 words; OpenAI prompt updated to enforce the limit',
+        'AI drawer Transcription and Intent & Summary sections converted to tabs for a cleaner layout',
+        'Report Output drawer Analysis Tabs and CSV Columns sections converted to tabs',
+        'Removed "Degrading" TN Health classification entirely — numbers are now either Healthy or Delivery Unlikely; all references removed from Executive Summary, TN Health tab conditional formatting, log output, list grade calculation, and return values',
+        'Executive Summary goal paragraph updated: "across campaigns in a selected date range" and "maximize effectiveness of DirectDrop Voicemail"',
+        'Delivered % description updated: result code label changed from "200/Delivered" to "200 | Successfully delivered"',
+        'WAV PCM audio decoder — VoApps DDVM recordings are RIFF/WAV, not MP3; added native Node.js PCM parser supporting 8/16/24/32-bit mono/stereo at any sample rate; fixes all Whisper hallucinations ([Music], (chiming), etc.) caused by mpg123-decoder silently misinterpreting WAV headers',
+        'OpenAI STT multipart form fix — rewrote transcribeWithOpenAI to use https.request() with form.pipe(req) instead of crossPlatformFetch, resolving "Could not parse multipart form" 400 errors',
+        'Whisper hallucination filter — transcripts consisting entirely of event tokens ([Music], (chiming), etc.) are detected and discarded; stale hallucination results in cache are automatically re-transcribed',
+        'OpenAI 429 quota exceeded handling — first 429 aborts remaining messages and sends a persistent in-app notification with an "Add Credits" action button linking to the OpenAI billing page',
+        'Audio download redirect support — downloadFile now follows HTTP 301/302/303/307/308 redirects up to 5 hops with Content-Type and size logging',
+        'Model status buttons now correctly show "Re-download Whisper Model" / "Re-download Intent Model" when models are already downloaded (was setting tooltip attribute instead of button label)',
+        'Suppression Candidates span filter strictly enforces minimum span days — removed bypass that allowed sub-threshold entries through',
+        'Consecutive run tracking: added back-to-back same-message streak metrics (maxSameStreak) to numberSummaryArray and Executive Summary Message & Day Variability Insights section',
+        'Executive Summary goal row (A2) added as merged italic paragraph',
+        'List Quality Grade column C now shows grade-specific actionable advice (A/B/C/D)',
+        'Day-of-week recommendations rewritten to consumer-behavior rationale with preamble tip cell',
+        'Removed Recommendation column from Caller # Insights tab',
+        'Retry Decay Curve glossary entry rewritten with per-cohort explanation and worked 3-attempt example',
+        'Glossary updates: Day-of-Week Variety with consumer behavior rationale, List Hygiene mentions Never Delivered removal, Speech-to-Text (Future) entry deleted, TN Health Classifications updated'
+      ],
+      features: [
+        'Transcript Cache browser with inline edit and delete per entry',
+        'WAV PCM native decoder — correct transcription for all VoApps DDVM audio files',
+        'Whisper hallucination detection and cache invalidation',
+        'OpenAI quota exceeded in-app notification with action link',
+        'Tabbed UI in AI Message Analysis and Report Output drawers'
+      ],
+      fixes: [
+        'Fixed OpenAI STT "Could not parse multipart form" (400) — form-data object was serialized as [object Object] via crossPlatformFetch',
+        'Fixed Whisper producing [Music]/(chiming) for all messages — root cause was WAV files being fed to mpg123-decoder which silently corrupted the audio',
+        'Fixed model download buttons always showing "Download" instead of "Re-download" when models already present',
+        'Fixed Degrading classification remaining in Executive Summary and conditional formatting after removal from classifyTNHealth'
+      ]
+    },
+
+    '4.0.0': {
+      date: '2026-03-03',
+      title: 'AI Message Intelligence',
+      changes: [
+        'New AI Message Analysis feature — transcribes DDVM message recordings and infers intent, one-sentence summary, caller number match, URL mentions, and Voice Append detection',
+        'New AI sidebar panel with independent engine selection: Local Whisper (free, offline, ~142 MB) or OpenAI Whisper API for transcription; Local nli-deberta-v3-small (free, offline, ~85 MB) or GPT-4o-mini for intent & summary',
+        'One-time model download with status indicators; all models cached to ~/.cache/huggingface/',
+        'DuckDB message_transcriptions table — each message transcribed and cached once, recalled automatically on subsequent runs',
+        'New Excel columns on Global Insights (Msg & Caller): Transcript, Message Summary, Mentioned Phone, Caller # Match, Contains URL, Voice Append',
+        'New Message Intelligence section in Executive Summary: messages analyzed, voice append count, caller number mismatches, URL mentions, intent distribution',
+        'Caller ID mismatch detection added to Actionable Recommendations when a spoken phone number differs from the caller ID shown to recipients',
+        'voapps_voice_append field captured from campaign CSV data and passed through the full analysis pipeline',
+        'Report Output modal: Analysis Tabs section moved above CSV Columns for discoverability; tightened spacing throughout modal',
+        'Renamed TN Health classification "Toxic" to "Delivery Unlikely" throughout the report for clearer, less alarming language',
+        'Renamed "Consecutive Unsuccessful" tab to "Suppression Candidates" — now shows only "Delivery Unlikely" numbers with repeated failure patterns',
+        'Suppression Candidates tab always shows action "Suppression recommended" — Degrading numbers moved to TN Health tab for monitoring',
+        'Removed time-of-day / hourly success patterns from Delivery Intelligence Report',
+        'Renamed "Global Insights (Time)" tab to "Global Insights (Days)" — focuses on day-of-week patterns only',
+        'TN Health, Variability Analysis, and Number Summary tabs are now optional (default: unchecked)',
+        'Optional tab selection remembered via localStorage — preference persists across sessions',
+        'Renamed column headers in Variability Analysis: "Unique Callers" → "Unique Caller Numbers", "Top Caller %" → "Top Caller Number %"',
+        'Improved Retry Decay Curve glossary entry with concrete numeric example (e.g., 62% on 1st attempt vs 18% on 5th)',
+        'Campaign date filter is now timezone-aware — includes campaigns whose target date falls on the selected date in any US timezone (Hawaii UTC-10 through Eastern UTC-4)',
+        'Extended API query buffer to +2 days (was +1) to ensure Hawaii-timezone campaigns are not missed'
+      ],
+      features: [
+        'AI Message Analysis (opt-in): local or cloud transcription + intent classification with caching',
+        'message_transcriptions DuckDB table for persistent transcript cache',
+        'Message Intelligence section in Executive Summary with caller mismatch detection',
+        'Optional detail tabs (TN Health, Variability Analysis, Number Summary) with localStorage preference',
+        'Timezone-aware campaign date filter for all US timezones'
+      ],
+      fixes: [
+        'Suppression Candidates span filter now strictly enforces the configured minimum span — removed count-based bypass that allowed sub-threshold entries',
+        'Fixed missing inConsecRuns.add() in path-3 consecutive run builder',
+        'Fixed stale classifyTNHealth comment (// Toxic: → // Delivery Unlikely:)',
+        'Fixed campaigns with full datetime target_date being excluded when their UTC time exceeds midnight of the selected end date',
+        'Fixed Hawaii-timezone campaigns missed by the +1 day API query buffer',
+        'Fixed summaryTotalCount not defined error when detail tabs are disabled — flagged count now computed in the pre-aggregate loop'
+      ]
+    },
+
     '3.4.1': {
       date: '2026-02-27',
       title: 'Memory & Stability Improvements',
       changes: [
-        'Row caps (100K max per detail tab) prevent ExcelJS from exhausting heap on large datasets',
-        'Pre-compute all aggregate metrics in one pass then free numberSummaryArray before workbook creation — frees up to 1 GB before Excel generation begins',
-        'Progressive memory release: filteredHealth/Variability/Summary arrays freed immediately after each tab\'s addRows()',
-        'Phase 1 campaignTsMap now stores only first/last timestamped row per campaign instead of every row — saves 80-100 MB on multi-million-row datasets',
-        'Replaced JS Arrays with Uint16Array for hourCounts and dayOfWeekCounts across all number data objects',
-        'Eliminated firstRawTimestamp/lastRawTimestamp string fields; epoch ms stored and formatted at write time',
-        'Delivery Intelligence Report now runs correctly when Combine Campaigns output mode is set to Database',
-        'Analysis button no longer shows green state from a previous run when a new combine job starts',
-        'Column C descriptions added to Executive Summary for key metrics and TN Health Distribution rows',
-        'Executive Summary column B widened to 50, column C widened to 130'
+        'Row caps per detail tab (100K rows each) — ExcelJS accumulates Cell objects in memory; 3 tabs × 100K rows ≈ 960 MB, well under the 2 GB Electron heap limit; rows beyond the cap are logged',
+        'Free numberSummaryArray before workbook creation — all aggregate metrics computed in a single pass, then the array is freed before ExcelJS starts, releasing up to 1 GB',
+        'Progressive filtered array release — after each tab\'s addRows(), the source array is freed immediately rather than waiting for GC',
+        'campaignTsMap memory reduction — previously stored {idx, tsMs} for every row (~80–100 MB for 1.26M rows); now stores only first/last timestamped row per campaign',
+        'Uint16Array for hourCounts/dayOfWeekCounts — typed arrays instead of plain JS arrays for per-number data',
+        'Epoch ms instead of timestamp strings — firstRawTimestamp/lastRawTimestamp string fields eliminated; epoch numbers stored and formatted at write time only',
+        'Column C descriptions added to Executive Summary for: Average Variability Score, List Quality Grade, Numbers Flagged in Detail Tabs, Healthy, Degrading, Delivery Unlikely, Never Delivered',
+        'Column widths updated — Column B widened to 50, Column C widened to 130'
       ],
       features: [
         'Detail tab row caps (100K rows per tab) with log message when truncation occurs',
         'Database-only combine mode now generates Delivery Intelligence Report via temp CSV'
       ],
       fixes: [
-        'Fixed Delivered % showing NaN% (ns.successCount → ns.successful — wrong property name in pre-compute loop)',
-        'Fixed minDate/maxDate/fourteenDaysAgo not being set in the row-array analysis path',
-        'Fixed Analysis button remaining green/active after switching to a new combine run',
-        'Fixed Delivery Intelligence Report not triggering when output mode is Database'
+        'Fixed Delivered % showing NaN% — pre-compute loop referenced ns.successCount but property is stored as ns.successful',
+        'Fixed minDate/maxDate/fourteenDaysAgo being null in the row-array analysis path — Date objects were never set from epoch values tracked during the merge loop',
+        'Fixed Delivery Intelligence Report not running when Combine Campaigns output mode was set to Database — now writes a temp CSV for the worker, runs analysis, then deletes it',
+        'Fixed Analysis button showing stale green state from a previous run when starting a new combine job'
       ]
     },
 
     '3.4.0': {
       date: '2026-02-12',
-      title: 'Executive Summary & Timezone Selection',
+      title: 'Executive Summary & DST-Aware Timezone Selection',
       changes: [
-        'Executive Summary search type - aggregate campaign statistics into deliverability report',
-        'Added account_name column to Phone Number Search, Combine Campaigns, and Executive Summary',
-        'Added campaign_url column to Executive Summary for direct links to campaigns',
+        'Executive Summary search type — aggregate campaign statistics into deliverability report',
         'DST-aware timezone selection (ET, CT, MT, PT adjust for Daylight Saving)',
-        'VoApps Time option - constant UTC-7 for consistent day slicing (no DST)',
+        'VoApps Time option — constant UTC-7 for consistent day slicing (no DST)',
+        'account_name column added to all CSV exports (Phone Search, Combine, Executive Summary)',
+        'campaign_url added to Executive Summary for direct campaign links',
+        'Renamed "Number Trend Analyzer" to "Delivery Intelligence Report" throughout app',
+        'Phone number input now accepts any format (parentheses, dashes, +1, etc.)',
         'Reorganized Report Output drawer combining headers, folder, and timezone settings',
-        'Delivery Intelligence reports now show dynamic version from version.js',
-        'Renamed "Number Trend Analyzer" to "Delivery Intelligence Report" throughout app'
+        '"Generate From" box flashes when Combine Campaigns is selected',
+        'Improved Generate Analysis UI — removed ellipses from radio button labels',
+        'Clarified CSV Columns setting applies only to Phone Search and Combine Campaigns',
+        'Removed 13 unnecessary files (old scripts, example files, unused assets)'
       ],
       features: [
         'Executive Summary report with delivery metrics per campaign',
         'Account name included in all CSV exports',
-        'Timezone selection in Report Output settings',
-        'Unified Report Output settings panel'
+        'DST-aware timezone selection in Report Output settings',
+        'Flexible phone number input format'
       ],
       fixes: [
         'Fixed Windows update checker downloading .dmg instead of .exe',
         'Fixed hardcoded version 3.2.0 in Delivery Intelligence Excel reports',
-        'Fixed Global Insights (Time) tab showing wrong timezone label',
-        'Fixed SSL certificate errors on macOS with VPN (uses Apple Keychain)'
+        'Fixed SSL certificate errors on macOS with VPN (uses Apple Keychain via mac-ca)',
+        'Fixed timezone save errors with new IANA timezone format'
       ]
     },
 
