@@ -2,7 +2,7 @@
 // VoApps Tools Version Management
 //
 // Notes:
-// - Current version reflects the newest release (4.1.0).
+// - Current version reflects the newest release (4.0.0).
 // - Keeps feature flags + author from the original "DuckDB Edition" file.
 // - Changelog is unified so each version can include: changes/features, fixes, and breaking changes.
 
@@ -10,8 +10,8 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '4.1.0',
-  VERSION_NAME: 'AI Polish & Report Accuracy',
+  VERSION: '4.0.0',
+  VERSION_NAME: 'AI Message Intelligence',
   RELEASE_DATE: '2026-03-04',
   AUTHOR: 'Brett Menzie',
 
@@ -50,87 +50,73 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
-    '4.1.0': {
+    '4.0.0': {
       date: '2026-03-04',
-      title: 'AI Polish & Report Accuracy',
+      title: 'AI Message Intelligence',
       changes: [
-        'Transcript Cache browser — view all cached transcriptions in a searchable table directly from the AI settings panel; edit transcript, intent, and summary inline; delete individual entries',
-        'AI transcription accuracy caveat added to both the AI settings panel and the Executive Summary Message Intelligence section',
-        'Message summaries capped at 6 words with no filler — local extractive summary truncated to first 6 words; OpenAI prompt updated to enforce the limit',
-        'AI drawer Transcription and Intent & Summary sections converted to tabs for a cleaner layout',
-        'Report Output drawer Analysis Tabs and CSV Columns sections converted to tabs',
-        'Removed "Degrading" TN Health classification entirely — numbers are now either Healthy or Delivery Unlikely; all references removed from Executive Summary, TN Health tab conditional formatting, log output, list grade calculation, and return values',
-        'Executive Summary goal paragraph updated: "across campaigns in a selected date range" and "maximize effectiveness of DirectDrop Voicemail"',
+        // ── AI Message Analysis ──
+        'New AI Message Analysis feature — transcribes DDVM message recordings and infers intent, short summary, caller number match, URL mentions, and Voice Append detection',
+        'New AI sidebar panel with tabbed engine selection: Local Whisper (free, offline, ~142 MB) or OpenAI Whisper API for transcription; Local nli-deberta-v3-small (free, offline, ~85 MB) or GPT-4o-mini for intent & summary',
+        'One-time model download with status indicators; models cached to ~/.cache/huggingface/; buttons show "Re-download" when model is already present',
+        'DuckDB message_transcriptions table — each message transcribed and cached once, recalled automatically on subsequent runs',
+        'Transcript Cache browser — view all cached entries in a searchable table from the AI settings panel; edit transcript, intent, and summary inline; delete individual entries',
+        'AI transcription accuracy caveat shown in the AI settings panel and in the Executive Summary Message Intelligence section',
+        'Message summaries capped at 6 words, no filler — local extractive summary takes first 6 words of first sentence; OpenAI prompt instructs 6-word max',
+        'New Excel columns on Global Insights (Msg & Caller): Transcript, Message Summary, Mentioned Phone, Caller # Match, Contains URL, Voice Append',
+        'New Message Intelligence section in Executive Summary: messages analyzed, voice append count, caller number mismatches, URL mentions, intent distribution',
+        'Caller ID mismatch detection added to Actionable Recommendations when spoken phone number differs from caller ID shown to recipients',
+        'voapps_voice_append field captured from campaign CSV data and passed through the full analysis pipeline',
+        // ── Report changes ──
+        'Removed "Degrading" TN Health classification entirely — numbers are now Healthy or Delivery Unlikely; removed from Executive Summary, TN Health tab conditional formatting, log output, list grade calculation, and return values',
+        'Executive Summary goal paragraph updated to reference "campaigns in a selected date range" and "maximize effectiveness of DirectDrop Voicemail"',
         'Delivered % description updated: result code label changed from "200/Delivered" to "200 | Successfully delivered"',
-        'WAV PCM audio decoder — VoApps DDVM recordings are RIFF/WAV, not MP3; added native Node.js PCM parser supporting 8/16/24/32-bit mono/stereo at any sample rate; fixes all Whisper hallucinations ([Music], (chiming), etc.) caused by mpg123-decoder silently misinterpreting WAV headers',
-        'OpenAI STT multipart form fix — rewrote transcribeWithOpenAI to use https.request() with form.pipe(req) instead of crossPlatformFetch, resolving "Could not parse multipart form" 400 errors',
-        'Whisper hallucination filter — transcripts consisting entirely of event tokens ([Music], (chiming), etc.) are detected and discarded; stale hallucination results in cache are automatically re-transcribed',
-        'OpenAI 429 quota exceeded handling — first 429 aborts remaining messages and sends a persistent in-app notification with an "Add Credits" action button linking to the OpenAI billing page',
-        'Audio download redirect support — downloadFile now follows HTTP 301/302/303/307/308 redirects up to 5 hops with Content-Type and size logging',
-        'Model status buttons now correctly show "Re-download Whisper Model" / "Re-download Intent Model" when models are already downloaded (was setting tooltip attribute instead of button label)',
-        'Suppression Candidates span filter strictly enforces minimum span days — removed bypass that allowed sub-threshold entries through',
-        'Consecutive run tracking: added back-to-back same-message streak metrics (maxSameStreak) to numberSummaryArray and Executive Summary Message & Day Variability Insights section',
+        'Back-to-back same-message streak tracking (maxSameStreak) added to numberSummaryArray and Executive Summary Message & Day Variability Insights section',
         'Executive Summary goal row (A2) added as merged italic paragraph',
         'List Quality Grade column C now shows grade-specific actionable advice (A/B/C/D)',
         'Day-of-week recommendations rewritten to consumer-behavior rationale with preamble tip cell',
         'Removed Recommendation column from Caller # Insights tab',
         'Retry Decay Curve glossary entry rewritten with per-cohort explanation and worked 3-attempt example',
-        'Glossary updates: Day-of-Week Variety with consumer behavior rationale, List Hygiene mentions Never Delivered removal, Speech-to-Text (Future) entry deleted, TN Health Classifications updated'
+        'Glossary updates: Day-of-Week Variety, List Hygiene, TN Health Classifications; Speech-to-Text (Future) entry deleted',
+        // ── UI ──
+        'AI Message Analysis drawer: Transcription and Intent & Summary sections converted to tabs',
+        'Report Output drawer: Analysis Tabs and CSV Columns sections converted to tabs',
+        // ── Infrastructure ──
+        'WAV PCM audio decoder — VoApps DDVM recordings are RIFF/WAV, not MP3; native Node.js PCM parser supporting 8/16/24/32-bit mono/stereo at any sample rate; fixes all Whisper hallucinations caused by mpg123-decoder silently misinterpreting WAV headers',
+        'OpenAI STT multipart form fix — rewrote transcribeWithOpenAI to use https.request() with form.pipe(req), resolving "Could not parse multipart form" 400 errors',
+        'Whisper hallucination filter — transcripts consisting entirely of event tokens ([Music], (chiming), etc.) are detected and discarded; stale cache results auto-invalidated',
+        'OpenAI 429 quota exceeded handling — aborts remaining messages and sends persistent in-app notification with "Add Credits" action button',
+        'Audio download redirect support — downloadFile follows HTTP 301/302/303/307/308 redirects up to 5 hops',
+        // ── Earlier 4.0 work ──
+        'Renamed TN Health classification "Toxic" to "Delivery Unlikely" throughout the report',
+        'Renamed "Consecutive Unsuccessful" tab to "Suppression Candidates" — now shows only Delivery Unlikely numbers with repeated failure patterns',
+        'Removed time-of-day / hourly success patterns from Delivery Intelligence Report',
+        'Renamed "Global Insights (Time)" tab to "Global Insights (Days)" — focuses on day-of-week patterns only',
+        'TN Health, Variability Analysis, and Number Summary tabs are now optional (default: unchecked); preference persists via localStorage',
+        'Campaign date filter is timezone-aware — includes campaigns whose target date falls on the selected date in any US timezone (Hawaii UTC-10 through Eastern UTC-4)',
+        'Extended API query buffer to +2 days to ensure Hawaii-timezone campaigns are not missed'
       ],
       features: [
+        'AI Message Analysis (opt-in): local or cloud transcription + intent classification with caching',
         'Transcript Cache browser with inline edit and delete per entry',
         'WAV PCM native decoder — correct transcription for all VoApps DDVM audio files',
         'Whisper hallucination detection and cache invalidation',
         'OpenAI quota exceeded in-app notification with action link',
-        'Tabbed UI in AI Message Analysis and Report Output drawers'
-      ],
-      fixes: [
-        'Fixed OpenAI STT "Could not parse multipart form" (400) — form-data object was serialized as [object Object] via crossPlatformFetch',
-        'Fixed Whisper producing [Music]/(chiming) for all messages — root cause was WAV files being fed to mpg123-decoder which silently corrupted the audio',
-        'Fixed model download buttons always showing "Download" instead of "Re-download" when models already present',
-        'Fixed Degrading classification remaining in Executive Summary and conditional formatting after removal from classifyTNHealth'
-      ]
-    },
-
-    '4.0.0': {
-      date: '2026-03-03',
-      title: 'AI Message Intelligence',
-      changes: [
-        'New AI Message Analysis feature — transcribes DDVM message recordings and infers intent, one-sentence summary, caller number match, URL mentions, and Voice Append detection',
-        'New AI sidebar panel with independent engine selection: Local Whisper (free, offline, ~142 MB) or OpenAI Whisper API for transcription; Local nli-deberta-v3-small (free, offline, ~85 MB) or GPT-4o-mini for intent & summary',
-        'One-time model download with status indicators; all models cached to ~/.cache/huggingface/',
-        'DuckDB message_transcriptions table — each message transcribed and cached once, recalled automatically on subsequent runs',
-        'New Excel columns on Global Insights (Msg & Caller): Transcript, Message Summary, Mentioned Phone, Caller # Match, Contains URL, Voice Append',
-        'New Message Intelligence section in Executive Summary: messages analyzed, voice append count, caller number mismatches, URL mentions, intent distribution',
-        'Caller ID mismatch detection added to Actionable Recommendations when a spoken phone number differs from the caller ID shown to recipients',
-        'voapps_voice_append field captured from campaign CSV data and passed through the full analysis pipeline',
-        'Report Output modal: Analysis Tabs section moved above CSV Columns for discoverability; tightened spacing throughout modal',
-        'Renamed TN Health classification "Toxic" to "Delivery Unlikely" throughout the report for clearer, less alarming language',
-        'Renamed "Consecutive Unsuccessful" tab to "Suppression Candidates" — now shows only "Delivery Unlikely" numbers with repeated failure patterns',
-        'Suppression Candidates tab always shows action "Suppression recommended" — Degrading numbers moved to TN Health tab for monitoring',
-        'Removed time-of-day / hourly success patterns from Delivery Intelligence Report',
-        'Renamed "Global Insights (Time)" tab to "Global Insights (Days)" — focuses on day-of-week patterns only',
-        'TN Health, Variability Analysis, and Number Summary tabs are now optional (default: unchecked)',
-        'Optional tab selection remembered via localStorage — preference persists across sessions',
-        'Renamed column headers in Variability Analysis: "Unique Callers" → "Unique Caller Numbers", "Top Caller %" → "Top Caller Number %"',
-        'Improved Retry Decay Curve glossary entry with concrete numeric example (e.g., 62% on 1st attempt vs 18% on 5th)',
-        'Campaign date filter is now timezone-aware — includes campaigns whose target date falls on the selected date in any US timezone (Hawaii UTC-10 through Eastern UTC-4)',
-        'Extended API query buffer to +2 days (was +1) to ensure Hawaii-timezone campaigns are not missed'
-      ],
-      features: [
-        'AI Message Analysis (opt-in): local or cloud transcription + intent classification with caching',
+        'Tabbed UI in AI Message Analysis and Report Output drawers',
         'message_transcriptions DuckDB table for persistent transcript cache',
         'Message Intelligence section in Executive Summary with caller mismatch detection',
         'Optional detail tabs (TN Health, Variability Analysis, Number Summary) with localStorage preference',
         'Timezone-aware campaign date filter for all US timezones'
       ],
       fixes: [
-        'Suppression Candidates span filter now strictly enforces the configured minimum span — removed count-based bypass that allowed sub-threshold entries',
+        'Fixed OpenAI STT "Could not parse multipart form" (400) — form-data object was serialized as [object Object] via crossPlatformFetch',
+        'Fixed Whisper producing [Music]/(chiming) for all messages — WAV files were being fed to mpg123-decoder which silently corrupted the audio',
+        'Fixed model download buttons always showing "Download" instead of "Re-download" when models already present',
+        'Fixed Degrading classification remaining in Executive Summary and conditional formatting after removal from classifyTNHealth',
+        'Fixed Suppression Candidates span filter — removed count-based bypass that allowed sub-threshold entries through',
         'Fixed missing inConsecRuns.add() in path-3 consecutive run builder',
-        'Fixed stale classifyTNHealth comment (// Toxic: → // Delivery Unlikely:)',
-        'Fixed campaigns with full datetime target_date being excluded when their UTC time exceeds midnight of the selected end date',
+        'Fixed campaigns with full datetime target_date being excluded when UTC time exceeds midnight of selected end date',
         'Fixed Hawaii-timezone campaigns missed by the +1 day API query buffer',
-        'Fixed summaryTotalCount not defined error when detail tabs are disabled — flagged count now computed in the pre-aggregate loop'
+        'Fixed summaryTotalCount not defined error when detail tabs are disabled'
       ]
     },
 

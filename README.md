@@ -2,7 +2,7 @@
 
 Desktop application for searching and analyzing VoApps DirectDrop Voicemail campaign data.
 
-![Version](https://img.shields.io/badge/version-3.4.2-blue)
+![Version](https://img.shields.io/badge/version-4.0.0-blue)
 ![Platform](https://img.shields.io/badge/platform-macOS%20|%20Windows-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -19,6 +19,16 @@ Desktop application for searching and analyzing VoApps DirectDrop Voicemail camp
   - Variability Score analysis
   - Day-of-week usage recommendations
   - Configurable thresholds (min consecutive, time span)
+
+### 🤖 AI Message Intelligence *(New in v4.0)*
+Automatically transcribe and analyze your DDVM message recordings to understand what's being said and how it affects delivery:
+- **🎙️ Message Transcription** - Local Whisper (free, offline) or OpenAI Whisper API for audio-to-text
+- **🧠 Intent Classification** - Automatically categorizes messages (collections, payment reminder, appointment, etc.)
+- **📝 Message Summaries** - Concise 6-word summaries of each message's purpose
+- **📞 Caller # Match Detection** - Flags when the spoken callback number doesn't match the caller ID shown to recipients
+- **🔗 URL Detection** - Identifies messages that reference website URLs
+- **💾 Transcript Cache** - Messages transcribed once and cached — browse, edit, and delete cached entries
+- **🔒 Fully Optional** - Disabled by default; works 100% locally with no API key required (local mode)
 
 ### User Interface
 - **🎨 Clean, Modern UI** - Intuitive two-panel layout with resizable sections
@@ -124,14 +134,20 @@ DuckDB integration for fast re-analysis without re-downloading.
 </tr>
 </table>
 
+---
+
+### AI Message Intelligence *(New in v4.0)*
+
+Transcribe and analyze your DDVM message audio — free locally via Whisper, or via OpenAI API for higher accuracy. Transcript cache lets you review and edit results before running reports.
+
 ## 📥 Download & Installation
 
 ### Download
 
-**Latest Version:** [v3.4.2](https://github.com/eiznem/voapps-tools/releases/latest)
+**Latest Version:** [v4.0.0](https://github.com/eiznem/voapps-tools/releases/latest)
 
-**macOS:** `VoApps Tools-3.4.2-arm64.dmg`
-**Windows:** `VoApps Tools Setup 3.4.2.exe`
+**macOS:** `VoApps Tools-4.0.0-arm64.dmg`
+**Windows:** `VoApps Tools Setup 4.0.0.exe`
 
 ### System Requirements
 
@@ -154,7 +170,7 @@ DuckDB integration for fast re-analysis without re-downloading.
 Click the download link above or visit the [Releases page](https://github.com/eiznem/voapps-tools/releases)
 
 #### 2. Open the DMG File
-Double-click `VoApps Tools-3.4.2-arm64.dmg` in your Downloads folder
+Double-click `VoApps Tools-4.0.0-arm64.dmg` in your Downloads folder
 
 #### 3. Drag to Applications
 Drag the VoApps Tools icon to your Applications folder
@@ -270,7 +286,7 @@ The Delivery Intelligence Report analyzes **phone numbers**, **caller numbers**,
 
 ### Worksheets
 
-1. **Executive Summary** - Key metrics, TN Health distribution, decay curve, and actionable recommendations with column C explanations
+1. **Executive Summary** - Key metrics, TN Health distribution, Message Intelligence (AI), decay curve, and actionable recommendations with column C explanations
 2. **TN Health** - Delivery Unlikely numbers with success rate, consecutive failures, and suppression actions (capped at 100K rows)
 3. **Variability Analysis** - Numbers with variability score < 60 sorted by score (capped at 100K rows)
 4. **Number Summary** - All flagged numbers combining TN Health and variability issues (capped at 100K rows)
@@ -305,6 +321,47 @@ The Delivery Intelligence Report analyzes **phone numbers**, **caller numbers**,
 
 - **Min Consecutive:** Minimum consecutive unsuccessful calls to flag (default: 4)
 - **Min Span (days):** Minimum time span for consecutive calls (default: 30 days)
+
+## 🤖 AI Message Intelligence
+
+AI Message Intelligence transcribes your DDVM message audio files and analyzes their content to surface insights in the Delivery Intelligence Report.
+
+### Setup
+
+1. Click the **✨ AI** icon in the left sidebar
+2. Toggle **"Enable AI Message Analysis"** on
+3. Choose your engines:
+
+**Transcription (Speech-to-Text)**
+- 🖥 **Local Whisper** (Free) — Downloads a ~142 MB Whisper model once; runs fully offline thereafter
+- ☁ **OpenAI Whisper** — Higher accuracy; requires an OpenAI API key; ~$0.003–0.006/message
+
+**Intent & Summary**
+- 🖥 **Local** (Free) — Uses an NLI classifier (~85 MB model); runs offline
+- ☁ **OpenAI GPT-4o-mini** — More nuanced summaries; requires an OpenAI API key; ~$0.0001/message
+
+Both engines can be mixed and matched. Running both fully local requires no API key and costs nothing.
+
+### What Gets Analyzed
+
+For each unique message in your campaign data:
+- **Transcript** — Full spoken text of the recording
+- **Intent** — Categorized purpose (collections, payment reminder, appointment, etc.)
+- **Summary** — Concise 6-word description
+- **Caller # Match** — Whether the spoken callback number matches the outbound caller ID
+- **URL Reference** — Whether the message mentions a website
+
+Results appear in the **Global Insights (Msg & Caller)** tab and the **Message Intelligence** section of the Executive Summary.
+
+### Transcript Cache
+
+Transcripts are cached in the local DuckDB database so each message is only processed once. To manage the cache:
+- Click **"Browse & Edit Cache"** in the AI panel
+- View all cached messages with their transcripts, intent, and summary
+- Edit any entry to correct transcription errors
+- Delete individual entries to force re-transcription on the next run
+
+> ⚠ AI transcription may contain inaccuracies. Always review cached transcripts before relying on them for reporting or decision-making.
 
 ## 📂 Output Locations
 
@@ -443,20 +500,23 @@ npm start
 # Build DMG for distribution
 npm run build
 
-# Output: dist/VoApps Tools-3.4.2-arm64.dmg (macOS)
-# Output: dist/VoApps Tools Setup 3.4.2.exe (Windows)
+# Output: dist/VoApps Tools-4.0.0-arm64.dmg (macOS)
+# Output: dist/VoApps Tools Setup 4.0.0.exe (Windows)
 ```
 
 ### Project Structure
 ```
 voapps-tools/
 ├── public/
-│   └── index.html      # Main UI
-├── main.js             # Electron main process
-├── preload.js          # Electron preload bridge
-├── server.js           # Express server & VoApps API integration
-├── trendAnalyzer.js    # Excel analysis generation
-└── package.json        # Dependencies & build config
+│   └── index.html        # Main UI
+├── main.js               # Electron main process
+├── preload.js            # Electron preload bridge
+├── server.js             # Express server, VoApps API integration & AI transcription
+├── trendAnalyzer.js      # Excel analysis generation
+├── analysisWorker.js     # Background analysis worker thread
+├── dbExportWorker.js     # Database export worker thread
+├── version.js            # Version info & changelog
+└── package.json          # Dependencies & build config
 ```
 
 ## 🤝 Contributing
@@ -502,8 +562,8 @@ VoApps™ and DirectDrop™ are trademarks of their respective owners. This soft
 
 ---
 
-**Version:** 3.4.2
-**Last Updated:** February 27, 2026
+**Version:** 4.0.0
+**Last Updated:** March 4, 2026
 
 ---
 
