@@ -20,6 +20,9 @@
     "appId": "com.voapps.tools",
     "productName": "VoApps Tools",
     "npmRebuild": false,
+    "asarUnpack": [
+      "node_modules/onnxruntime-node/**/*"
+    ],
     "directories": {
       "output": "dist"
     },
