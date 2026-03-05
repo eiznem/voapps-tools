@@ -52,7 +52,7 @@
     "dmg": {
       "title": "VoApps Tools ${version}",
       "icon": "assets/icon.png",
-      "background": null,
+      "background": "assets/dmg-background.png",
       "window": {
         "width": 700,
         "height": 450
