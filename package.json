@@ -21,7 +21,8 @@
     "productName": "VoApps Tools",
     "npmRebuild": false,
     "asarUnpack": [
-      "node_modules/onnxruntime-node/**/*"
+      "node_modules/onnxruntime-node/**/*",
+      "node_modules/sharp/build/Release/**/*"
     ],
     "directories": {
       "output": "dist"
