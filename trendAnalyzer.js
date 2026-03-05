@@ -5,7 +5,7 @@
 // Features:
 // - Attempt Index tracking per TN (resets after success)
 // - Success Probability by attempt number (decay curve)
-// - TN Health Classification (Healthy/Degrading/Toxic)
+// - TN Health Classification (Healthy/Delivery Unlikely/Never Delivered)
 // - Never Delivered detection
 // - Variability Score (message, day, hour, caller diversity)
 // - Back-to-back identical message detection
@@ -111,15 +111,10 @@ function inferMessageIntent(messageName) {
  * Calculate TN Health classification
  */
 function classifyTNHealth(successRate, consecutiveFailures, totalAttempts, recentSuccess14Days) {
-  // Toxic: Very low success + high consecutive failures
-  if (successRate < 0.1 && consecutiveFailures >= 4) return 'Toxic';
-  if (consecutiveFailures >= 6) return 'Toxic';
-  if (totalAttempts >= 5 && successRate === 0) return 'Toxic';
-
-  // Degrading: Declining performance
-  if (successRate < 0.25 && consecutiveFailures >= 2) return 'Degrading';
-  if (successRate < 0.20 && !recentSuccess14Days) return 'Degrading';
-  if (consecutiveFailures >= 3) return 'Degrading';
+  // Delivery Unlikely: Very low success + high consecutive failures
+  if (successRate < 0.1 && consecutiveFailures >= 4) return 'Delivery Unlikely';
+  if (consecutiveFailures >= 6) return 'Delivery Unlikely';
+  if (totalAttempts >= 5 && successRate === 0) return 'Delivery Unlikely';
 
   // Healthy: Good performance
   return 'Healthy';
@@ -128,12 +123,12 @@ function classifyTNHealth(successRate, consecutiveFailures, totalAttempts, recen
 /**
  * Calculate List Quality Grade
  */
-function calculateListGrade(healthyPct, degradingPct, toxicPct, neverDeliveredPct) {
-  // A: >80% healthy, <5% toxic
+function calculateListGrade(healthyPct, toxicPct, neverDeliveredPct) {
+  // A: >80% healthy, <5% delivery unlikely
   if (healthyPct >= 80 && toxicPct < 5 && neverDeliveredPct < 10) return 'A';
-  // B: >60% healthy, <10% toxic
+  // B: >60% healthy, <10% delivery unlikely
   if (healthyPct >= 60 && toxicPct < 10 && neverDeliveredPct < 20) return 'B';
-  // C: >40% healthy, <20% toxic
+  // C: >40% healthy, <20% delivery unlikely
   if (healthyPct >= 40 && toxicPct < 20) return 'C';
   // D: Everything else
   return 'D';
@@ -364,7 +359,7 @@ function getDayUsagePattern(dayOfWeekCounts) {
     return {
       limited: true,
       days: usedDays,
-      recommendation: `Only used on ${dayList.join(' and ')}. Consider spreading DDVM attempts across more days of the week for better deliverability.`
+      recommendation: `Only used on ${dayList.join(' and ')}. Consumers who receive your message on a predictable day pattern begin to recognize and mentally categorize it as routine — reducing the likelihood they listen or call back. Rotating across additional days of the week makes your outreach feel less automated and more timely.`
     };
   }
 
@@ -384,7 +379,7 @@ function getDayUsagePattern(dayOfWeekCounts) {
     return {
       limited: true,
       days: usedDays,
-      recommendation: `Day distribution is heavily skewed — ${lightDays.join(', ')} received very little volume. Consider balancing DDVM attempts more evenly across the week.`
+      recommendation: `Volume is heavily concentrated on ${dominantDays.join(' and ')} — ${lightDays.join(', ')} received very little. Spreading attempts more evenly prevents consumers from developing a predictable "this is my weekly voicemail" expectation and increases the chance of catching them in a different mindset.`
     };
   }
 
@@ -456,6 +451,41 @@ function detectTimezoneDiscrepancies(accountTimezones, accountResultTimezones) {
 // ============================================================================
 
 /**
+ * Auto-fits column widths based on the longest cell content in each column.
+ * Numbers, dates, strings, and richText values are all measured.
+ * @param {object} sheet   - ExcelJS worksheet
+ * @param {number} minWidth - Minimum column width (default 8)
+ * @param {number} maxWidth - Maximum column width (default 60)
+ */
+function autoFitColumns(sheet, minWidth = 8, maxWidth = 60) {
+  const colWidths = {};
+  sheet.eachRow({ includeEmpty: false }, (row) => {
+    row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+      let len = 0;
+      const v = cell.value;
+      if (v == null) {
+        len = 0;
+      } else if (typeof v === 'string') {
+        // Multi-line strings: measure the longest line only
+        len = v.split('\n').reduce((m, l) => Math.max(m, l.length), 0);
+      } else if (typeof v === 'number') {
+        len = String(v).length;
+      } else if (v instanceof Date) {
+        len = 19; // 'yyyy-mm-dd hh:mm:ss'
+      } else if (typeof v === 'object' && v.richText) {
+        len = v.richText.map(r => r.text || '').join('').length;
+      } else {
+        len = String(v).length;
+      }
+      if (len > (colWidths[colNumber] || 0)) colWidths[colNumber] = len;
+    });
+  });
+  for (const [col, len] of Object.entries(colWidths)) {
+    sheet.getColumn(Number(col)).width = Math.min(maxWidth, Math.max(minWidth, len + 2));
+  }
+}
+
+/**
  * Generate Delivery Intelligence Analysis Excel Workbook
  * @param {string|Array} csvInput - CSV file path, array of file paths, or array of row objects
  * @param {string} outputPath - Output Excel file path
@@ -468,20 +498,16 @@ function detectTimezoneDiscrepancies(accountTimezones, accountResultTimezones) {
  * @param {string} userTimezoneLabel - User's timezone label (e.g., "VoApps", "ET", "MT")
  */
 
-// Results that represent an actual delivery attempt (phone was reached / attempted).
-// Non-deliverable results (401 not wireless, 402 duplicate, 403 invalid US number,
-// 404 undeliverable, 500–504 restricted) are excluded — they never touch the carrier.
+// Results that represent an actual delivery attempt reaching the carrier.
+// Only codes 200/400/405/406/407 — the five deliverable results.
+// Excluded: 300 expired, 301 canceled, 401 not wireless, 402 duplicate,
+// 403 invalid US number, 404 undeliverable, 408–410 config errors, 500–504 restricted.
 const DELIVERY_ATTEMPT_RESULTS = new Set([
   'successfully delivered',        // 200
-  'expired',                       // 300
-  'canceled',                      // 301
   'unsuccessful delivery attempt', // 400
   'not in service',                // 405
   'voicemail not setup',           // 406
   'voicemail full',                // 407
-  'invalid caller number',         // 408
-  'invalid message id',            // 409
-  'prohibited self call',          // 410
 ]);
 
 async function generateTrendAnalysis(
@@ -493,7 +519,9 @@ async function generateTrendAnalysis(
   callerMap = {},
   accountTimezones = {},
   userTimezone = 'VoApps',
-  userTimezoneLabel = 'VoApps'
+  userTimezoneLabel = 'VoApps',
+  includeDetailTabs = false,
+  transcriptMap = {}
 ) {
   log(`Starting Delivery Intelligence Analysis (v${VERSION})`);
 
@@ -605,6 +633,7 @@ async function generateTrendAnalysis(
 
               // ── Fill and normalise timestamp ──────────────────────────────────
               let ts = (row.voapps_timestamp || '').trim();
+              const _tsOriginal = !!ts; // true only if the row had a real timestamp in the CSV
               if (!ts) {
                 // Fill missing timestamp from the campaign's first/last known timestamp.
                 // Using the closer of the two (by row index) gives a reasonable estimate
@@ -629,7 +658,9 @@ async function generateTrendAnalysis(
               const localDow     = parsed ? parsed.localDayOfWeek : (pdOk ? parsedDate.getDay()  : 0);
               const resultNorm   = String(row.voapps_result || '').trim().toLowerCase();
               const isSuccess    = resultNorm === 'successfully delivered';
-              const isDelivery   = !!ts && DELIVERY_ATTEMPT_RESULTS.has(resultNorm);
+              // Only count as a delivery attempt if the row had a real original timestamp.
+              // Proximity-inferred timestamps are used for sorting/display only.
+              const isDelivery   = _tsOriginal && DELIVERY_ATTEMPT_RESULTS.has(resultNorm);
 
               // ── Non-deliverable tracking ──────────────────────────────────────
               if (!isDelivery) {
@@ -679,6 +710,7 @@ async function generateTrendAnalysis(
                   messageIds: {}, callerNumbers: {}, accountIds: {},
                   hourCounts: new Uint16Array(24), dayOfWeekCounts: new Uint16Array(7),
                   backToBackIdentical: 0, lastMessageId: null,
+                  currentSameStreak: 1, maxSameStreak: 0,
                   _fpMs: null, _lpMs: null  // first/last attempt ms-epoch (replaces string storage)
                 };
               }
@@ -702,13 +734,21 @@ async function generateTrendAnalysis(
                   attemptIndex: nd.attemptIndex   // already incremented above
                 });
               }
-              const msgId = row.message_id || 'Unknown';
-              nd.messageIds[msgId] = (nd.messageIds[msgId] || 0) + 1;
-              if (nd.lastMessageId && nd.lastMessageId === msgId) nd.backToBackIdentical++;
-              nd.lastMessageId = msgId;
-              nd.callerNumbers[row.caller_number || 'Unknown'] = (nd.callerNumbers[row.caller_number || 'Unknown'] || 0) + 1;
-              nd.accountIds[row.account_id || 'Unknown']       = (nd.accountIds[row.account_id || 'Unknown']       || 0) + 1;
-              if (isDelivery) { nd.hourCounts[localHour]++; nd.dayOfWeekCounts[localDow]++; }
+              if (isDelivery) {
+                const msgId = row.message_id || 'Unknown';
+                nd.messageIds[msgId] = (nd.messageIds[msgId] || 0) + 1;
+                if (nd.lastMessageId === msgId) {
+                  nd.backToBackIdentical++;
+                  nd.currentSameStreak++;
+                } else {
+                  nd.currentSameStreak = 1;
+                }
+                if (nd.currentSameStreak > nd.maxSameStreak) nd.maxSameStreak = nd.currentSameStreak;
+                nd.lastMessageId = msgId;
+                nd.callerNumbers[row.caller_number || 'Unknown'] = (nd.callerNumbers[row.caller_number || 'Unknown'] || 0) + 1;
+                nd.accountIds[row.account_id || 'Unknown']       = (nd.accountIds[row.account_id || 'Unknown']       || 0) + 1;
+                nd.hourCounts[localHour]++; nd.dayOfWeekCounts[localDow]++;
+              }
               if (isSuccess) {
                 nd.successCount++; nd.consecutiveFailures = 0;
                 nd.attemptIndex = 0; nd.lastSuccessTimestamp = pdOk ? parsedDate.getTime() : null;
@@ -725,7 +765,12 @@ async function generateTrendAnalysis(
 
                 const mId = row.message_id || 'Unknown';
                 const mName = row.message_name || messageMap[mId]?.name || '';
-                if (!messageStats[mId]) messageStats[mId] = { message_id: mId, message_name: mName, intent: inferMessageIntent(mName), successful: 0, unsuccessful: 0, total: 0, uniqueNumbers: 0, dayOfWeekCounts: new Uint16Array(7) };
+                if (!messageStats[mId]) {
+                  const txKey = `${aId}:${mId}`;
+                  const txData = transcriptMap[txKey] || null;
+                  messageStats[mId] = { message_id: mId, message_name: mName, intent: txData?.intent || inferMessageIntent(mName), intent_summary: txData?.intent_summary || '', transcript: txData?.transcript || '', mentioned_phone: txData?.mentioned_phone || '', mentions_url: txData?.mentions_url || false, voice_append: false, successful: 0, unsuccessful: 0, total: 0, uniqueNumbers: 0, dayOfWeekCounts: new Uint16Array(7) };
+                }
+                if (row.voapps_voice_append) messageStats[mId].voice_append = true;
                 messageStats[mId].total++; messageStats[mId].dayOfWeekCounts[localDow]++;
                 if (isSuccess) messageStats[mId].successful++; else messageStats[mId].unsuccessful++;
 
@@ -811,6 +856,9 @@ async function generateTrendAnalysis(
       for (let i = 0; i < csvRows.length; i++) {
         const ts = (csvRows[i].voapps_timestamp || '').trim();
         if (!ts) {
+          // Mark as inferred — proximity-filled timestamps are used for sorting/display only,
+          // not for delivery attempt counts or figures.
+          csvRows[i]._tsOriginal = false;
           const cid = (csvRows[i].campaign_id || '').trim() || '__none__';
           const filled = findNearestTs(ctsMap.get(cid), i);
           if (filled) {
@@ -819,6 +867,7 @@ async function generateTrendAnalysis(
             csvRows[i].voapps_timestamp = `${csvRows[i].target_date.trim()} 00:00:00 UTC`;
           }
         } else {
+          csvRows[i]._tsOriginal = true;
           csvRows[i].voapps_timestamp = formatTimestamp(ts);
         }
       }
@@ -868,7 +917,9 @@ async function generateTrendAnalysis(
       row.localDayOfWeek = parsed ? parsed.localDayOfWeek : (_ok ? _pd.getDay()   : 0);
       row.voapps_result_normalized = String(row.voapps_result || '').trim().toLowerCase();
       row.isSuccess        = row.voapps_result_normalized === 'successfully delivered';
-      row.isDeliveryAttempt = !!(row.voapps_timestamp && row.voapps_timestamp.trim()) &&
+      // Only count as a delivery attempt if the row had a real original timestamp.
+      // Proximity-inferred timestamps are used for sorting/display only.
+      row.isDeliveryAttempt = !!row._tsOriginal &&
         DELIVERY_ATTEMPT_RESULTS.has(row.voapps_result_normalized);
 
       // Non-deliverable tracking
@@ -942,13 +993,15 @@ async function generateTrendAnalysis(
         if (nd._fpMs === null || row.parsedMs < nd._fpMs) nd._fpMs = row.parsedMs;
         if (nd._lpMs === null || row.parsedMs > nd._lpMs) nd._lpMs = row.parsedMs;
       }
-      const msgId = row.message_id || 'Unknown';
-      nd.messageIds[msgId] = (nd.messageIds[msgId] || 0) + 1;
-      if (nd.lastMessageId && nd.lastMessageId === msgId) nd.backToBackIdentical++;
-      nd.lastMessageId = msgId;
-      nd.callerNumbers[row.caller_number || 'Unknown'] = (nd.callerNumbers[row.caller_number || 'Unknown'] || 0) + 1;
-      nd.accountIds[row.account_id || 'Unknown']       = (nd.accountIds[row.account_id || 'Unknown']       || 0) + 1;
-      if (row.isDeliveryAttempt) { nd.hourCounts[row.localHour]++; nd.dayOfWeekCounts[row.localDayOfWeek]++; }
+      if (row.isDeliveryAttempt) {
+        const msgId = row.message_id || 'Unknown';
+        nd.messageIds[msgId] = (nd.messageIds[msgId] || 0) + 1;
+        if (nd.lastMessageId && nd.lastMessageId === msgId) nd.backToBackIdentical++;
+        nd.lastMessageId = msgId;
+        nd.callerNumbers[row.caller_number || 'Unknown'] = (nd.callerNumbers[row.caller_number || 'Unknown'] || 0) + 1;
+        nd.accountIds[row.account_id || 'Unknown']       = (nd.accountIds[row.account_id || 'Unknown']       || 0) + 1;
+        nd.hourCounts[row.localHour]++; nd.dayOfWeekCounts[row.localDayOfWeek]++;
+      }
       if (row.isSuccess) {
         nd.successCount++; nd.consecutiveFailures = 0;
         nd.attemptIndex = 0; nd.lastSuccessTimestamp = row.parsedMs || null;
@@ -966,7 +1019,12 @@ async function generateTrendAnalysis(
 
         const mId = row.message_id || 'Unknown';
         const mName = row.message_name || messageMap[mId]?.name || '';
-        if (!messageStats[mId]) messageStats[mId] = { message_id: mId, message_name: mName, intent: inferMessageIntent(mName), successful: 0, unsuccessful: 0, total: 0, uniqueNumbers: 0, dayOfWeekCounts: new Uint16Array(7) };
+        if (!messageStats[mId]) {
+          const txKey = `${aId}:${mId}`;
+          const txData = transcriptMap[txKey] || null;
+          messageStats[mId] = { message_id: mId, message_name: mName, intent: txData?.intent || inferMessageIntent(mName), intent_summary: txData?.intent_summary || '', transcript: txData?.transcript || '', mentioned_phone: txData?.mentioned_phone || '', mentions_url: txData?.mentions_url || false, voice_append: false, successful: 0, unsuccessful: 0, total: 0, uniqueNumbers: 0, dayOfWeekCounts: new Uint16Array(7) };
+        }
+        if (row.voapps_voice_append) messageStats[mId].voice_append = true;
         messageStats[mId].total++; messageStats[mId].dayOfWeekCounts[row.localDayOfWeek]++;
         if (row.isSuccess) messageStats[mId].successful++; else messageStats[mId].unsuccessful++;
 
@@ -1073,7 +1131,7 @@ async function generateTrendAnalysis(
 
   log('Classifying TN health and calculating variability scores...');
 
-  let healthyCount = 0, degradingCount = 0, toxicCount = 0, neverDeliveredCount = 0;
+  let healthyCount = 0, toxicCount = 0, neverDeliveredCount = 0;
   const numberSummaryArray = [];
 
   for (const num in numberData) {
@@ -1094,8 +1152,7 @@ async function generateTrendAnalysis(
     // TN Health Classification
     const tnHealth = classifyTNHealth(successRate, nd.consecutiveFailures, nd.totalAttempts, recentSuccess);
     if (tnHealth === 'Healthy') healthyCount++;
-    else if (tnHealth === 'Degrading') degradingCount++;
-    else if (tnHealth === 'Toxic') toxicCount++;
+    else if (tnHealth === 'Delivery Unlikely') toxicCount++;
 
     // Calculate variability metrics
     const uniqueMessages = Object.keys(nd.messageIds).length;
@@ -1169,8 +1226,8 @@ async function generateTrendAnalysis(
     const validFirstAttempt = nd._fpMs ? epochToTimestamp(nd._fpMs) : null;
     const validLastAttempt  = nd._lpMs ? epochToTimestamp(nd._lpMs) : null;
 
-    // Infer intent from top message
-    const messageIntent = inferMessageIntent(topMsgName);
+    // Infer intent from top message (use AI transcript if available, fall back to name-based)
+    const messageIntent = messageStats[topMsgId]?.intent || inferMessageIntent(topMsgName);
 
     numberSummaryArray.push({
       number: num,
@@ -1195,6 +1252,7 @@ async function generateTrendAnalysis(
       dayEntropy: dayEntropyNormalized,
       hourEntropy: hourEntropyNormalized,
       backToBackIdentical: nd.backToBackIdentical,
+      maxSameStreak: nd.maxSameStreak,
       messageIntent: messageIntent,
       firstAttempt: validFirstAttempt,
       lastAttempt: validLastAttempt,
@@ -1207,12 +1265,11 @@ async function generateTrendAnalysis(
 
   // Calculate list health percentages
   const healthyPct = (healthyCount / uniqueNumbers) * 100;
-  const degradingPct = (degradingCount / uniqueNumbers) * 100;
   const toxicPct = (toxicCount / uniqueNumbers) * 100;
   const neverDeliveredPct = (neverDeliveredCount / uniqueNumbers) * 100;
-  const listGrade = calculateListGrade(healthyPct, degradingPct, toxicPct, neverDeliveredPct);
+  const listGrade = calculateListGrade(healthyPct, toxicPct, neverDeliveredPct);
 
-  log(`TN Health: Healthy=${healthyCount.toLocaleString()}, Degrading=${degradingCount.toLocaleString()}, Toxic=${toxicCount.toLocaleString()}, Never Delivered=${neverDeliveredCount.toLocaleString()}`);
+  log(`TN Health: Healthy=${healthyCount.toLocaleString()}, Delivery Unlikely=${toxicCount.toLocaleString()}, Never Delivered=${neverDeliveredCount.toLocaleString()}`);
   log(`List Grade: ${listGrade}`);
 
   // ============================================================================
@@ -1234,23 +1291,20 @@ async function generateTrendAnalysis(
       if (!attempt.isSuccess) {
         currentRun.push(attempt);
       } else {
-        // Check if the run meets criteria
+        // Check if the run meets the minimum consecutive failure count
         if (currentRun.length >= minConsecUnsuccessful) {
           const runStart = currentRun[0].ts ? new Date(currentRun[0].ts) : null;
           const runEnd = currentRun[currentRun.length - 1].ts ? new Date(currentRun[currentRun.length - 1].ts) : null;
           const spanDays = runStart && runEnd ? (runEnd - runStart) / (1000 * 60 * 60 * 24) : 0;
-
-          // Include if span is >= minRunSpanDays OR if we have many consecutive failures
-          if (spanDays >= minRunSpanDays || currentRun.length >= 6) {
-            const ns = numSummaryMap.get(num);
-            consecRuns.push({
-              number: num,
-              count: currentRun.length,
-              runStart, runEnd, spanDays,
-              tnHealth: ns?.tnHealth || 'Unknown'
-            });
-            inConsecRuns.add(num);
-          }
+          const ns = numSummaryMap.get(num);
+          const runHealth = ns?.tnHealth || 'Healthy';
+          consecRuns.push({
+            number: num,
+            count: currentRun.length,
+            runStart, runEnd, spanDays,
+            tnHealth: runHealth
+          });
+          inConsecRuns.add(num);
         }
         currentRun = [];
       }
@@ -1261,14 +1315,13 @@ async function generateTrendAnalysis(
       const runStart = currentRun[0].ts ? new Date(currentRun[0].ts) : null;
       const runEnd = currentRun[currentRun.length - 1].ts ? new Date(currentRun[currentRun.length - 1].ts) : null;
       const spanDays = runStart && runEnd ? (runEnd - runStart) / (1000 * 60 * 60 * 24) : 0;
-
-      // Include regardless of span if consecutive failures are high
       const ns = numSummaryMap.get(num);
+      const runHealth2 = ns?.tnHealth || 'Healthy';
       consecRuns.push({
         number: num,
         count: currentRun.length,
         runStart, runEnd, spanDays,
-        tnHealth: ns?.tnHealth || 'Unknown'
+        tnHealth: runHealth2
       });
       inConsecRuns.add(num);
     }
@@ -1283,19 +1336,21 @@ async function generateTrendAnalysis(
         const runStart = recentFailures[0]?.ts ? new Date(recentFailures[0].ts) : null;
         const runEnd = recentFailures[recentFailures.length - 1]?.ts ? new Date(recentFailures[recentFailures.length - 1].ts) : null;
         const spanDays = runStart && runEnd ? (runEnd - runStart) / (1000 * 60 * 60 * 24) : 0;
-
         consecRuns.push({
           number: ns.number,
           count: ns.consecutiveFailures,
           runStart, runEnd, spanDays,
           tnHealth: ns.tnHealth
         });
+        inConsecRuns.add(ns.number);
       }
     }
   }
 
   consecRuns.sort((a, b) => b.count - a.count);
-  log(`  Found ${consecRuns.length.toLocaleString()} consecutive unsuccessful patterns`);
+  // Only "Delivery Unlikely" numbers belong on the Suppression Candidates tab.
+  const suppressionRuns = consecRuns.filter(r => r.tnHealth === 'Delivery Unlikely' && r.spanDays >= minRunSpanDays);
+  log(`  Found ${consecRuns.length.toLocaleString()} consecutive unsuccessful patterns (${suppressionRuns.length.toLocaleString()} Delivery Unlikely → Suppression Candidates tab)`);
 
   // Free attempt arrays — all stats now extracted, no longer needed
   for (const num in numberData) {
@@ -1327,50 +1382,56 @@ async function generateTrendAnalysis(
   // in detail tabs so that large datasets don't generate unmanageable sheets.
   // ============================================================================
 
-  // TN Health tab: only Toxic + Degrading (Healthy = no action needed)
-  const filteredHealth = numberSummaryArray
-    .filter(ns => ns.tnHealth === 'Toxic' || ns.tnHealth === 'Degrading')
-    .sort((a, b) => (a.tnHealth === 'Toxic' ? 0 : 1) - (b.tnHealth === 'Toxic' ? 0 : 1));
+  // Detail tab data — only computed when includeDetailTabs is enabled.
+  // When disabled, empty arrays are used so sheet-creation blocks (guarded by
+  // the same flag) never reference uninitialized variables.
+  const MAX_DETAIL_ROWS = 100_000;
+  const filteredHealth = includeDetailTabs
+    ? numberSummaryArray
+        .filter(ns => ns.tnHealth === 'Delivery Unlikely')
+        .sort((a, b) => (a.tnHealth === 'Delivery Unlikely' ? 0 : 1) - (b.tnHealth === 'Delivery Unlikely' ? 0 : 1))
+    : [];
 
-  // Variability Analysis tab: only variability score < 60, and only for numbers
-  // with more than 1 attempt. Single-attempt numbers get a neutral score of 50 by
-  // default — there is no actionable diversity issue with just one attempt.
-  const filteredVariability = numberSummaryArray
-    .filter(ns => ns.totalAttempts > 1 && ns.variabilityScore < 60)
-    .sort((a, b) => a.variabilityScore - b.variabilityScore);
+  const filteredVariability = includeDetailTabs
+    ? numberSummaryArray
+        .filter(ns => ns.totalAttempts > 1 && ns.variabilityScore < 60)
+        .sort((a, b) => a.variabilityScore - b.variabilityScore)
+    : [];
 
   // Number Summary tab: fail at least one criterion.
   // Variability flag only applies to multi-attempt numbers (same reasoning as above).
-  const filteredSummary = numberSummaryArray.filter(ns =>
-    ns.tnHealth === 'Toxic' ||
-    ns.tnHealth === 'Degrading' ||
-    (ns.totalAttempts > 1 && ns.variabilityScore < 60)
-  );
+  const filteredSummary = includeDetailTabs
+    ? numberSummaryArray.filter(ns =>
+        ns.tnHealth === 'Delivery Unlikely' ||
+        (ns.totalAttempts > 1 && ns.variabilityScore < 60)
+      )
+    : [];
 
-  // Capture true pre-cap counts — used in key metrics and log messages below.
-  const healthTotalCount  = filteredHealth.length;
-  const varTotalCount     = filteredVariability.length;
-  const summaryTotalCount = filteredSummary.length;
+  if (includeDetailTabs) {
+    // Capture true pre-cap counts — used in key metrics and log messages below.
+    const healthTotalCount  = filteredHealth.length;
+    const varTotalCount     = filteredVariability.length;
+    const summaryTotalCount = filteredSummary.length;
 
-  // Cap each detail tab at MAX_DETAIL_ROWS to bound ExcelJS Cell accumulation.
-  // ExcelJS holds all rows in memory as Cell objects (~3,200 bytes/row × columns).
-  // 3 tabs × 100K rows × ~3,200 bytes ≈ 960 MB — fits under the effective ~2 GB heap limit.
-  // Truncating via .length = N releases array slots above N immediately (GC-eligible).
-  const MAX_DETAIL_ROWS = 100_000;
-  if (filteredHealth.length     > MAX_DETAIL_ROWS) filteredHealth.length     = MAX_DETAIL_ROWS;
-  if (filteredVariability.length > MAX_DETAIL_ROWS) filteredVariability.length = MAX_DETAIL_ROWS;
-  if (filteredSummary.length    > MAX_DETAIL_ROWS) filteredSummary.length    = MAX_DETAIL_ROWS;
+    // Cap each detail tab at MAX_DETAIL_ROWS to bound ExcelJS Cell accumulation.
+    // ExcelJS holds all rows in memory as Cell objects (~3,200 bytes/row × columns).
+    // 3 tabs × 100K rows × ~3,200 bytes ≈ 960 MB — fits under the effective ~2 GB heap limit.
+    // Truncating via .length = N releases array slots above N immediately (GC-eligible).
+    if (filteredHealth.length      > MAX_DETAIL_ROWS) filteredHealth.length      = MAX_DETAIL_ROWS;
+    if (filteredVariability.length > MAX_DETAIL_ROWS) filteredVariability.length = MAX_DETAIL_ROWS;
+    if (filteredSummary.length     > MAX_DETAIL_ROWS) filteredSummary.length     = MAX_DETAIL_ROWS;
 
-  // Helper: "100,000 of 342,819 (capped at 100,000)" or just "18,432"
-  const fmtCapped = (shown, total) =>
-    total > MAX_DETAIL_ROWS
-      ? `${shown.toLocaleString()} of ${total.toLocaleString()} (capped at ${MAX_DETAIL_ROWS.toLocaleString()})`
-      : shown.toLocaleString();
+    // Helper: "100,000 of 342,819 (capped at 100,000)" or just "18,432"
+    const fmtCapped = (shown, total) =>
+      total > MAX_DETAIL_ROWS
+        ? `${shown.toLocaleString()} of ${total.toLocaleString()} (capped at ${MAX_DETAIL_ROWS.toLocaleString()})`
+        : shown.toLocaleString();
 
-  log(`\nDetail tab filters (analysis ran on all ${numberSummaryArray.length.toLocaleString()} numbers):`);
-  log(`  TN Health tab:          ${fmtCapped(filteredHealth.length, healthTotalCount)} numbers (Toxic/Degrading)`);
-  log(`  Variability tab:        ${fmtCapped(filteredVariability.length, varTotalCount)} numbers (score < 60)`);
-  log(`  Number Summary tab:     ${fmtCapped(filteredSummary.length, summaryTotalCount)} numbers (any flag)`);
+    log(`\nDetail tab filters (analysis ran on all ${numberSummaryArray.length.toLocaleString()} numbers):`);
+    log(`  TN Health tab:          ${fmtCapped(filteredHealth.length, healthTotalCount)} numbers (Delivery Unlikely)`);
+    log(`  Variability tab:        ${fmtCapped(filteredVariability.length, varTotalCount)} numbers (score < 60)`);
+    log(`  Number Summary tab:     ${fmtCapped(filteredSummary.length, summaryTotalCount)} numbers (any flag)`);
+  }
 
   // ============================================================================
   // PRE-COMPUTE ALL METRICS THAT NEED THE FULL numberSummaryArray, THEN FREE IT
@@ -1381,20 +1442,30 @@ async function generateTrendAnalysis(
   log('Pre-computing aggregates from full number set...');
   const totalUniqueInSummary = numberSummaryArray.length;
   let _totalAttempts = 0, _totalSuccess = 0, _sumVariability = 0;
-  let _backToBackIssueCount = 0, _lowDayVarietyCount = 0;
+  let _backToBackIssueCount = 0, _lowDayVarietyCount = 0, _flaggedCount = 0;
+  let _streak2 = 0, _streak3 = 0, _streak4 = 0, _streak5plus = 0;
   for (const ns of numberSummaryArray) {
     _totalAttempts        += ns.totalAttempts;
     _totalSuccess         += ns.successful;   // stored as 'successful' in the push, not 'successCount'
     _sumVariability       += ns.variabilityScore;
     if (ns.backToBackIdentical > 2) _backToBackIssueCount++;
     if (ns.dayEntropy < 0.3 && ns.totalAttempts > 2) _lowDayVarietyCount++;
+    // Count flagged numbers for exec summary metrics (always needed, even when detail tabs are off)
+    if (ns.tnHealth === 'Delivery Unlikely' ||
+        (ns.totalAttempts > 1 && ns.variabilityScore < 60)) _flaggedCount++;
+    // Streak buckets
+    if (ns.maxSameStreak >= 2) _streak2++;
+    if (ns.maxSameStreak >= 3) _streak3++;
+    if (ns.maxSameStreak >= 4) _streak4++;
+    if (ns.maxSameStreak >= 5) _streak5plus++;
   }
+  const streak2 = _streak2, streak3 = _streak3, streak4 = _streak4, streak5plus = _streak5plus;
   const totalAttempts      = _totalAttempts;
   const avgVariability     = totalUniqueInSummary > 0 ? _sumVariability / totalUniqueInSummary : 0;
   const overallSuccessRate = _totalAttempts > 0 ? (_totalSuccess / _totalAttempts * 100) : 0;
   const backToBackIssues   = _backToBackIssueCount;
   const lowDayVariety      = _lowDayVarietyCount;
-  const flaggedCount       = summaryTotalCount;  // pre-cap — reflects all flagged numbers, not just the capped subset written to Excel
+  const flaggedCount       = _flaggedCount;  // pre-cap — reflects all flagged numbers, not just the capped subset written to Excel
   const flaggedPct         = totalUniqueInSummary > 0 ? (flaggedCount / totalUniqueInSummary * 100) : 0;
 
   // Release unflagged ns objects — filteredX arrays keep flagged ones alive;
@@ -1459,7 +1530,16 @@ async function generateTrendAnalysis(
   execSheet.getCell('A1').style = headerStyle;
   execSheet.getRow(1).height = 35;
 
-  let row = 3;
+  execSheet.mergeCells('A2:C2');
+  execSheet.getCell('A2').value =
+    'This report analyzes DDVM delivery patterns across campaigns in a selected date range to identify which phone numbers are ' +
+    'receiving messages successfully, which are consistently failing, and where strategy changes — including ' +
+    'message rotation, caller number diversity, and retry limits — can improve delivery outcomes and maximize effectiveness of DirectDrop Voicemail.';
+  execSheet.getCell('A2').font = { italic: true, size: 10, color: { argb: 'FF555555' } };
+  execSheet.getCell('A2').alignment = { wrapText: true };
+  execSheet.getRow(2).height = 42;
+
+  let row = 4;   // row 3 is blank spacer, row 4 starts Key Metrics
 
   // Key Metrics Box
   execSheet.mergeCells(`A${row}:C${row}`);
@@ -1467,18 +1547,28 @@ async function generateTrendAnalysis(
   execSheet.getCell(`A${row}`).style = sectionHeaderStyle;
   row++;
 
+  // Grade-specific actionable advice for column C
+  const listGradeAdvice = listGrade === 'A'
+    ? 'Excellent list health. Continue monitoring Delivery Unlikely numbers monthly and suppress promptly.'
+    : listGrade === 'B'
+    ? 'Good list health. Suppressing all Delivery Unlikely numbers and removing Never Delivered numbers could push this to an A.'
+    : listGrade === 'C'
+    ? 'Fair list health. Action recommended: suppress Delivery Unlikely numbers now and investigate Never Delivered numbers — many are likely landlines, disconnected, or invalid numbers that should be permanently removed from your list.'
+    : 'Poor list health. This list needs immediate cleanup. Suppressing Delivery Unlikely and removing Never Delivered numbers will improve delivery rates, lower cost-per-contact, and protect caller reputation.';
+
   // All aggregates pre-computed and numberSummaryArray freed above
   const keyMetrics = [
     ['Total DDVM Attempts', totalAttempts.toLocaleString()],
     ['Unique Phone Numbers', uniqueNumbers.toLocaleString()],
-    ['Delivered %', `${overallSuccessRate.toFixed(1)}%`],
-    ['Never Delivered %', `${neverDeliveredPct.toFixed(1)}%`],
+    ['Delivered %', `${overallSuccessRate.toFixed(1)}%`,
+      'The percentage of all DDVM delivery attempts that resulted in a successful voicemail drop (result code 200 | Successfully delivered). Each attempt on a number counts separately — a number attempted 3 times and delivered once counts as 1 success out of 3 attempts.'],
+    ['Never Delivered %', `${neverDeliveredPct.toFixed(1)}%`,
+      'The percentage of unique phone numbers that never received a single successful delivery across the entire date range. These numbers are the highest-priority suppression candidates — they consume campaign budget with zero return.'],
     ['Average Variability Score', `${avgVariability.toFixed(0)}/100`,
       '0–100 composite score measuring call pattern diversity — message rotation, caller variety, time-of-day spread, and day-of-week distribution. Below 60 is flagged; below 40 suggests repetitive, robocall-like patterns that risk carrier detection.'],
-    ['List Quality Grade', listGrade,
-      'A: >80% Healthy, <5% Toxic, <10% Never Delivered — Excellent.  B: >60% Healthy, <10% Toxic, <20% Never Delivered — Good.  C: >40% Healthy, <20% Toxic — Fair.  D: All other cases — Poor.'],
-    ['Numbers Flagged in Detail Tabs', `${flaggedCount.toLocaleString()} of ${totalUniqueInSummary.toLocaleString()} (${flaggedPct.toFixed(1)}%) — Toxic/Degrading or variability < 60`,
-      'Any number failing at least one threshold — classified Toxic/Degrading by TN Health, OR variability score below 60. A Healthy number with poor call diversity is still flagged. See TN Health and Variability Analysis tabs for the full breakdown.'],
+    ['List Quality Grade', listGrade, listGradeAdvice],
+    ['Numbers Flagged in Detail Tabs', `${flaggedCount.toLocaleString()} of ${totalUniqueInSummary.toLocaleString()} (${flaggedPct.toFixed(1)}%) — Delivery Unlikely or variability < 60`,
+      'Any number failing at least one threshold — classified Delivery Unlikely by TN Health, OR variability score below 60. A Healthy number with poor call diversity is still flagged. See TN Health and Variability Analysis tabs for the full breakdown (if enabled).'],
     ['Date Range', `${formatDate(minDate)} - ${formatDate(maxDate)}`],
     ['Timezone', detectedTimezone]
   ];
@@ -1497,6 +1587,54 @@ async function generateTrendAnalysis(
     }
     row++;
   }
+
+  row++; // Blank row
+
+  // Message & Day Variability Insights
+  execSheet.mergeCells(`A${row}:C${row}`);
+  execSheet.getCell(`A${row}`).value = 'Message & Day Variability Insights';
+  execSheet.getCell(`A${row}`).style = sectionHeaderStyle;
+  row++;
+
+  const streak2Pct  = totalUniqueInSummary > 0 ? (streak2  / totalUniqueInSummary * 100) : 0;
+  const streak3Pct  = totalUniqueInSummary > 0 ? (streak3  / totalUniqueInSummary * 100) : 0;
+  const streak4Pct  = totalUniqueInSummary > 0 ? (streak4  / totalUniqueInSummary * 100) : 0;
+  const streak5Pct  = totalUniqueInSummary > 0 ? (streak5plus / totalUniqueInSummary * 100) : 0;
+  const lowDayPct   = totalUniqueInSummary > 0 ? (lowDayVariety / totalUniqueInSummary * 100) : 0;
+
+  const variabilityRows = [
+    ['Same Message 2+ in a Row', `${streak2.toLocaleString()} numbers (${streak2Pct.toFixed(1)}%)`,
+      'Numbers that received the same message consecutively at least twice. Consumers who hear the same voicemail repeatedly begin to tune it out.'],
+    ['Same Message 3+ in a Row', `${streak3.toLocaleString()} numbers (${streak3Pct.toFixed(1)}%)`,
+      'Receiving the same message three or more times raises the perceived robocall signature and reduces callback likelihood.'],
+    ['Same Message 4+ in a Row', `${streak4.toLocaleString()} numbers (${streak4Pct.toFixed(1)}%)`,
+      'Four or more consecutive identical messages suggests missing message rotation — consider adding a second or third message variant.'],
+    ['Same Message 5+ in a Row', `${streak5plus.toLocaleString()} numbers (${streak5Pct.toFixed(1)}%)`,
+      'High repetition. Listeners who recognize a repeated script often delete without listening.'],
+    ['Low Day-of-Week Variety', `${lowDayVariety.toLocaleString()} numbers (${lowDayPct.toFixed(1)}%)`,
+      'Contacted almost exclusively on the same day(s) of the week. Predictable timing allows consumers to categorize your calls as routine.'],
+  ];
+
+  for (const [label, value, desc] of variabilityRows) {
+    execSheet.getCell(`A${row}`).value = label;
+    execSheet.getCell(`A${row}`).font = { bold: true };
+    execSheet.getCell(`B${row}`).value = value;
+    execSheet.getCell(`C${row}`).value = desc;
+    execSheet.getCell(`C${row}`).font = { italic: true, size: 9, color: { argb: 'FF555555' } };
+    execSheet.getCell(`C${row}`).alignment = { wrapText: true };
+    row++;
+  }
+
+  // Variability narrative
+  execSheet.mergeCells(`A${row}:C${row}`);
+  execSheet.getCell(`A${row}`).value =
+    'Why variability drives callbacks: Consumers who receive the same message on the same day every week develop pattern recognition — they learn to dismiss or delete without listening. ' +
+    'Varying both the message and the day of week creates unpredictability that feels relevant rather than automated. A consumer who usually gets your message on Tuesday but receives it on a ' +
+    'Thursday is more likely to engage. Rotating two or three message variants also prevents voicemail fatigue and can meaningfully improve callback rates.';
+  execSheet.getCell(`A${row}`).font = { italic: true, size: 9, color: { argb: 'FF444444' } };
+  execSheet.getCell(`A${row}`).alignment = { wrapText: true };
+  execSheet.getRow(row).height = 55;
+  row++;
 
   row++; // Blank row
 
@@ -1613,10 +1751,8 @@ async function generateTrendAnalysis(
   const healthDist = [
     ['Healthy', `${healthyCount.toLocaleString()} (${healthyPct.toFixed(1)}%)`,
       'Acceptable success rate with no sustained consecutive-failure streak. Good deliverability — no immediate action required. Monitor variability score to avoid repetitive call patterns.'],
-    ['Degrading', `${degradingCount.toLocaleString()} (${degradingPct.toFixed(1)}%)`,
-      'Success rate below 25% with 2+ consecutive failures, or below 40% with 3+ consecutive failures. Delivery is declining — review messaging frequency, caller rotation, and list hygiene.'],
-    ['Toxic', `${toxicCount.toLocaleString()} (${toxicPct.toFixed(1)}%)`,
-      'Success rate below 10% with 4+ consecutive failures; or 6+ consecutive failures regardless of rate; or 5+ attempts with zero successes. Remove from active DDVM campaigns immediately.'],
+    ['Delivery Unlikely', `${toxicCount.toLocaleString()} (${toxicPct.toFixed(1)}%)`,
+      'Success rate below 10% with 4+ consecutive failures; or 6+ consecutive failures regardless of rate; or 5+ attempts with zero successes. Successful DDVM delivery is highly unlikely. Suppression is recommended.'],
     ['Never Delivered', `${neverDeliveredCount.toLocaleString()} (${neverDeliveredPct.toFixed(1)}%)`,
       'Zero successful deliveries across all attempts in this dataset. Overlaps with all health categories — a number with only 1–2 attempts and no consecutive failures can be Healthy yet never have a successful delivery on record. % is of all unique numbers.']
   ];
@@ -1625,7 +1761,7 @@ async function generateTrendAnalysis(
     execSheet.getCell(`A${row}`).value = label;
     execSheet.getCell(`A${row}`).font = { bold: true };
     execSheet.getCell(`B${row}`).value = value;
-    if (label === 'Toxic' || label === 'Never Delivered') {
+    if (label === 'Delivery Unlikely' || label === 'Never Delivered') {
       execSheet.getCell(`B${row}`).style = warningStyle;
     } else if (label === 'Healthy') {
       execSheet.getCell(`B${row}`).style = successStyle;
@@ -1657,6 +1793,66 @@ async function generateTrendAnalysis(
 
   row++; // Blank row
 
+  // Message Intelligence (AI) Section — only shown when transcripts are available
+  const aiMessages = Object.values(messageStats).filter(m => m.transcript);
+  if (aiMessages.length > 0) {
+    execSheet.mergeCells(`A${row}:C${row}`);
+    execSheet.getCell(`A${row}`).value = 'Message Intelligence (AI)';
+    execSheet.getCell(`A${row}`).style = sectionHeaderStyle;
+    row++;
+
+    const totalMessages    = Object.keys(messageStats).length;
+    const voiceAppendMsgs  = aiMessages.filter(m => m.voice_append);
+    const urlMsgs          = aiMessages.filter(m => m.mentions_url);
+    const callerMismatch   = aiMessages.filter(m => m.mentioned_phone); // simplified — all that mention a phone
+    const intentCounts = {};
+    for (const m of aiMessages) {
+      const k = m.intent || 'unknown';
+      intentCounts[k] = (intentCounts[k] || 0) + 1;
+    }
+    const intentDistStr = Object.entries(intentCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(' | ');
+
+    const aiMetrics = [
+      ['Messages Analyzed', `${aiMessages.length} of ${totalMessages}`,
+        'Messages with audio recordings transcribed and analyzed via AI.'],
+      ['Voice Append Messages', voiceAppendMsgs.length > 0 ? `${voiceAppendMsgs.length} (${voiceAppendMsgs.map(m => m.message_name).join(', ')})` : 'None',
+        'Messages used with VoApps Voice Append — detected via voapps_voice_append in campaign data.'],
+      ['Messages Mentioning a Phone #', callerMismatch.length > 0 ? `${callerMismatch.length}` : 'None',
+        'Messages where the transcript contains a spoken phone number. Review Caller # Match column in Message Insights tab.'],
+      ['Messages with URLs', urlMsgs.length > 0 ? `${urlMsgs.length}` : 'None',
+        'Messages that reference a website or URL in the transcript.'],
+      ['Intent Distribution', intentDistStr || '—',
+        'AI-inferred intent categories across analyzed messages.']
+    ];
+
+    for (const [label, value, desc] of aiMetrics) {
+      execSheet.getCell(`A${row}`).value = label;
+      execSheet.getCell(`A${row}`).font = { bold: true };
+      execSheet.getCell(`B${row}`).value = value;
+      if (desc) {
+        execSheet.getCell(`C${row}`).value = desc;
+        execSheet.getCell(`C${row}`).font = { italic: true, size: 9, color: { argb: 'FF555555' } };
+        execSheet.getCell(`C${row}`).alignment = { wrapText: true };
+      }
+      row++;
+    }
+
+    // AI accuracy caveat
+    execSheet.mergeCells(`A${row}:C${row}`);
+    execSheet.getCell(`A${row}`).value =
+      '⚠ AI transcription may contain inaccuracies. Review and correct transcripts in the AI settings panel before using for decision-making.';
+    execSheet.getCell(`A${row}`).font = { italic: true, size: 9, color: { argb: 'FF7A5200' } };
+    execSheet.getCell(`A${row}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFDE7' } };
+    execSheet.getCell(`A${row}`).alignment = { wrapText: true };
+    execSheet.getRow(row).height = 22;
+    row++;
+
+    row++; // Blank row
+  }
+
   // Immediate Actions
   execSheet.mergeCells(`A${row}:C${row}`);
   execSheet.getCell(`A${row}`).value = 'Recommended Actions';
@@ -1666,7 +1862,7 @@ async function generateTrendAnalysis(
   const actions = [];
 
   if (toxicCount > 0) {
-    actions.push(`SUPPRESS: ${toxicCount.toLocaleString()} toxic TNs should be removed from DDVM lists immediately.`);
+    actions.push(`SUPPRESS: ${toxicCount.toLocaleString()} numbers classified "Delivery Unlikely" should be suppressed from DDVM campaigns.`);
   }
   if (neverDeliveredCount > uniqueNumbers * 0.1) {
     actions.push(`REVIEW: ${neverDeliveredCount.toLocaleString()} numbers have never been successfully delivered. Consider HLR lookup or removal.`);
@@ -1687,10 +1883,10 @@ async function generateTrendAnalysis(
 
   // Add day-of-week recommendations for accounts/messages
   if (accountDayRecommendations.length > 0) {
-    actions.push(`DAY DISTRIBUTION: ${accountDayRecommendations.length} account(s) only send DDVM on limited days. See "Global Insights (Time)" for details.`);
+    actions.push(`DAY DISTRIBUTION: ${accountDayRecommendations.length} account(s) only send DDVM on limited days. See "Global Insights (Days)" for details.`);
   }
   if (messageDayRecommendations.length > 0) {
-    actions.push(`DAY DISTRIBUTION: ${messageDayRecommendations.length} message(s) only used on limited days. See "Global Insights (Time)" for details.`);
+    actions.push(`DAY DISTRIBUTION: ${messageDayRecommendations.length} message(s) only used on limited days. See "Global Insights (Days)" for details.`);
   }
 
   // Add timezone discrepancy warning
@@ -1753,11 +1949,11 @@ async function generateTrendAnalysis(
   row++;
 
   const insights = [
-    'Review "TN Health" tab to identify numbers that should be suppressed.',
+    'Review "TN Health" tab (if enabled) to identify numbers with poor delivery performance.',
     'Review "Retry Decay Curve" to understand when retries become unproductive.',
-    'Review "Global Insights (Time)" to identify your DDVM delivery patterns to consider a change in strategy.',
+    'Review "Global Insights (Days)" to identify day-of-week delivery patterns and consider scheduling changes.',
     'Review "Variability Analysis" to find numbers that may benefit from more diverse messaging.',
-    'Review "Consecutive Unsuccessful" to find long-running failure patterns.'
+    'Review "Suppression Candidates" for numbers with repeated delivery failures — suppression recommended.'
   ];
 
   for (const insight of insights) {
@@ -1803,6 +1999,9 @@ async function generateTrendAnalysis(
       dc.probability,
       insight
     ];
+    // Attempt Index may be the string '10+' which ExcelJS left-aligns by default —
+    // explicitly right-align every data cell in column A for consistency.
+    decaySheet.getCell(`A${decayRow}`).alignment = { horizontal: 'right' };
     decaySheet.getCell(`D${decayRow}`).numFmt = '0.0%';
 
     if (dc.probability < 0.15) {
@@ -1812,11 +2011,7 @@ async function generateTrendAnalysis(
     decayRow++;
   }
 
-  decaySheet.getColumn(1).width = 15;
-  decaySheet.getColumn(2).width = 20;
-  decaySheet.getColumn(3).width = 12;
-  decaySheet.getColumn(4).width = 20;
-  decaySheet.getColumn(5).width = 25;
+  autoFitColumns(decaySheet, 12, 40);
 
   // ========================================
   // TAB 3: TN HEALTH
@@ -1824,69 +2019,61 @@ async function generateTrendAnalysis(
 
   log('Creating TN Health tab...');
 
-  const healthSheet = workbook.addWorksheet('TN Health', {
-    views: [{ state: 'frozen', xSplit: 0, ySplit: 1 }]
-  });
+  if (includeDetailTabs) {
+    const healthSheet = workbook.addWorksheet('TN Health', {
+      views: [{ state: 'frozen', xSplit: 0, ySplit: 1 }]
+    });
 
-  const healthHeaders = ['Number', 'TN Health', 'Never Delivered', 'Success Rate', 'Total DDVM Attempts',
-    'Consecutive Failures', 'Attempt Index', 'Last Success', 'Variability Score', 'Action'];
-  healthSheet.getRow(1).values = healthHeaders;
-  healthSheet.getRow(1).eachCell((cell) => {
-    cell.style = tableHeaderStyle;
-  });
+    const healthHeaders = ['Number', 'TN Health', 'Never Delivered', 'Success Rate', 'Total DDVM Attempts',
+      'Consecutive Failures', 'Attempt Index', 'Last Success', 'Variability Score', 'Action'];
+    healthSheet.getRow(1).values = healthHeaders;
+    healthSheet.getRow(1).eachCell((cell) => {
+      cell.style = tableHeaderStyle;
+    });
 
-  log(`  TN Health: ${filteredHealth.length.toLocaleString()} critical numbers shown (Healthy excluded)`);
+    log(`  TN Health: ${filteredHealth.length.toLocaleString()} numbers shown (Delivery Unlikely)`);
 
-  // Column-level numFmt (one call per column instead of N per-cell calls)
-  healthSheet.getColumn(4).numFmt = '0.0%';  // D - Success Rate
+    // Column-level numFmt (one call per column instead of N per-cell calls)
+    healthSheet.getColumn(4).numFmt = '0.0%';  // D - Success Rate
 
-  const healthRows = filteredHealth.map(ns => {
-    const action = ns.tnHealth === 'Toxic' ? 'Suppress immediately' : 'Monitor / Consider removal';
-    // lastSuccessTimestamp is stored as ms-epoch number (or Date from older code paths)
-    const lastSuccStr = ns.lastSuccessTimestamp
-      ? (ns.lastSuccessTimestamp instanceof Date
-          ? ns.lastSuccessTimestamp.toISOString().split('T')[0]
-          : new Date(ns.lastSuccessTimestamp).toISOString().split('T')[0])
-      : '';
-    return [
-      ns.number, ns.tnHealth, ns.neverDelivered ? 'Yes' : 'No',
-      ns.successRate, ns.totalAttempts, ns.consecutiveFailures,
-      ns.attemptIndex, lastSuccStr, ns.variabilityScore, action
-    ];
-  });
-  healthSheet.addRows(healthRows);
-  const healthLastRow = healthRows.length + 1;
-  // Free source data — ExcelJS has its own internal copy now
-  filteredHealth.length = 0; healthRows.length = 0;
+    const healthRows = filteredHealth.map(ns => {
+      const action = ns.tnHealth === 'Delivery Unlikely' ? 'Suppression recommended' : 'Monitor closely';
+      // lastSuccessTimestamp is stored as ms-epoch number (or Date from older code paths)
+      const lastSuccStr = ns.lastSuccessTimestamp
+        ? (ns.lastSuccessTimestamp instanceof Date
+            ? ns.lastSuccessTimestamp.toISOString().split('T')[0]
+            : new Date(ns.lastSuccessTimestamp).toISOString().split('T')[0])
+        : '';
+      return [
+        ns.number, ns.tnHealth, ns.neverDelivered ? 'Yes' : 'No',
+        ns.successRate, ns.totalAttempts, ns.consecutiveFailures,
+        ns.attemptIndex, lastSuccStr, ns.variabilityScore, action
+      ];
+    });
+    healthSheet.addRows(healthRows);
+    const healthLastRow = healthRows.length + 1;
+    // Free source data — ExcelJS has its own internal copy now
+    filteredHealth.length = 0; healthRows.length = 0;
 
-  // Conditional formatting — one rule set for the whole column (no per-cell fill)
-  healthSheet.addConditionalFormatting({
-    ref: `B2:B${healthLastRow}`,
-    rules: [
-      { type: 'cellIs', operator: 'equal', formulae: ['"Toxic"'],    priority: 1,
-        style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFC7CE' } } } },
-      { type: 'cellIs', operator: 'equal', formulae: ['"Degrading"'], priority: 2,
-        style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFEB9C' } } } }
-    ]
-  });
-  healthSheet.addConditionalFormatting({
-    ref: `C2:C${healthLastRow}`,
-    rules: [
-      { type: 'cellIs', operator: 'equal', formulae: ['"Yes"'], priority: 1,
-        style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFC7CE' } } } }
-    ]
-  });
+    // Conditional formatting — one rule set for the whole column (no per-cell fill)
+    healthSheet.addConditionalFormatting({
+      ref: `B2:B${healthLastRow}`,
+      rules: [
+        { type: 'cellIs', operator: 'equal', formulae: ['"Delivery Unlikely"'], priority: 1,
+          style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFC7CE' } } } }
+      ]
+    });
+    healthSheet.addConditionalFormatting({
+      ref: `C2:C${healthLastRow}`,
+      rules: [
+        { type: 'cellIs', operator: 'equal', formulae: ['"Yes"'], priority: 1,
+          style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFC7CE' } } } }
+      ]
+    });
 
-  healthSheet.getColumn(1).width = 15;
-  healthSheet.getColumn(2).width = 12;
-  healthSheet.getColumn(3).width = 14;
-  healthSheet.getColumn(4).width = 12;
-  healthSheet.getColumn(5).width = 18;
-  healthSheet.getColumn(6).width = 18;
-  healthSheet.getColumn(7).width = 14;
-  healthSheet.getColumn(8).width = 14;
-  healthSheet.getColumn(9).width = 16;
-  healthSheet.getColumn(10).width = 22;
+    autoFitColumns(healthSheet, 12, 55);
+
+  }
 
   // ========================================
   // TAB 4: VARIABILITY ANALYSIS
@@ -1894,63 +2081,57 @@ async function generateTrendAnalysis(
 
   log('Creating Variability Analysis tab...');
 
-  const varSheet = workbook.addWorksheet('Variability Analysis', {
-    views: [{ state: 'frozen', xSplit: 0, ySplit: 1 }]
-  });
+  if (includeDetailTabs) {
+    const varSheet = workbook.addWorksheet('Variability Analysis', {
+      views: [{ state: 'frozen', xSplit: 0, ySplit: 1 }]
+    });
 
-  const varHeaders = ['Number', 'Variability Score', 'Top Msg %', 'Unique Messages', 'Top Caller %',
-    'Unique Callers', 'Back-to-Back', 'Day Entropy', 'Hour Entropy', 'Day Distribution'];
-  varSheet.getRow(1).values = varHeaders;
-  varSheet.getRow(1).eachCell((cell) => {
-    cell.style = tableHeaderStyle;
-  });
+    const varHeaders = ['Number', 'Variability Score', 'Top Msg %', 'Unique Messages', 'Top Caller Number %',
+      'Unique Caller Numbers', 'Back-to-Back', 'Day Entropy', 'Hour Entropy', 'Day Distribution'];
+    varSheet.getRow(1).values = varHeaders;
+    varSheet.getRow(1).eachCell((cell) => {
+      cell.style = tableHeaderStyle;
+    });
 
-  log(`  Variability Analysis: ${filteredVariability.length.toLocaleString()} numbers shown (score < 60)`);
+    log(`  Variability Analysis: ${filteredVariability.length.toLocaleString()} numbers shown (score < 60)`);
 
-  // Column-level numFmt — one call per column instead of N per-cell calls
-  varSheet.getColumn(3).numFmt = '0.0%';   // C - Top Msg %
-  varSheet.getColumn(5).numFmt = '0.0%';   // E - Top Caller %
-  varSheet.getColumn(8).numFmt = '0.00';   // H - Day Entropy
-  varSheet.getColumn(9).numFmt = '0.00';   // I - Hour Entropy
+    // Column-level numFmt — one call per column instead of N per-cell calls
+    varSheet.getColumn(3).numFmt = '0.0%';   // C - Top Msg %
+    varSheet.getColumn(5).numFmt = '0.0%';   // E - Top Caller %
+    varSheet.getColumn(8).numFmt = '0.00';   // H - Day Entropy
+    varSheet.getColumn(9).numFmt = '0.00';   // I - Hour Entropy
 
-  const varRows = filteredVariability.map(ns => [
-    ns.number, ns.variabilityScore, ns.topMsgPct, ns.uniqueMsgCount,
-    ns.topCallerPct, ns.uniqueCallerCount, ns.backToBackIdentical,
-    ns.dayEntropy, ns.hourEntropy, ns.dayDistribution
-  ]);
-  varSheet.addRows(varRows);
-  const varLastRow = varRows.length + 1;
-  // Free source data — ExcelJS has its own internal copy now
-  filteredVariability.length = 0; varRows.length = 0;
+    const varRows = filteredVariability.map(ns => [
+      ns.number, ns.variabilityScore, ns.topMsgPct, ns.uniqueMsgCount,
+      ns.topCallerPct, ns.uniqueCallerCount, ns.backToBackIdentical,
+      ns.dayEntropy, ns.hourEntropy, ns.dayDistribution
+    ]);
+    varSheet.addRows(varRows);
+    const varLastRow = varRows.length + 1;
+    // Free source data — ExcelJS has its own internal copy now
+    filteredVariability.length = 0; varRows.length = 0;
 
-  // Conditional formatting for variability score and back-to-back
-  varSheet.addConditionalFormatting({
-    ref: `B2:B${varLastRow}`,
-    rules: [
-      { type: 'cellIs', operator: 'lessThan',           formulae: ['30'], priority: 1,
-        style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFC7CE' } } } },
-      { type: 'cellIs', operator: 'lessThanOrEqual',    formulae: ['60'], priority: 2,
-        style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFEB9C' } } } }
-    ]
-  });
-  varSheet.addConditionalFormatting({
-    ref: `G2:G${varLastRow}`,
-    rules: [
-      { type: 'cellIs', operator: 'greaterThan', formulae: ['2'], priority: 1,
-        style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFEB9C' } } } }
-    ]
-  });
+    // Conditional formatting for variability score and back-to-back
+    varSheet.addConditionalFormatting({
+      ref: `B2:B${varLastRow}`,
+      rules: [
+        { type: 'cellIs', operator: 'lessThan',           formulae: ['30'], priority: 1,
+          style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFC7CE' } } } },
+        { type: 'cellIs', operator: 'lessThanOrEqual',    formulae: ['60'], priority: 2,
+          style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFEB9C' } } } }
+      ]
+    });
+    varSheet.addConditionalFormatting({
+      ref: `G2:G${varLastRow}`,
+      rules: [
+        { type: 'cellIs', operator: 'greaterThan', formulae: ['2'], priority: 1,
+          style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFEB9C' } } } }
+      ]
+    });
 
-  varSheet.getColumn(1).width = 15;
-  varSheet.getColumn(2).width = 16;
-  varSheet.getColumn(3).width = 12;
-  varSheet.getColumn(4).width = 15;
-  varSheet.getColumn(5).width = 13;
-  varSheet.getColumn(6).width = 14;
-  varSheet.getColumn(7).width = 13;
-  varSheet.getColumn(8).width = 12;
-  varSheet.getColumn(9).width = 12;
-  varSheet.getColumn(10).width = 55;
+    autoFitColumns(varSheet, 12, 60);
+
+  }
 
   // ========================================
   // TAB 5: NUMBER SUMMARY
@@ -1958,41 +2139,43 @@ async function generateTrendAnalysis(
 
   log('Creating Number Summary tab...');
 
-  const summarySheet = workbook.addWorksheet('Number Summary', {
-    views: [{ state: 'frozen', xSplit: 0, ySplit: 1 }]
-  });
+  if (includeDetailTabs) {
+    const summarySheet = workbook.addWorksheet('Number Summary', {
+      views: [{ state: 'frozen', xSplit: 0, ySplit: 1 }]
+    });
 
-  const summaryHeaders = ['Number', 'Total DDVM Attempts', 'Successful', 'Unsuccessful', 'Success Rate',
-    'TN Health', 'Variability', 'First Attempt', 'Last Attempt',
-    'Top Msg ID', 'Top Msg Name', 'Top Msg %', 'Unique Msgs',
-    'Top Caller', 'Top Caller Name', 'Top Caller %', 'Unique Callers',
-    'Intent', 'Day Distribution'];
-  summarySheet.getRow(1).values = summaryHeaders;
-  summarySheet.getRow(1).eachCell((cell) => {
-    cell.style = tableHeaderStyle;
-  });
+    const summaryHeaders = ['Number', 'Total DDVM Attempts', 'Successful', 'Unsuccessful', 'Success Rate',
+      'TN Health', 'Variability', 'First Attempt', 'Last Attempt',
+      'Top Msg ID', 'Top Msg Name', 'Top Msg %', 'Unique Msgs',
+      'Top Caller', 'Top Caller Name', 'Top Caller Number %', 'Unique Caller Numbers',
+      'Intent', 'Day Distribution'];
+    summarySheet.getRow(1).values = summaryHeaders;
+    summarySheet.getRow(1).eachCell((cell) => {
+      cell.style = tableHeaderStyle;
+    });
 
-  log(`  Number Summary: ${filteredSummary.length.toLocaleString()} numbers shown (any flag)`);
+    log(`  Number Summary: ${filteredSummary.length.toLocaleString()} numbers shown (any flag)`);
 
-  // Column-level numFmt — one call per column instead of N per-cell calls
-  summarySheet.getColumn(5).numFmt  = '0.0%';  // E - Success Rate
-  summarySheet.getColumn(12).numFmt = '0.0%';  // L - Top Msg %
-  summarySheet.getColumn(16).numFmt = '0.0%';  // P - Top Caller %
+    // Column-level numFmt — one call per column instead of N per-cell calls
+    summarySheet.getColumn(5).numFmt  = '0.0%';  // E - Success Rate
+    summarySheet.getColumn(12).numFmt = '0.0%';  // L - Top Msg %
+    summarySheet.getColumn(16).numFmt = '0.0%';  // P - Top Caller %
 
-  const summaryRows = filteredSummary.map(ns => [
-    ns.number, ns.totalAttempts, ns.successful, ns.unsuccessful, ns.successRate,
-    ns.tnHealth, ns.variabilityScore, ns.firstAttempt, ns.lastAttempt,
-    Number(ns.topMsgId) || ns.topMsgId, ns.topMsgName, ns.topMsgPct, ns.uniqueMsgCount,
-    ns.topCallerNum, ns.topCallerName, ns.topCallerPct, ns.uniqueCallerCount,
-    ns.messageIntent, ns.dayDistribution
-  ]);
-  summarySheet.addRows(summaryRows);
-  // Free source data — ExcelJS has its own internal copy now
-  filteredSummary.length = 0; summaryRows.length = 0;
+    const summaryRows = filteredSummary.map(ns => [
+      ns.number, ns.totalAttempts, ns.successful, ns.unsuccessful, ns.successRate,
+      ns.tnHealth, ns.variabilityScore, ns.firstAttempt, ns.lastAttempt,
+      Number(ns.topMsgId) || ns.topMsgId, ns.topMsgName, ns.topMsgPct, ns.uniqueMsgCount,
+      ns.topCallerNum, ns.topCallerName, ns.topCallerPct, ns.uniqueCallerCount,
+      ns.messageIntent, ns.dayDistribution
+    ]);
+    summarySheet.addRows(summaryRows);
+    // Free source data — ExcelJS has its own internal copy now
+    filteredSummary.length = 0; summaryRows.length = 0;
 
-  // Set column widths
-  const widths = [15, 18, 10, 12, 11, 10, 10, 16, 16, 12, 22, 10, 10, 14, 22, 11, 12, 12, 55];
-  widths.forEach((w, idx) => summarySheet.getColumn(idx + 1).width = w);
+    // Set column widths
+    autoFitColumns(summarySheet, 10, 60);
+
+  }
 
   log(`  Number Summary: ${filteredSummary.length.toLocaleString()} flagged rows written`);
 
@@ -2013,7 +2196,13 @@ async function generateTrendAnalysis(
     dayPattern: getDayUsagePattern(m.dayOfWeekCounts)
   })).sort((a, b) => b.total - a.total);
 
-  const msgHeaders = ['Message ID', 'Message Name', 'Intent', 'Total DDVM Attempts', 'Unique Numbers', 'Successful', 'Unsuccessful', 'Success Rate', 'Day Usage', 'Recommendation'];
+  // AI columns are always present — populated when AI analysis has run, empty otherwise
+  const hasAiData = messageArray.some(m => m.transcript);
+  const msgHeaders = [
+    'Message ID', 'Message Name', 'Intent', 'Total DDVM Attempts', 'Unique Numbers',
+    'Successful', 'Unsuccessful', 'Success Rate', 'Day Usage', 'Recommendation',
+    'Transcript', 'Message Summary', 'Mentioned Phone', 'Caller # Match', 'Contains URL', 'Voice Append'
+  ];
   msgSheet.getRow(1).values = msgHeaders;
   msgSheet.getRow(1).eachCell((cell) => {
     cell.style = tableHeaderStyle;
@@ -2021,30 +2210,35 @@ async function generateTrendAnalysis(
 
   let msgRow = 2;
   for (const msg of messageArray) {
+    const mentionedPhone = msg.mentioned_phone || '';
+    const transcript = msg.transcript ? msg.transcript.slice(0, 400) + (msg.transcript.length > 400 ? '…' : '') : '';
     msgSheet.getRow(msgRow).values = [
       Number(msg.message_id) || msg.message_id, msg.message_name, msg.intent, msg.total, msg.uniqueNumbers,
       msg.successful, msg.unsuccessful, msg.success_rate,
       msg.dayPattern.days.join(', ') || 'All days',
-      msg.dayPattern.limited ? msg.dayPattern.recommendation : ''
+      msg.dayPattern.limited ? msg.dayPattern.recommendation : '',
+      // AI columns — blank when AI has not run; populated after transcription
+      transcript,
+      msg.intent_summary || '',
+      mentionedPhone,
+      // Caller # Match and Contains URL only mean something when a transcript exists
+      !transcript ? '' : (!mentionedPhone ? '—' : '⚠️ Check caller ID'),
+      !transcript ? '' : (msg.mentions_url ? 'Yes' : 'No'),
+      // Voice Append comes from the campaign CSV (not AI), so "No" is a real value
+      msg.voice_append ? 'Yes' : 'No'
     ];
     msgSheet.getCell(`H${msgRow}`).numFmt = '0.0%';
 
     if (msg.dayPattern.limited) {
       msgSheet.getCell(`J${msgRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEB9C' } };
     }
+    if (msg.voice_append) {
+      msgSheet.getCell(`P${msgRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E3F2FD' } };
+    }
     msgRow++;
   }
 
-  msgSheet.getColumn(1).width = 15;
-  msgSheet.getColumn(2).width = 35;
-  msgSheet.getColumn(3).width = 14;
-  msgSheet.getColumn(4).width = 18;
-  msgSheet.getColumn(5).width = 15;
-  msgSheet.getColumn(6).width = 12;
-  msgSheet.getColumn(7).width = 14;
-  msgSheet.getColumn(8).width = 14;
-  msgSheet.getColumn(9).width = 20;
-  msgSheet.getColumn(10).width = 50;
+  autoFitColumns(msgSheet, 12, 100);
 
   // ========================================
   // TAB 7: CALLER # INSIGHTS
@@ -2063,7 +2257,7 @@ async function generateTrendAnalysis(
     dayPattern: getDayUsagePattern(c.dayOfWeekCounts)
   })).sort((a, b) => b.total - a.total);
 
-  const callerHeaders = ['Caller Number', 'Caller Name', 'Total DDVM Attempts', 'Unique Numbers', 'Successful', 'Unsuccessful', 'Success Rate', 'Day Usage', 'Recommendation'];
+  const callerHeaders = ['Caller Number', 'Caller Name', 'Total DDVM Attempts', 'Unique Numbers', 'Successful', 'Unsuccessful', 'Success Rate', 'Day Usage'];
   callerSheet.getRow(1).values = callerHeaders;
   callerSheet.getRow(1).eachCell((cell) => {
     cell.style = tableHeaderStyle;
@@ -2074,49 +2268,33 @@ async function generateTrendAnalysis(
     callerSheet.getRow(callerRow).values = [
       caller.caller_number, caller.caller_name, caller.total, caller.uniqueNumbers,
       caller.successful, caller.unsuccessful, caller.success_rate,
-      caller.dayPattern.days.join(', ') || 'All days',
-      caller.dayPattern.limited ? caller.dayPattern.recommendation : ''
+      caller.dayPattern.days.join(', ') || 'All days'
     ];
     callerSheet.getCell(`G${callerRow}`).numFmt = '0.0%';
-
-    if (caller.dayPattern.limited) {
-      callerSheet.getCell(`I${callerRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEB9C' } };
-    }
     callerRow++;
   }
 
-  callerSheet.getColumn(1).width = 18;
-  callerSheet.getColumn(2).width = 30;
-  callerSheet.getColumn(3).width = 18;
-  callerSheet.getColumn(4).width = 15;
-  callerSheet.getColumn(5).width = 12;
-  callerSheet.getColumn(6).width = 14;
-  callerSheet.getColumn(7).width = 14;
-  callerSheet.getColumn(8).width = 20;
-  callerSheet.getColumn(9).width = 50;
+  autoFitColumns(callerSheet, 12, 100);
 
   // ========================================
   // TAB 8: GLOBAL INSIGHTS (TIME)
   // ========================================
 
-  log('Creating Global Insights (Time) tab...');
+  log('Creating Global Insights (Days) tab...');
 
-  const timeSheet = workbook.addWorksheet('Global Insights (Time)', {
+  const timeSheet = workbook.addWorksheet('Global Insights (Days)', {
     views: [{ state: 'frozen', xSplit: 0, ySplit: 1 }]
   });
 
-  // Timezone notice at top - show user's selected timezone with label
-  // Handle IANA timezone names vs legacy offset format
+  // Timezone notice at top
   let userTzDisplay;
   if (userTimezone === 'VoApps') {
     userTzDisplay = 'VoApps Time (UTC-7, constant)';
   } else if (userTimezone === 'UTC') {
     userTzDisplay = 'UTC';
   } else if (userTimezone.startsWith('America/')) {
-    // IANA timezone name - show label with DST note
     userTzDisplay = `${userTimezoneLabel} (DST-aware)`;
   } else if (userTimezone.startsWith('-') || userTimezone.startsWith('+')) {
-    // Legacy offset format
     userTzDisplay = userTimezoneLabel ? `${userTimezoneLabel} (UTC${userTimezone})` : `UTC${userTimezone}`;
   } else {
     userTzDisplay = userTimezoneLabel || userTimezone;
@@ -2126,37 +2304,11 @@ async function generateTrendAnalysis(
   timeSheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: VOAPPS_PURPLE_PALE } };
   timeSheet.mergeCells('A1:E1');
 
-  // Hourly stats
-  timeSheet.getCell('A3').value = 'Hourly Success Patterns';
-  timeSheet.getCell('A3').font = { bold: true, size: 12 };
-
-  const timeHeaders = ['Hour', 'Total DDVM Attempts', 'Successful', 'Unsuccessful', 'Success Rate'];
-  timeSheet.getRow(4).values = timeHeaders;
-  timeSheet.getRow(4).eachCell((cell) => {
-    cell.style = tableHeaderStyle;
-  });
-
-  let timeRow = 5;
-  for (let h = 0; h < 24; h++) {
-    const stats = globalHourlyStats[h];
-    const successRate = stats.total > 0 ? stats.successful / stats.total : 0;
-    timeSheet.getRow(timeRow).values = [
-      `${String(h).padStart(2, '0')}:00`, stats.total, stats.successful, stats.unsuccessful, successRate
-    ];
-    timeSheet.getCell(`E${timeRow}`).numFmt = '0.0%';
-    timeRow++;
-  }
-
-  // Daily stats
-  const dayStartRow = timeRow + 2;
-  timeSheet.getCell(`A${dayStartRow}`).value = 'Daily Success Patterns';
-  timeSheet.getCell(`A${dayStartRow}`).font = { bold: true, size: 12 };
-
-  // Use pre-computed globalDayStats (accumulated during the stats loop above)
+  // Daily Success Patterns
   const dailyStats = globalDayStats;
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-  const dayHeaderRow = dayStartRow + 1;
+  const dayHeaderRow = 3;
   timeSheet.getRow(dayHeaderRow).values = ['Day of Week', 'Total DDVM Attempts', 'Successful', 'Unsuccessful', 'Success Rate'];
   timeSheet.getRow(dayHeaderRow).eachCell((cell) => {
     cell.style = tableHeaderStyle;
@@ -2174,6 +2326,15 @@ async function generateTrendAnalysis(
   // Day-of-week recommendations section
   if (accountDayRecommendations.length > 0 || messageDayRecommendations.length > 0) {
     const recoStartRow = dayRow + 2;
+
+    // Preamble tip row
+    const tipRow = recoStartRow - 1;
+    timeSheet.mergeCells(`A${tipRow}:E${tipRow}`);
+    timeSheet.getCell(`A${tipRow}`).value =
+      'Tip: Consumers contacted on predictable, recurring days can unconsciously learn to dismiss your messages. ' +
+      'Varying day of week — even slightly — disrupts that pattern recognition and makes your outreach more likely to prompt action.';
+    timeSheet.getCell(`A${tipRow}`).font = { italic: true, size: 10, color: { argb: 'FF555555' } };
+
     timeSheet.getCell(`A${recoStartRow}`).value = 'Day-of-Week Recommendations';
     timeSheet.getCell(`A${recoStartRow}`).font = { bold: true, size: 12 };
     timeSheet.mergeCells(`A${recoStartRow}:E${recoStartRow}`);
@@ -2197,60 +2358,44 @@ async function generateTrendAnalysis(
     }
   }
 
-  timeSheet.getColumn(1).width = 15;
-  timeSheet.getColumn(2).width = 18;
-  timeSheet.getColumn(3).width = 12;
-  timeSheet.getColumn(4).width = 14;
-  timeSheet.getColumn(5).width = 50;
+  autoFitColumns(timeSheet, 12, 100);
 
   // ========================================
   // TAB 9: CONSECUTIVE UNSUCCESSFUL
   // ========================================
 
-  log('Creating Consecutive Unsuccessful tab...');
+  log('Creating Suppression Candidates tab...');
 
-  const consecSheet = workbook.addWorksheet('Consecutive Unsuccessful', {
+  const consecSheet = workbook.addWorksheet('Suppression Candidates', {
     views: [{ state: 'frozen', xSplit: 0, ySplit: 1 }]
   });
 
-  const consecHeaders = ['Number', 'Consecutive Unsuccessful', 'Run Start', 'Run End', 'Span (Days)', 'TN Health', 'Action'];
+  const consecHeaders = ['Number', 'Consecutive Failures', 'Run Start', 'Run End', 'Span (Days)', 'TN Health', 'Action'];
   consecSheet.getRow(1).values = consecHeaders;
   consecSheet.getRow(1).eachCell((cell) => {
     cell.style = tableHeaderStyle;
   });
 
   let consecRow = 2;
-  for (const run of consecRuns) {
-    const action = run.tnHealth === 'Toxic' ? 'Suppress immediately' :
-                   run.count >= 6 ? 'Strongly consider removal' : 'Review and consider removal';
-
+  for (const run of suppressionRuns) {
     consecSheet.getRow(consecRow).values = [
       Number(run.number), run.count,
       run.runStart && !isNaN(run.runStart.getTime()) ? run.runStart : null,
       run.runEnd && !isNaN(run.runEnd.getTime()) ? run.runEnd : null,
       Math.round(run.spanDays),
-      run.tnHealth, action
+      run.tnHealth, 'Suppression recommended'
     ];
 
     if (run.runStart) consecSheet.getCell(`C${consecRow}`).numFmt = 'yyyy-mm-dd hh:mm';
     if (run.runEnd) consecSheet.getCell(`D${consecRow}`).numFmt = 'yyyy-mm-dd hh:mm';
-
-    if (run.tnHealth === 'Toxic') {
-      consecSheet.getCell(`F${consecRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC7CE' } };
-    }
+    consecSheet.getCell(`F${consecRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC7CE' } };
 
     consecRow++;
   }
 
-  log(`  Consecutive Unsuccessful: ${consecRuns.length.toLocaleString()} rows`);
+  log(`  Suppression Candidates: ${suppressionRuns.length.toLocaleString()} rows`);
 
-  consecSheet.getColumn(1).width = 15;
-  consecSheet.getColumn(2).width = 22;
-  consecSheet.getColumn(3).width = 18;
-  consecSheet.getColumn(4).width = 18;
-  consecSheet.getColumn(5).width = 12;
-  consecSheet.getColumn(6).width = 12;
-  consecSheet.getColumn(7).width = 25;
+  autoFitColumns(consecSheet, 12, 50);
 
   // ========================================
   // TAB 10: GLOSSARY
@@ -2277,14 +2422,32 @@ async function generateTrendAnalysis(
     ['DDVM', 'DirectDrop Voicemail - VoApps patented technology that delivers voicemail messages directly to mobile carrier voicemail platforms without ringing the phone.'],
     ['VoApps Time', 'A constant UTC-7 timezone (no DST adjustment) used by VoApps to slice days consistently for campaign scheduling. When VoApps Time is selected, timestamps always show UTC-7 regardless of season. US timezone options (ET, CT, MT, PT) are DST-aware and show the correct offset for each timestamp based on its date.'],
     ['Attempt Index', 'The number of DDVM delivery attempts to a phone number since the last successful delivery. Resets to 0 after each success. Higher values indicate declining deliverability.'],
-    ['TN Health', 'Classification of phone number health: Healthy (good deliverability), Degrading (declining performance), or Toxic (should be suppressed).'],
+    ['TN Health', 'Classification of phone number health based on delivery performance: Healthy (good deliverability) or Delivery Unlikely (successful delivery is highly unlikely based on consecutive failures and low success rate).'],
     ['Never Delivered', 'A phone number that has never received a successful DDVM delivery across all attempts.'],
     ['Variability Score', 'A 0-100 score measuring how much variety exists in messaging, caller numbers, and timing. Higher scores indicate better rotation practices.'],
-    ['Retry Decay Curve', 'Graph showing how success probability decreases with each retry attempt. Used to identify when retries become statistically unproductive.'],
+    ['Retry Decay Curve', `Shows how DDVM delivery success rate changes with each successive attempt on a phone number. "Attempt index" is how many times a given number has been tried within this date range.
+
+How to read it: Each data point represents all numbers at that attempt count — not the same number over time. Attempt 1 numbers are those receiving their very first DDVM attempt; attempt 2 numbers have already had one failed delivery; and so on.
+
+Example with real-looking numbers:
+  • Attempt 1 (first try): 80% delivered — 1,000 numbers attempted; 800 succeed
+  • Attempt 2 (second try): 30% delivered — The 200 that failed now get a second shot; 60 succeed
+  • Attempt 3 (third try): 15% delivered — The remaining 140 get one more try; ~21 succeed
+
+Why does overall Delivered % (76%) seem higher than attempt 2 (30%)? Because the vast majority of your volume is first-attempt numbers. If 90% of attempts are first tries (80% success) and 10% are second tries (30% success), the blended rate is (0.90 × 80%) + (0.10 × 30%) = 75% — close to your 76.1% overall.
+
+The declining curve also reflects selection bias: numbers that succeed on attempt 1 are the easy-to-reach numbers. By attempt 2, the pool consists mostly of harder-to-reach numbers — full voicemails, non-wireless lines, carrier restrictions — which naturally have lower success rates regardless of how many times they are tried.
+
+Use the curve to set retry limits: when the curve drops below ~15–20%, additional retries produce very few new successful deliveries. Suppress those numbers as Delivery Unlikely rather than continuing to burn attempts on them.`],
     ['Back-to-Back Identical', 'Count of times the same message was delivered to a number in consecutive attempts. Should be minimized for natural delivery patterns.'],
     ['Day Entropy', 'Measure of how evenly distributed DDVM attempts are across days of the week. Higher entropy (closer to 1.0) means better day-of-week variety.'],
-    ['Message Intent', 'Inferred purpose of a message based on its name (e.g., collections, reminder, appointment, callback, welcome, followup, loan servicing).'],
-    ['List Quality Grade', 'Overall grade (A-D) for the phone number list based on TN health distribution.']
+    ['Message Intent', 'Inferred purpose of a message based on its name or AI transcript (e.g., collections, reminder, appointment, callback, welcome, followup, loan servicing). When AI Message Analysis is enabled, intent is derived from the full transcript using a classification model for higher accuracy.'],
+    ['List Quality Grade', 'Overall grade (A-D) for the phone number list based on TN health distribution. A: >80% Healthy, <5% Delivery Unlikely. B: >60% Healthy, <10% Delivery Unlikely. C: >40% Healthy, <20% Delivery Unlikely. D: All other cases.'],
+    ['Message Transcript', 'Full spoken text of the DDVM voicemail recording, transcribed using Whisper (local or OpenAI). Populated when AI Message Analysis is enabled in settings. Stored permanently in the local DuckDB cache — each message is only transcribed once.'],
+    ['Message Summary', 'One-sentence AI-generated description of a message\'s purpose, inferred from its transcript. Generated by the local nli-deberta model or GPT-4o-mini depending on your settings.'],
+    ['Caller # Match', 'Indicates whether a phone number spoken aloud in the message matches the caller ID shown to the recipient. A mismatch means the recipient hears a different callback number than what their phone displays — which can cause confusion or reduce callback rates.'],
+    ['Voice Append', 'Indicates the message was used with VoApps Voice Append — a feature that appends a personalized spoken element to the base recording. Detected via the voapps_voice_append field in campaign export data.'],
+    ['Contains URL', 'Indicates the message transcript references a website URL or domain name (e.g., "visit us at acme.com" or "go to our website"). Detected via regex on the transcript when AI Message Analysis is enabled.']
   ];
 
   for (const [term, def] of coreConcepts) {
@@ -2292,7 +2455,7 @@ async function generateTrendAnalysis(
     glossarySheet.getCell(`A${glossRow}`).font = { bold: true };
     glossarySheet.getCell(`B${glossRow}`).value = def;
     glossarySheet.getCell(`B${glossRow}`).style = contentStyle;
-    glossarySheet.getRow(glossRow).height = 40;
+    glossarySheet.getRow(glossRow).height = term === 'Retry Decay Curve' ? 240 : 40;
     glossRow++;
   }
 
@@ -2305,17 +2468,23 @@ async function generateTrendAnalysis(
   glossRow++;
 
   const healthDefs = [
-    ['Healthy', 'Good delivery performance. Success rate typically above 25% with recent successful deliveries. Continue normal operations.'],
-    ['Degrading', 'Declining performance. Multiple consecutive failures or low recent success. Monitor closely and consider reducing retry frequency.'],
-    ['Toxic', 'Very poor performance. High consecutive failures, very low success rate, or no recent successes. Should be suppressed to protect caller reputation.']
+    ['Healthy', 'Good delivery performance. No sustained consecutive-failure streak meeting the Delivery Unlikely thresholds. Continue normal operations.'],
+    ['Delivery Unlikely', 'Very poor performance. Success rate below 10% with 4+ consecutive failures; or 6+ consecutive failures regardless of rate; or 5+ attempts with zero successes. Successful DDVM delivery is highly unlikely. Suppression is recommended to protect caller reputation and avoid wasted attempts.'],
+    ['Never Delivered', 'Zero successful deliveries across all attempts in the date range. These numbers should be suppressed immediately — they consume budget with no return.'],
   ];
+
+  const healthActions = {
+    'Healthy': 'Continue monitoring',
+    'Delivery Unlikely': 'Suppression recommended',
+    'Never Delivered': 'Remove from list',
+  };
 
   for (const [term, def] of healthDefs) {
     glossarySheet.getCell(`A${glossRow}`).value = term;
     glossarySheet.getCell(`A${glossRow}`).font = { bold: true };
-    glossarySheet.getCell(`B${glossRow}`).value = def;
+    glossarySheet.getCell(`B${glossRow}`).value = `${def} Recommended action: ${healthActions[term]}.`;
     glossarySheet.getCell(`B${glossRow}`).style = contentStyle;
-    glossarySheet.getRow(glossRow).height = 35;
+    glossarySheet.getRow(glossRow).height = 45;
     glossRow++;
   }
 
@@ -2371,11 +2540,9 @@ async function generateTrendAnalysis(
   const bestPractices = [
     ['Message Rotation', 'Avoid sending the same message to a number repeatedly. Vary your messages to improve deliverability and engagement.'],
     ['Caller Number Diversity', 'Use multiple caller numbers to reduce the appearance of automated patterns and improve answer rates.'],
-    ['Day-of-Week Variety', 'Distribute DDVM attempts across different days of the week. Most call centers do not work Sundays, and some do not work Saturdays.'],
-    ['Hour-of-Day Optimization', 'Analyze success rates by hour to identify when your audience is most likely to receive voicemails.'],
-    ['Retry Limits', 'Stop retrying numbers after 4-6 consecutive failures. Success probability drops below 20% and continued retries waste resources.'],
-    ['List Hygiene', 'Regularly remove toxic numbers to protect caller reputation, improve delivery speed, and maintain clean analytics.'],
-    ['Speech-to-Text (Future)', 'Planned feature: Analyze message content for personalization, urgency, and call-to-action effectiveness.']
+    ['Day-of-Week Variety', 'Distribute DDVM attempts across different days of the week. Consumers who receive your message on the same day each week develop a predictable pattern — they learn to dismiss or delete without listening. Varying the day of contact disrupts this expectation and increases engagement. Note: most contact centers do not work Sundays, and some do not work Saturdays.'],
+    ['Retry Limits', 'Stop retrying numbers after 4-6 consecutive failures. The Retry Decay Curve shows how success probability drops sharply after repeated attempts — continued retries waste resources with diminishing returns.'],
+    ['List Hygiene', 'Regularly suppress numbers classified as Delivery Unlikely to protect caller reputation, improve delivery speed, and maintain clean analytics. Numbers classified as Never Delivered should be permanently removed — these are not reachable by DDVM and will never generate a return on your campaign spend.']
   ];
 
   for (const [term, def] of bestPractices) {
@@ -2388,7 +2555,7 @@ async function generateTrendAnalysis(
   }
 
   glossarySheet.getColumn(1).width = 28;
-  glossarySheet.getColumn(2).width = 100;
+  glossarySheet.getColumn(2).width = 200;
 
   // ========================================
   // SAVE WORKBOOK
@@ -2404,11 +2571,10 @@ async function generateTrendAnalysis(
     overallSuccessRate,
     listGrade,
     healthyCount,
-    degradingCount,
     toxicCount,
     neverDeliveredCount,
     avgVariability,
-    consecRunsCount: consecRuns.length,
+    consecRunsCount: suppressionRuns.length,
     detectedTimezone
   };
 }

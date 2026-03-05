@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>VoApps Tools v3.4.1</title>
+  <title>VoApps Tools v4.0.0</title>
   <style>
     :root {
       --success: #16a34a;
@@ -904,6 +904,14 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .artifact-row code.path-clickable {
+      cursor: pointer;
+      text-decoration: underline dotted #999;
+    }
+    .artifact-row code.path-clickable:hover {
+      background: #d1d5db;
+      text-decoration: underline solid #555;
+    }
 
     /* Progress Bar */
     .progress-panel {
@@ -1132,6 +1140,34 @@
       color: #2E2C3E;
       margin-bottom: 4px;
     }
+
+    /* ── Drawer tab bar ──────────────────────────────────────────── */
+    .drawer-tabs {
+      display: flex;
+      border-bottom: 1.5px solid #e4e4e4;
+      margin: 12px -20px 0;
+      padding: 0 20px;
+      gap: 0;
+    }
+    .drawer-tab {
+      background: none;
+      border: none;
+      border-bottom: 3px solid transparent;
+      padding: 8px 14px 7px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #999;
+      cursor: pointer;
+      margin-bottom: -1.5px;
+      transition: color 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+    .drawer-tab:hover { color: #444; }
+    .drawer-tab.active {
+      color: #1a1a1a;
+      border-bottom-color: #E91E8C;
+    }
+    .drawer-tab-panel { padding-top: 14px; }
 
     .settings-section-subtitle {
       font-size: 11px;
@@ -1769,6 +1805,10 @@
           <svg viewBox="0 0 24 24"><path d="M12 3C7.58 3 4 4.79 4 7v10c0 2.21 3.58 4 8 4s8-1.79 8-4V7c0-2.21-3.58-4-8-4zm0 2c3.87 0 6 1.5 6 2s-2.13 2-6 2-6-1.5-6-2 2.13-2 6-2zm6 12c0 .5-2.13 2-6 2s-6-1.5-6-2v-2.23c1.61.78 3.72 1.23 6 1.23s4.39-.45 6-1.23V17zm0-4c0 .5-2.13 2-6 2s-6-1.5-6-2v-2.23c1.61.78 3.72 1.23 6 1.23s4.39-.45 6-1.23V13z"/></svg>
           <span class="sidebar-item-tooltip">Database</span>
         </div>
+        <div class="sidebar-item" data-view="ai" onclick="toggleDrawer('ai')">
+          <svg viewBox="0 0 24 24"><path d="M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z"/></svg>
+          <span class="sidebar-item-tooltip">AI Message Analysis</span>
+        </div>
         <div class="sidebar-item" data-view="report" onclick="toggleDrawer('report')">
           <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
           <span class="sidebar-item-tooltip">Report Output</span>
@@ -1780,7 +1820,7 @@
       </div>
 
       <div class="sidebar-footer">
-        <div class="sidebar-version">v3.4.1</div>
+        <div class="sidebar-version">v4.0.0</div>
       </div>
     </nav>
 
@@ -1900,7 +1940,7 @@
                   <div class="trend-analyzer-layout">
                     <!-- Left: Thresholds -->
                     <div class="trend-thresholds">
-                      <div class="trend-section-title">Consecutive Unsuccessful</div>
+                      <div class="trend-section-title">Suppression Candidates</div>
                       <div class="threshold-field">
                         <label>Min Count</label>
                         <input type="number" id="minConsecUnsuccessful" min="2" max="20" value="4">
@@ -2028,7 +2068,7 @@
                       </button>
                       <button id="openAnalysisBtn" class="btn-status btn-status-green" disabled style="display:none;">
                         <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg>
-                        Analysis
+                        Open Delivery Intelligence
                       </button>
                     </div>
                   </div>
@@ -2210,7 +2250,7 @@
               <div class="settings-section-title">Output Folder</div>
               <div class="settings-section-subtitle">Where output files are saved</div>
 
-              <div class="folder-path-display" id="outputFolderPath" style="background: #f5f5f5; padding: 10px 12px; border-radius: 6px; font-family: monospace; font-size: 12px; word-break: break-all; margin-bottom: 12px; border: 1px solid #e0e0e0;">
+              <div class="folder-path-display" id="outputFolderPath" style="background: #f5f5f5; padding: 8px 12px; border-radius: 6px; font-family: monospace; font-size: 12px; word-break: break-all; margin-bottom: 8px; border: 1px solid #e0e0e0;">
                 Loading...
               </div>
               <div style="display: flex; gap: 8px;">
@@ -2226,7 +2266,7 @@
             </div>
 
             <!-- Section 2: Timezone -->
-            <div class="settings-section" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #e0e0e0;">
+            <div class="settings-section" style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #e0e0e0;">
               <div class="settings-section-title">Timezone</div>
               <div class="settings-section-subtitle">Timezone for timestamps in reports</div>
 
@@ -2238,17 +2278,38 @@
                 <option value="America/Los_Angeles">Pacific Time (PT) — DST aware</option>
                 <option value="UTC">UTC</option>
               </select>
-              <div style="margin-top: 8px; font-size: 11px; color: #666;">
+              <div style="margin-top: 6px; font-size: 11px; color: #666;">
                 Timestamps will be converted to this timezone. VoApps Time is constant UTC-7; US timezones adjust for Daylight Saving.
               </div>
             </div>
 
-            <!-- Section 3: Report Headers -->
-            <div class="settings-section" style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #e0e0e0;">
-              <div class="settings-section-title">CSV Columns</div>
-              <div class="settings-section-subtitle">Select columns to include in CSV exports</div>
+            <!-- Tabbed: Analysis Tabs / CSV Columns -->
+            <div class="drawer-tabs">
+              <button class="drawer-tab active" onclick="switchDrawerTab(this,'reportTab-analysisTabs')">Analysis Tabs</button>
+              <button class="drawer-tab" onclick="switchDrawerTab(this,'reportTab-csvColumns')">CSV Columns</button>
+            </div>
 
-              <div class="columns-grid">
+            <!-- Tab: Analysis Tabs -->
+            <div id="reportTab-analysisTabs" class="drawer-tab-panel">
+              <div class="settings-section-subtitle">Optional detail tabs in the Delivery Intelligence Report</div>
+              <div style="margin-top: 6px; font-size: 11px; color: #666; margin-bottom: 6px;">
+                These tabs add detailed number-level data. They are large and optional — the Executive Summary provides the high-level overview.
+              </div>
+              <label class="checkbox-label">
+                <input type="checkbox" id="includeTabTnHealth"> TN Health
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" id="includeTabVariability"> Variability Analysis
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" id="includeTabNumberSummary"> Number Summary
+              </label>
+            </div>
+
+            <!-- Tab: CSV Columns -->
+            <div id="reportTab-csvColumns" class="drawer-tab-panel" style="display:none;">
+              <div class="settings-section-subtitle">Select columns to include in CSV exports</div>
+              <div class="columns-grid" style="margin-top: 8px;">
                 <div class="column-group">
                   <div class="column-group-title">
                     Core
@@ -2293,6 +2354,139 @@
                   <label class="checkbox-label"><input type="checkbox" class="col-check col-results" value="campaign_url" checked> campaign_url</label>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI MESSAGE ANALYSIS DRAWER -->
+        <div id="drawerAi" class="drawer-panel">
+          <div class="drawer-header">
+            <div class="drawer-title">
+              <svg viewBox="0 0 24 24"><path d="M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z"/></svg>
+              AI Message Analysis
+            </div>
+            <button class="drawer-close" onclick="closeDrawer()">
+              <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+            </button>
+          </div>
+          <div class="drawer-content">
+
+            <!-- Enable Toggle -->
+            <div class="settings-section">
+              <label class="checkbox-label" style="font-size: 13px; align-items: flex-start; gap: 8px;">
+                <input type="checkbox" id="enableAiAnalysis" onchange="onAiEnableChange()" style="margin-top: 2px; flex-shrink: 0;">
+                <span>
+                  <strong>Enable AI Message Analysis</strong><br>
+                  <span style="font-size: 11px; color: #666; font-weight: normal;">Transcribes your DDVM recordings and infers message intent, summary, and caller insights. Runs automatically during analysis.</span>
+                </span>
+              </label>
+            </div>
+
+            <!-- AI Settings (shown only when enabled) -->
+            <div id="aiSettingsContainer" style="display: none;">
+
+              <!-- Tabbed: Transcription / Intent & Summary -->
+              <div class="drawer-tabs">
+                <button class="drawer-tab active" onclick="switchDrawerTab(this,'aiTab-transcription')">Transcription</button>
+                <button class="drawer-tab" onclick="switchDrawerTab(this,'aiTab-intent')">Intent &amp; Summary</button>
+              </div>
+
+              <!-- Tab: Transcription Engine -->
+              <div id="aiTab-transcription" class="drawer-tab-panel">
+                <div class="settings-section-subtitle">Convert message audio to text</div>
+                <div style="margin-top: 8px;">
+                  <label class="checkbox-label" style="margin-bottom: 2px;">
+                    <input type="radio" name="transcriptionMode" id="transcriptionLocal" value="local" onchange="onAiModeChange()">
+                    🖥 Local Whisper &nbsp;<span style="font-size: 11px; color: #4caf50; font-weight: 600;">Free</span>
+                  </label>
+                  <div style="font-size: 11px; color: #777; margin: 1px 0 8px 20px;">~142 MB one-time download · runs offline · no API key</div>
+                  <label class="checkbox-label" style="margin-bottom: 2px;">
+                    <input type="radio" name="transcriptionMode" id="transcriptionOpenai" value="openai" onchange="onAiModeChange()">
+                    ☁ OpenAI Whisper API
+                  </label>
+                  <div style="font-size: 11px; color: #777; margin: 1px 0 8px 20px;">~$0.003–$0.006/message · higher accuracy · requires API key</div>
+                </div>
+                <div id="transcriptionLocalControls">
+                  <button id="downloadSttModelBtn" class="btn" style="width: 100%;" onclick="downloadAiModel('stt')">
+                    <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+                    Download Whisper Model (~142 MB)
+                  </button>
+                  <div id="sttModelStatus" style="font-size: 11px; color: #666; margin-top: 4px; text-align: center; min-height: 16px;"></div>
+                </div>
+              </div>
+
+              <!-- Tab: Intent & Summary Engine -->
+              <div id="aiTab-intent" class="drawer-tab-panel" style="display:none;">
+                <div class="settings-section-subtitle">Classify intent and generate a short summary</div>
+                <div style="margin-top: 8px;">
+                  <label class="checkbox-label" style="margin-bottom: 2px;">
+                    <input type="radio" name="intentMode" id="intentLocal" value="local" onchange="onAiModeChange()">
+                    🖥 Local Model &nbsp;<span style="font-size: 11px; color: #4caf50; font-weight: 600;">Free</span>
+                  </label>
+                  <div style="font-size: 11px; color: #777; margin: 1px 0 8px 20px;">~85 MB one-time download · offline · zero-shot classification + extractive summary</div>
+                  <label class="checkbox-label" style="margin-bottom: 2px;">
+                    <input type="radio" name="intentMode" id="intentOpenai" value="openai" onchange="onAiModeChange()">
+                    ☁ OpenAI GPT-4o-mini
+                  </label>
+                  <div style="font-size: 11px; color: #777; margin: 1px 0 8px 20px;">~$0.0001/message · higher quality · requires API key</div>
+                </div>
+                <div id="intentLocalControls">
+                  <button id="downloadIntentModelBtn" class="btn" style="width: 100%;" onclick="downloadAiModel('intent')">
+                    <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+                    Download Intent Model (~85 MB)
+                  </button>
+                  <div id="intentModelStatus" style="font-size: 11px; color: #666; margin-top: 4px; text-align: center; min-height: 16px;"></div>
+                </div>
+              </div>
+
+              <!-- OpenAI API Key (shown when either engine is set to OpenAI) -->
+              <div id="openaiKeySection" class="settings-section" style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #e0e0e0; display: none;">
+                <div class="settings-section-title">OpenAI API Key</div>
+                <div class="settings-section-subtitle">Required for OpenAI transcription or intent</div>
+                <div class="api-key-input-row" style="margin-top: 8px;">
+                  <input id="openaiApiKey" type="password" placeholder="sk-..." />
+                  <button id="toggleOpenaiKeyBtn" class="btn" title="Show/Hide">
+                    <svg class="btn-icon" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                  </button>
+                </div>
+                <div style="display: flex; gap: 8px; margin-top: 6px; align-items: center;">
+                  <button id="saveOpenaiKeyBtn" class="btn">
+                    <svg class="btn-icon" viewBox="0 0 24 24"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg>
+                    Save
+                  </button>
+                  <a href="#" onclick="if(window.voapps?.openUpdateUrl) window.voapps.openUpdateUrl('https://platform.openai.com/api-keys'); else window.open('https://platform.openai.com/api-keys', '_blank'); return false;" style="font-size: 11px; color: #1976d2; text-decoration: none; margin-left: auto;">Get API key ↗</a>
+                </div>
+              </div>
+
+              <!-- AI Accuracy Caveat -->
+              <div style="margin-top: 12px; padding: 8px 10px; background: #FFFDE7; border: 1px solid #F9A825; border-radius: 6px; font-size: 11px; color: #6D4C00; line-height: 1.5;">
+                ⚠ AI transcription may contain inaccuracies. Review results in the Transcript Cache below and correct any errors before using them for reporting or decision-making.
+              </div>
+
+              <!-- Cost Summary -->
+              <div class="settings-section" style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #e0e0e0;">
+                <div id="aiCostSummary" style="font-size: 11px; color: #555; background: #f5f9f5; border: 1px solid #c8e6c9; border-radius: 6px; padding: 8px 10px; line-height: 1.6;">
+                  ✅ Fully local &amp; free. No API key needed.
+                </div>
+              </div>
+
+              <!-- Transcript Cache -->
+              <div class="settings-section" style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #e0e0e0;">
+                <div class="settings-section-title">Transcript Cache</div>
+                <div class="settings-section-subtitle">Transcripts are cached to avoid re-processing messages. Review and correct any inaccuracies.</div>
+                <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                  <span id="aiCacheCount" style="font-size: 12px; color: #666;">— entries</span>
+                  <button class="btn btn-sm" onclick="openCacheBrowser()" id="browseCacheBtn" style="margin-left: auto;">
+                    <svg class="btn-icon" viewBox="0 0 24 24"><path d="M20 6h-2.18c.07-.44.18-.86.18-1.3C18 2.57 15.43 1 13.28 1c-1.22 0-2.33.52-3.1 1.37l-.18.21-.18-.21C9.05 1.52 7.94 1 6.72 1 4.57 1 2 2.57 2 4.7c0 .44.11.86.18 1.3H0v2h20V6zm-3.18 0h-1.64c.41-.3.82-.6.82-1.3 0-.58-.47-1-1.21-1-.74 0-1.43.44-2.01 1.19L12 5.28l-.78-.39C10.64 4.14 9.95 3.7 9.21 3.7c-.74 0-1.21.42-1.21 1 0 .7.41 1 .82 1.3H7.18C6.58 5.6 6 5 6 4.7c0-.8 1.07-1.7 2.72-1.7.73 0 1.42.35 1.79.87l1.49 1.79 1.49-1.79C13.86 3.35 14.55 3 15.28 3 16.93 3 18 3.9 18 4.7c0 .3-.58.9-1.18.9z"/><path d="M1 9h9v12H1zm11 0h9v12H13z" style="fill:none;stroke:currentColor;stroke-width:1.5"/><rect x="3" y="11" width="5" height="1.5" rx=".5"/><rect x="15" y="11" width="5" height="1.5" rx=".5"/><rect x="3" y="14" width="5" height="1.5" rx=".5"/><rect x="15" y="14" width="5" height="1.5" rx=".5"/></svg>
+                    Browse &amp; Edit
+                  </button>
+                  <button class="btn btn-sm" onclick="clearAiCache()" id="clearAiCacheBtn">
+                    <svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                    Clear All
+                  </button>
+                </div>
+              </div>
+
             </div>
           </div>
         </div>
@@ -2488,16 +2682,16 @@
         <ul style="margin-left: 16px; margin-bottom: 12px;">
           <li><strong>Executive Summary:</strong> List quality grade, recommendations, and key metrics</li>
           <li><strong>Number Summary:</strong> Per-number stats with TN health classification</li>
-          <li><strong>Consecutive Unsuccessful:</strong> Numbers needing list hygiene attention</li>
+          <li><strong>Suppression Candidates:</strong> "Delivery Unlikely" numbers with repeated failure patterns — suppression recommended</li>
           <li><strong>Call Cadence:</strong> Time intervals between attempts to same number</li>
           <li><strong>Retry Decay Curve:</strong> Success probability by attempt number</li>
           <li><strong>Day Insights:</strong> Day-of-week recommendations per account/message</li>
           <li><strong>Global Insights (Msg & Caller):</strong> Message and caller number performance</li>
-          <li><strong>Global Insights (Time):</strong> Hourly and daily success patterns</li>
+          <li><strong>Global Insights (Days):</strong> Day-of-week success patterns per account and message</li>
           <li><strong>Glossary:</strong> Definitions of all columns and terms</li>
         </ul>
 
-        <h4>Consecutive Unsuccessful Thresholds</h4>
+        <h4>Suppression Candidates Thresholds</h4>
         <p><strong>Min Count:</strong> Minimum consecutive unsuccessful attempts to flag (default: 4)</p>
         <p><strong>Min Days:</strong> Minimum time span of the unsuccessful run (default: 30 days)</p>
 
@@ -2666,7 +2860,7 @@
   <div id="helpModal" class="info-modal" onclick="if(event.target === this) hideInfoModal('help')">
     <div class="info-modal-content" style="max-width: 700px; max-height: 85vh; overflow-y: auto;">
       <div class="info-modal-header">
-        <div class="info-modal-title">VoApps Tools v3.4.1 — Help</div>
+        <div class="info-modal-title">VoApps Tools v4.0.0 — Help</div>
         <button class="info-modal-close" onclick="hideInfoModal('help')">×</button>
       </div>
       <div class="info-modal-body" style="font-size: 12px;">
@@ -2705,7 +2899,7 @@
           <li>Global Insights by Time (hourly/daily patterns)</li>
           <li>Retry Decay Curve (success probability by attempt)</li>
           <li>Day Insights (day-of-week recommendations)</li>
-          <li>Consecutive Unsuccessful patterns</li>
+          <li>Suppression Candidates (Delivery Unlikely numbers with repeated failures)</li>
         </ul>
         <p>Generate from Combine Campaigns, upload a CSV, or run from local database.</p>
 
@@ -2728,15 +2922,42 @@
         </ul>
 
         <h4 style="border-top: 1px solid #e0e0e0; padding-top: 12px; margin-top: 16px;">📝 Release Notes</h4>
-        <p><strong>v3.4.1 - Executive Summary & Timezone Selection</strong></p>
+        <p><strong>v4.0.0 - AI Message Intelligence</strong></p>
+        <ul style="margin-left: 16px;">
+          <li>AI Message Analysis — transcribe DDVM recordings via local Whisper or OpenAI, infer intent & summary, detect caller number match, URL mentions, and Voice Append</li>
+          <li>New AI sidebar panel with independent transcription and intent engine selection (local free vs. OpenAI API)</li>
+          <li>DuckDB message_transcriptions cache — each message transcribed once, recalled automatically on re-runs</li>
+          <li>New Excel columns on Global Insights (Msg & Caller): Transcript, Message Summary, Mentioned Phone, Caller # Match, Contains URL, Voice Append</li>
+          <li>New Message Intelligence section in Executive Summary with caller mismatch detection and recommendations</li>
+          <li>Renamed TN Health classification "Toxic" → "Delivery Unlikely" throughout the report</li>
+          <li>Renamed "Consecutive Unsuccessful" tab to "Suppression Candidates" — only shows "Delivery Unlikely" numbers</li>
+          <li>Removed hourly success patterns; renamed tab to "Global Insights (Days)"</li>
+          <li>TN Health, Variability Analysis, and Number Summary tabs are now optional (default: off) — preference remembered</li>
+          <li>Column headers updated: "Unique Caller Numbers", "Top Caller Number %"</li>
+          <li>Improved Retry Decay Curve glossary with numeric example</li>
+          <li>Campaign date filter is now timezone-aware (covers Hawaii through Eastern)</li>
+          <li>Fixed analysis error when optional detail tabs are disabled</li>
+        </ul>
+        <p><strong>v3.4.1 - Memory & Stability Improvements</strong></p>
+        <ul style="margin-left: 16px;">
+          <li>Row caps (100K per detail tab) prevent out-of-memory on large datasets</li>
+          <li>numberSummaryArray freed before workbook creation — releases up to 1 GB before Excel generation</li>
+          <li>campaignTsMap memory reduction — stores first/last row per campaign only</li>
+          <li>Column C descriptions added to Executive Summary for key metrics</li>
+          <li>Fixed Delivered % showing NaN%</li>
+          <li>Fixed Delivery Intelligence Report not running with Database output mode</li>
+          <li>Fixed Analysis button showing stale green state from previous run</li>
+        </ul>
+        <p><strong>v3.4.0 - Executive Summary & DST-Aware Timezone Selection</strong></p>
         <ul style="margin-left: 16px;">
           <li>Executive Summary search type - aggregate campaign statistics into deliverability report</li>
           <li>Added account_name column to all CSV exports (Phone Search, Combine, Executive Summary)</li>
           <li>Added campaign_url to Executive Summary for direct campaign links</li>
           <li>User-selectable timezone with DST awareness (ET, CT, MT, PT) plus VoApps Time (constant UTC-7)</li>
+          <li>Phone number input now accepts any format (parentheses, dashes, +1, etc.)</li>
           <li>Reorganized Report Output settings (combined headers, folder, timezone)</li>
           <li>Fixed Windows update checker to find .exe instead of .dmg</li>
-          <li>Fixed hardcoded version in Delivery Intelligence Excel reports</li>
+          <li>Fixed SSL certificate errors on macOS with VPN</li>
         </ul>
         <p><strong>v3.3.1 - Timestamp Normalization</strong></p>
         <ul style="margin-left: 16px;">
@@ -2754,7 +2975,7 @@
         </ul>
         <p><strong>v3.2.0 - Delivery Intelligence Platform</strong></p>
         <ul style="margin-left: 16px;">
-          <li>TN Health Classification (Healthy, Degrading, Toxic)</li>
+          <li>TN Health Classification (Healthy, Delivery Unlikely)</li>
           <li>Attempt Index tracking with success probability decay curve</li>
           <li>Variability Score for message/caller rotation analysis</li>
           <li>Day-of-week recommendations for accounts and messages</li>
@@ -2801,6 +3022,85 @@
 
   <!-- TOAST CONTAINER -->
   <div id="toastContainer" class="toast-container"></div>
+
+  <!-- TRANSCRIPT CACHE BROWSER MODAL -->
+  <div id="cacheBrowserModal" class="info-modal" onclick="if(event.target===this)closeCacheBrowser()" style="display:none;">
+    <div class="info-modal-content" style="max-width:1100px;width:96vw;">
+      <div class="info-modal-header">
+        <div class="info-modal-title">📋 Transcript Cache</div>
+        <button class="info-modal-close" onclick="closeCacheBrowser()">×</button>
+      </div>
+      <div class="info-modal-body" style="padding:0;overflow:hidden;">
+        <div style="padding:10px 14px 8px;border-bottom:1px solid #eee;font-size:11px;color:#666;">
+          Review and correct AI transcriptions and summaries. Edits are saved immediately to the cache and will be used the next time you run a report.
+        </div>
+        <div id="cacheBrowserContent" style="overflow-y:auto;max-height:calc(80vh - 110px);padding:0;">
+          <table id="cacheTable" style="width:100%;border-collapse:collapse;font-size:11px;">
+            <thead>
+              <tr style="background:#f5f5f5;position:sticky;top:0;z-index:1;">
+                <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #ddd;font-weight:600;white-space:nowrap;">Message ID</th>
+                <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #ddd;font-weight:600;">Transcript</th>
+                <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #ddd;font-weight:600;white-space:nowrap;">Intent</th>
+                <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #ddd;font-weight:600;white-space:nowrap;">Summary (≤6 words)</th>
+                <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #ddd;font-weight:600;white-space:nowrap;">Transcribed</th>
+                <th style="padding:8px 6px;text-align:center;border-bottom:1px solid #ddd;font-weight:600;white-space:nowrap;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="cacheTableBody">
+              <tr><td colspan="6" style="padding:20px;text-align:center;color:#999;">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRANSCRIPT CACHE EDIT MODAL -->
+  <div id="cacheEditModal" class="info-modal" onclick="if(event.target===this)closeCacheEdit()" style="display:none;">
+    <div class="info-modal-content" style="max-width:560px;width:90vw;">
+      <div class="info-modal-header">
+        <div class="info-modal-title">✏️ Edit Cache Entry</div>
+        <button class="info-modal-close" onclick="closeCacheEdit()">×</button>
+      </div>
+      <div class="info-modal-body" style="padding:14px 16px;">
+        <input type="hidden" id="editCacheMsgId">
+        <input type="hidden" id="editCacheAcctId">
+        <div style="margin-bottom:12px;">
+          <label style="font-size:11px;font-weight:600;color:#444;display:block;margin-bottom:4px;">Transcript</label>
+          <textarea id="editCacheTranscript" rows="5"
+            style="width:100%;box-sizing:border-box;font-size:11px;border:1px solid #ccc;border-radius:4px;padding:6px 8px;resize:vertical;font-family:inherit;line-height:1.5;"></textarea>
+          <div style="font-size:10px;color:#999;margin-top:2px;">Correct any transcription errors here.</div>
+        </div>
+        <div style="margin-bottom:12px;display:flex;gap:12px;">
+          <div style="flex:1;">
+            <label style="font-size:11px;font-weight:600;color:#444;display:block;margin-bottom:4px;">Intent</label>
+            <select id="editCacheIntent" style="width:100%;font-size:11px;border:1px solid #ccc;border-radius:4px;padding:5px 6px;">
+              <option value="">— unknown —</option>
+              <option value="collections">collections</option>
+              <option value="payment reminder">payment reminder</option>
+              <option value="appointment reminder">appointment reminder</option>
+              <option value="welcome">welcome</option>
+              <option value="general">general</option>
+              <option value="sales">sales</option>
+              <option value="survey">survey</option>
+              <option value="follow-up">follow-up</option>
+            </select>
+          </div>
+          <div style="flex:1;">
+            <label style="font-size:11px;font-weight:600;color:#444;display:block;margin-bottom:4px;">Summary <span style="font-weight:400;color:#999;">(≤6 words)</span></label>
+            <input id="editCacheSummary" type="text" maxlength="80"
+              style="width:100%;box-sizing:border-box;font-size:11px;border:1px solid #ccc;border-radius:4px;padding:5px 6px;"
+              placeholder="e.g. MCM collections call 800-358-4172">
+          </div>
+        </div>
+        <div id="editCacheWordCount" style="font-size:10px;color:#999;margin-bottom:10px;"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button class="btn" onclick="closeCacheEdit()" style="min-width:80px;">Cancel</button>
+          <button class="btn btn-primary" onclick="saveCacheEdit()" id="saveCacheEditBtn" style="min-width:100px;">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script>
     // ============================================================================
@@ -2862,6 +3162,25 @@
       if (drawerName === 'output') {
         refreshDatabaseStats();
       }
+
+      // Special handling for AI drawer — refresh cache count and model status on open
+      if (drawerName === 'ai') {
+        loadAiCacheStats();
+        const sttMode    = document.querySelector('input[name="transcriptionMode"]:checked')?.value || 'local';
+        const intentMode = document.querySelector('input[name="intentMode"]:checked')?.value || 'local';
+        refreshAiModelButtonState(sttMode, intentMode);
+      }
+    }
+
+    function switchDrawerTab(tabEl, panelId) {
+      const bar = tabEl.closest('.drawer-tabs');
+      bar.querySelectorAll('.drawer-tab').forEach(t => t.classList.remove('active'));
+      tabEl.classList.add('active');
+      // Show the matching panel, hide siblings
+      const content = bar.parentElement;
+      content.querySelectorAll('.drawer-tab-panel').forEach(p => p.style.display = 'none');
+      const panel = document.getElementById(panelId);
+      if (panel) panel.style.display = '';
     }
 
     function closeDrawer() {
@@ -2982,6 +3301,35 @@
     function _dismissToast(toast) {
       toast.style.animation = 'slideInRight 0.3s ease reverse';
       setTimeout(() => toast.remove(), 300);
+    }
+
+    // Make a path <code> element clickable — opens the containing folder in Finder/Explorer.
+    // Called after setting a path so the element becomes interactive.
+    function makePathClickable(el, filePath) {
+      if (!el || !filePath || filePath === '—') return;
+      el.classList.add('path-clickable');
+      el.title = 'Click to open containing folder';
+      el.onclick = async () => {
+        if (window.voapps?.showItemInFolder) {
+          const res = await window.voapps.showItemInFolder(filePath);
+          if (!res.ok) log(`Failed to reveal folder: ${res.error}`);
+        }
+      };
+    }
+
+    // Clear all visible toast notifications immediately (called when user opens a result file)
+    function clearAllToasts() {
+      const container = $('toastContainer');
+      if (container) container.innerHTML = '';
+    }
+
+    // Disable CSV and Log buttons at the start of a standalone analysis run.
+    // A new analysis doesn't produce a combined CSV; the old buttons would show stale paths.
+    function clearCsvLogButtons() {
+      const csvBtn = $('openCsvBtn');
+      const logBtn = $('openLogBtn');
+      if (csvBtn) { csvBtn.disabled = true; csvBtn.onclick = null; }
+      if (logBtn) { logBtn.disabled = true; logBtn.onclick = null; }
     }
 
     function showToast(message, type = 'info', duration = 3000) {
@@ -3514,6 +3862,7 @@
       const minConsec = parseInt($('minConsecUnsuccessful').value) || 4;
       const minSpan = parseInt($('minRunSpanDays').value) || 30;
 
+      clearCsvLogButtons();
       setLocked(true);
       setStatus('Analyzing...', 'running');
       log(`Starting Delivery Intelligence Report...`);
@@ -3557,8 +3906,9 @@
 
         const analysisPathResult = data.artifacts?.analysisPath;
         showActionToast('Analysis complete!', 'success',
-          analysisPathResult ? 'Open Analysis' : null,
+          analysisPathResult ? 'Open Delivery Intelligence' : null,
           analysisPathResult ? async () => {
+            clearAllToasts();
             const res = await window.voapps.openPath(analysisPathResult);
             if (!res.ok) log(`Failed to open: ${res.error}`);
           } : null
@@ -3589,6 +3939,7 @@
         return;
       }
 
+      clearCsvLogButtons();
       setLocked(true);
       setStatus('Analyzing Database...', 'running');
       log(`Starting Database Trend Analysis...`);
@@ -3629,8 +3980,10 @@
           if (errLogPath && window.voapps) {
             // Manually enable the log button before throwing
             $('logPath').textContent = errLogPath;
+            makePathClickable($('logPath'), errLogPath);
             $('openLogBtn').disabled = false;
             $('openLogBtn').onclick = async () => {
+              clearAllToasts();
               const res = await window.voapps.openPath(errLogPath);
               if (!res.ok) log(`Failed: ${res.error}`);
             };
@@ -3653,8 +4006,9 @@
 
         const dbAnalysisPath = data.artifacts?.analysisPath;
         showActionToast('Database analysis complete!', 'success',
-          dbAnalysisPath ? 'Open Analysis' : null,
+          dbAnalysisPath ? 'Open Delivery Intelligence' : null,
           dbAnalysisPath ? async () => {
+            clearAllToasts();
             const res = await window.voapps.openPath(dbAnalysisPath);
             if (!res.ok) log(`Failed to open: ${res.error}`);
           } : null
@@ -4047,6 +4401,10 @@
             $('logContent').scrollTop = $('logContent').scrollHeight;
           } else if (data.type === 'progress') {
             updateProgress(data.current, data.total, data.text);
+          } else if (data.type === 'notify') {
+            showActionToast(data.message, 'error', data.actionLabel || 'Learn More', () => {
+              window.open(data.url, '_blank');
+            });
           }
         } catch (e) {}
       };
@@ -4104,6 +4462,17 @@
         payload.generate_trend_analysis = true;
         payload.min_consec_unsuccessful = parseInt($('minConsecUnsuccessful').value) || 4;
         payload.min_run_span_days = parseInt($('minRunSpanDays').value) || 30;
+        payload.include_detail_tabs = $('includeTabTnHealth')?.checked || $('includeTabVariability')?.checked || $('includeTabNumberSummary')?.checked || false;
+      }
+
+      // AI Message Analysis settings — always sent with combine requests.
+      // The server reads these from localStorage/UI (not from disk) because the
+      // enable toggle and mode radios are only stored in localStorage.
+      // The OpenAI key is stored server-side via /api/settings/openai-key.
+      if (searchType === 'combine') {
+        payload.ai_enabled = $('enableAiAnalysis')?.checked || false;
+        payload.ai_transcription_mode = document.querySelector('input[name="transcriptionMode"]:checked')?.value || 'local';
+        payload.ai_intent_mode = document.querySelector('input[name="intentMode"]:checked')?.value || 'local';
       }
 
       let endpoint = '/api/search';
@@ -4247,8 +4616,10 @@
 
         if (csvPath) {
           $('csvPath').textContent = csvPath;
+          makePathClickable($('csvPath'), csvPath);
           $('openCsvBtn').disabled = false;
           $('openCsvBtn').onclick = async () => {
+            clearAllToasts();
             const res = await window.voapps.openPath(csvPath);
             if (!res.ok) log(`Failed: ${res.error}`);
           };
@@ -4256,8 +4627,10 @@
 
         if (logPath) {
           $('logPath').textContent = logPath;
+          makePathClickable($('logPath'), logPath);
           $('openLogBtn').disabled = false;
           $('openLogBtn').onclick = async () => {
+            clearAllToasts();
             const res = await window.voapps.openPath(logPath);
             if (!res.ok) log(`Failed: ${res.error}`);
           };
@@ -4265,10 +4638,12 @@
 
         if (analysisPath) {
           $('analysisPath').textContent = analysisPath;
+          makePathClickable($('analysisPath'), analysisPath);
           $('analysisPathRow').style.display = 'flex';
           $('openAnalysisBtn').style.display = 'inline-flex';
           $('openAnalysisBtn').disabled = false;
           $('openAnalysisBtn').onclick = async () => {
+            clearAllToasts();
             const res = await window.voapps.openPath(analysisPath);
             if (!res.ok) log(`Failed: ${res.error}`);
           };
@@ -4366,6 +4741,381 @@
     };
 
     // ============================================================================
+    // AI MESSAGE ANALYSIS PANEL
+    // ============================================================================
+    function onAiEnableChange() {
+      const enabled = $('enableAiAnalysis')?.checked || false;
+      if ($('aiSettingsContainer')) {
+        $('aiSettingsContainer').style.display = enabled ? 'block' : 'none';
+      }
+      saveSettings();
+    }
+
+    function onAiModeChange() {
+      const sttMode  = document.querySelector('input[name="transcriptionMode"]:checked')?.value || 'local';
+      const intentMode = document.querySelector('input[name="intentMode"]:checked')?.value || 'local';
+
+      // Show/hide local download controls
+      if ($('transcriptionLocalControls')) $('transcriptionLocalControls').style.display = sttMode === 'local' ? 'block' : 'none';
+      if ($('intentLocalControls')) $('intentLocalControls').style.display = intentMode === 'local' ? 'block' : 'none';
+
+      // Show/hide OpenAI API key section
+      const needsKey = sttMode === 'openai' || intentMode === 'openai';
+      if ($('openaiKeySection')) $('openaiKeySection').style.display = needsKey ? 'block' : 'none';
+
+      // Update cost summary
+      updateAiCostSummary(sttMode, intentMode);
+
+      // Refresh model download button state so it reflects actual cache status (not stale "needs download")
+      refreshAiModelButtonState(sttMode, intentMode);
+
+      saveSettings();
+    }
+
+    const _downloadSvg = `<svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>`;
+
+    function refreshAiModelButtonState(sttMode, intentMode) {
+      fetch('/api/ai/model-status')
+        .then(r => r.json())
+        .then(d => {
+          if (sttMode === 'local') {
+            const btn = $('downloadSttModelBtn');
+            const statusEl = $('sttModelStatus');
+            if (d.stt?.downloaded) {
+              if (btn && !btn.innerHTML.includes('…')) btn.innerHTML = `${_downloadSvg} Re-download Whisper Model`;
+              if (statusEl && !statusEl.textContent.includes('…')) statusEl.innerHTML = '✓ Model ready &nbsp;<span style="color:#aaa;font-size:10px;">· Re-download to update</span>';
+            } else {
+              if (btn && !btn.innerHTML.includes('…')) btn.innerHTML = `${_downloadSvg} Download Whisper Model (~142 MB)`;
+              if (statusEl && statusEl.textContent.startsWith('✓')) statusEl.textContent = '';
+            }
+          }
+          if (intentMode === 'local') {
+            const btn = $('downloadIntentModelBtn');
+            const statusEl = $('intentModelStatus');
+            if (d.intent?.downloaded) {
+              if (btn && !btn.innerHTML.includes('…')) btn.innerHTML = `${_downloadSvg} Re-download Intent Model`;
+              if (statusEl && !statusEl.textContent.includes('…')) statusEl.innerHTML = '✓ Model ready &nbsp;<span style="color:#aaa;font-size:10px;">· Re-download to update</span>';
+            } else {
+              if (btn && !btn.innerHTML.includes('…')) btn.innerHTML = `${_downloadSvg} Download Intent Model (~85 MB)`;
+              if (statusEl && statusEl.textContent.startsWith('✓')) statusEl.textContent = '';
+            }
+          }
+        })
+        .catch(() => {});
+    }
+
+    function updateAiCostSummary(sttMode, intentMode) {
+      const el = $('aiCostSummary');
+      if (!el) return;
+      let msg, bg, border;
+      if (sttMode === 'local' && intentMode === 'local') {
+        msg = '✅ Fully local &amp; free. No API key needed.';
+        bg = '#f5f9f5'; border = '#c8e6c9';
+      } else if (sttMode === 'local' && intentMode === 'openai') {
+        msg = '💳 ~$0.0001/message for intent &amp; summary via GPT-4o-mini. Transcription is free (local).';
+        bg = '#fff8f0'; border = '#ffe0b2';
+      } else if (sttMode === 'openai' && intentMode === 'local') {
+        msg = '💳 ~$0.003–$0.006/message for OpenAI transcription. Intent &amp; summary are free (local).';
+        bg = '#fff8f0'; border = '#ffe0b2';
+      } else {
+        msg = '💳 ~$0.003–$0.006/message transcription + ~$0.0001/message intent via OpenAI.';
+        bg = '#fff8f0'; border = '#ffe0b2';
+      }
+      el.innerHTML = msg;
+      el.style.background = bg;
+      el.style.borderColor = border;
+    }
+
+    async function saveOpenaiKey() {
+      const key = $('openaiApiKey')?.value?.trim() || '';
+      if (!key) { showToast('Enter an OpenAI API key first', 'error'); return; }
+      try {
+        const r = await fetch('/api/settings/openai-key', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key })
+        });
+        if (r.ok) showToast('OpenAI key saved', 'success');
+        else showToast('Failed to save key', 'error');
+      } catch (e) {
+        showToast('Failed to save key', 'error');
+      }
+    }
+
+    async function loadOpenaiKey() {
+      try {
+        const r = await fetch('/api/settings/openai-key');
+        if (r.ok) {
+          const data = await r.json();
+          if (data.ok && data.key && $('openaiApiKey')) {
+            $('openaiApiKey').value = data.key;
+          }
+        }
+      } catch (e) {}
+    }
+
+    async function loadAiCacheStats() {
+      try {
+        const r = await fetch('/api/ai/cache-stats');
+        if (r.ok) {
+          const d = await r.json();
+          const el = $('aiCacheCount');
+          if (el) el.textContent = `${d.count} message${d.count !== 1 ? 's' : ''} cached`;
+        }
+      } catch (e) {}
+    }
+
+    async function clearAiCache() {
+      if (!confirm('Clear all cached transcripts? Messages will be re-transcribed on the next run.')) return;
+      const btn = $('clearAiCacheBtn');
+      if (btn) btn.disabled = true;
+      try {
+        const r = await fetch('/api/ai/clear-cache', { method: 'POST' });
+        const d = await r.json();
+        if (d.ok) {
+          showToast('Transcript cache cleared', 'success');
+          await loadAiCacheStats();
+        } else {
+          showToast('Failed to clear cache', 'error');
+        }
+      } catch (e) {
+        showToast('Failed to clear cache', 'error');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    // ── Cache Browser ──────────────────────────────────────────────────────────
+    const INTENT_OPTIONS = ['', 'collections', 'payment reminder', 'appointment reminder', 'welcome', 'general', 'sales', 'survey', 'follow-up'];
+
+    async function openCacheBrowser() {
+      $('cacheBrowserModal').style.display = 'flex';
+      await loadCacheEntries();
+    }
+
+    function closeCacheBrowser() {
+      $('cacheBrowserModal').style.display = 'none';
+    }
+
+    async function loadCacheEntries() {
+      const tbody = $('cacheTableBody');
+      tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#999;">Loading…</td></tr>';
+      try {
+        const r = await fetch('/api/ai/cache-list');
+        const d = await r.json();
+        if (!d.ok || !d.entries || d.entries.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#999;">No cached entries found.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = '';
+        for (const entry of d.entries) {
+          const tr = document.createElement('tr');
+          tr.style.borderBottom = '1px solid #f0f0f0';
+          tr.dataset.msgId = entry.message_id;
+          tr.dataset.acctId = entry.account_id;
+          const ts = entry.transcribed_at ? entry.transcribed_at.replace('T', ' ').slice(0, 16) : '—';
+          const transcript = (entry.transcript || '').replace(/</g, '&lt;');
+          const shortTranscript = transcript.length > 80 ? transcript.slice(0, 80) + '…' : transcript;
+          tr.innerHTML = `
+            <td style="padding:7px 10px;vertical-align:top;white-space:nowrap;color:#666;font-size:10px;">${entry.message_id}<br><span style="color:#aaa;">${entry.account_id}</span></td>
+            <td style="padding:7px 10px;vertical-align:top;max-width:220px;word-break:break-word;" title="${transcript}">${shortTranscript || '<span style="color:#bbb;font-style:italic;">—</span>'}</td>
+            <td style="padding:7px 10px;vertical-align:top;white-space:nowrap;">${entry.intent || '<span style="color:#bbb;font-style:italic;">—</span>'}</td>
+            <td style="padding:7px 10px;vertical-align:top;white-space:nowrap;">${entry.intent_summary || '<span style="color:#bbb;font-style:italic;">—</span>'}</td>
+            <td style="padding:7px 10px;vertical-align:top;white-space:nowrap;color:#888;font-size:10px;">${ts}<br><span style="color:#bbb;">${entry.stt_model || ''}</span></td>
+            <td style="padding:7px 6px;vertical-align:top;text-align:center;white-space:nowrap;">
+              <button class="btn btn-sm" onclick="openCacheEdit('${entry.message_id}','${entry.account_id}')" style="margin-bottom:3px;display:block;width:100%;">Edit</button>
+              <button class="btn btn-sm" onclick="deleteCacheEntry('${entry.message_id}','${entry.account_id}',this)" style="color:#c62828;">Delete</button>
+            </td>`;
+          tbody.appendChild(tr);
+        }
+        // Update count label
+        const countEl = $('aiCacheCount');
+        if (countEl) countEl.textContent = `${d.entries.length} message${d.entries.length !== 1 ? 's' : ''} cached`;
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="6" style="padding:20px;text-align:center;color:#c00;">Error loading cache: ${e.message}</td></tr>`;
+      }
+    }
+
+    async function deleteCacheEntry(msgId, acctId, btn) {
+      if (!confirm(`Delete cached entry for message ${msgId}? It will be re-transcribed on next run.`)) return;
+      btn.disabled = true;
+      try {
+        const r = await fetch('/api/ai/cache-delete-entry', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message_id: msgId, account_id: acctId })
+        });
+        const d = await r.json();
+        if (d.ok) {
+          // Remove the row
+          const row = btn.closest('tr');
+          if (row) row.remove();
+          showToast('Entry deleted', 'success', 1800);
+          await loadAiCacheStats();
+        } else {
+          showToast('Failed to delete entry', 'error');
+          btn.disabled = false;
+        }
+      } catch (e) {
+        showToast('Failed to delete entry', 'error');
+        btn.disabled = false;
+      }
+    }
+
+    // ── Cache Edit ─────────────────────────────────────────────────────────────
+    function openCacheEdit(msgId, acctId) {
+      // Find entry data from current table
+      const row = [...$('cacheTableBody').querySelectorAll('tr')].find(r => r.dataset.msgId === msgId && r.dataset.acctId === acctId);
+      if (!row) return;
+      // Re-fetch full data for this entry (transcript may be truncated in table)
+      fetch('/api/ai/cache-list').then(r => r.json()).then(d => {
+        const entry = (d.entries || []).find(e => e.message_id === msgId && e.account_id === acctId);
+        if (!entry) return;
+        $('editCacheMsgId').value = entry.message_id;
+        $('editCacheAcctId').value = entry.account_id;
+        $('editCacheTranscript').value = entry.transcript || '';
+        $('editCacheIntent').value = entry.intent || '';
+        $('editCacheSummary').value = entry.intent_summary || '';
+        updateEditWordCount();
+        $('cacheEditModal').style.display = 'flex';
+      }).catch(() => showToast('Could not load entry', 'error'));
+    }
+
+    function closeCacheEdit() {
+      $('cacheEditModal').style.display = 'none';
+    }
+
+    function updateEditWordCount() {
+      const val = ($('editCacheSummary').value || '').trim();
+      const words = val ? val.split(/\s+/).length : 0;
+      const el = $('editCacheWordCount');
+      if (el) {
+        el.textContent = `${words} word${words !== 1 ? 's' : ''}${words > 6 ? ' — over limit (max 6)' : ''}`;
+        el.style.color = words > 6 ? '#c62828' : '#999';
+      }
+    }
+    // Attach live word count update
+    document.addEventListener('DOMContentLoaded', () => {
+      const summaryInput = $('editCacheSummary');
+      if (summaryInput) summaryInput.addEventListener('input', updateEditWordCount);
+    });
+
+    async function saveCacheEdit() {
+      const msgId   = $('editCacheMsgId').value;
+      const acctId  = $('editCacheAcctId').value;
+      const transcript    = $('editCacheTranscript').value.trim();
+      const intent        = $('editCacheIntent').value;
+      const intentSummary = $('editCacheSummary').value.trim();
+      const words = intentSummary ? intentSummary.split(/\s+/).length : 0;
+      if (words > 6) {
+        showToast('Summary must be 6 words or fewer', 'error');
+        return;
+      }
+      const btn = $('saveCacheEditBtn');
+      if (btn) btn.disabled = true;
+      try {
+        const r = await fetch('/api/ai/cache-update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message_id: msgId, account_id: acctId, transcript, intent, intent_summary: intentSummary })
+        });
+        const d = await r.json();
+        if (d.ok) {
+          showToast('Cache entry saved', 'success', 1800);
+          closeCacheEdit();
+          await loadCacheEntries(); // refresh table
+        } else {
+          showToast('Failed to save: ' + (d.error || 'unknown error'), 'error');
+        }
+      } catch (e) {
+        showToast('Failed to save: ' + e.message, 'error');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function downloadAiModel(type) {
+      const statusEl = type === 'stt' ? $('sttModelStatus') : $('intentModelStatus');
+      const btnEl    = type === 'stt' ? $('downloadSttModelBtn') : $('downloadIntentModelBtn');
+      if (statusEl) statusEl.textContent = 'Starting download…';
+      if (btnEl) btnEl.disabled = true;
+
+      let dlEs = null;
+      const cleanup = (succeeded) => {
+        if (dlEs) { dlEs.close(); dlEs = null; }
+        if (!succeeded && btnEl) btnEl.disabled = false;
+      };
+
+      try {
+        // POST first — server registers the job before we open the SSE stream
+        const jobId = `dl_${Date.now()}`;
+        const r = await fetch('/api/ai/download-model', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type, job_id: jobId })
+        });
+        const data = await r.json();
+        if (!data.ok) {
+          if (statusEl) statusEl.textContent = data.error || 'Failed to start download.';
+          cleanup(false);
+          return;
+        }
+
+        if (statusEl) statusEl.textContent = 'Downloading…';
+
+        // Open SSE stream — server replays any already-buffered log messages on connect
+        dlEs = new EventSource(`/api/stream/${data.job_id || jobId}`);
+        dlEs.onmessage = (event) => {
+          try {
+            const d = JSON.parse(event.data);
+            if (d.type === 'log') {
+              // Append to main app log
+              const time = new Date().toLocaleTimeString();
+              const entry = document.createElement('div');
+              entry.className = 'log-entry' + (d.isError ? ' log-error' : '');
+              entry.textContent = `[${time}] ${d.message}`;
+              const lc = $('logContent');
+              if (lc) { lc.appendChild(entry); lc.scrollTop = lc.scrollHeight; }
+              // Mirror last message in the AI panel status chip
+              if (statusEl) statusEl.textContent = d.message.replace(/^\[AI\]\s*/, '');
+            } else if (d.type === 'progress') {
+              if (d.status === 'complete') {
+                const label = type === 'stt' ? '✅ Whisper model ready' : '✅ Intent model ready';
+                if (statusEl) statusEl.textContent = label;
+                if (btnEl) { btnEl.disabled = false; btnEl.textContent = type === 'stt' ? 'Re-download Whisper Model' : 'Re-download Intent Model'; }
+                cleanup(true);
+              } else if (d.status === 'error') {
+                if (statusEl) statusEl.textContent = '❌ Download failed — see app log';
+                cleanup(false);
+              }
+            }
+          } catch (e) {}
+        };
+        dlEs.onerror = () => cleanup(false);
+      } catch (e) {
+        if (statusEl) statusEl.textContent = 'Download failed. Check app log.';
+        cleanup(false);
+      }
+    }
+
+    async function checkAiModelStatus() {
+      try {
+        const r = await fetch('/api/ai/model-status');
+        if (r.ok) {
+          const data = await r.json();
+          if ($('sttModelStatus') && data.stt?.downloaded) {
+            $('sttModelStatus').textContent = '✅ Whisper model ready';
+            if ($('downloadSttModelBtn')) $('downloadSttModelBtn').textContent = 'Re-download Whisper Model';
+          }
+          if ($('intentModelStatus') && data.intent?.downloaded) {
+            $('intentModelStatus').textContent = '✅ Intent model ready';
+            if ($('downloadIntentModelBtn')) $('downloadIntentModelBtn').textContent = 'Re-download Intent Model';
+          }
+        }
+      } catch (e) {}
+    }
+
+    // ============================================================================
     // SETTINGS
     // ============================================================================
     function loadSettings() {
@@ -4407,8 +5157,28 @@
         if (s.minConsecUnsuccessful) $('minConsecUnsuccessful').value = s.minConsecUnsuccessful;
         if (s.minRunSpanDays) $('minRunSpanDays').value = s.minRunSpanDays;
 
+        if ($('includeTabTnHealth'))      $('includeTabTnHealth').checked      = s.includeTabTnHealth      || false;
+        if ($('includeTabVariability'))   $('includeTabVariability').checked   = s.includeTabVariability   || false;
+        if ($('includeTabNumberSummary')) $('includeTabNumberSummary').checked = s.includeTabNumberSummary || false;
+
         if (s.outputMode) setOutputMode(s.outputMode);
         if (s.clientPrefix && $('clientPrefix')) $('clientPrefix').value = s.clientPrefix;
+
+        // AI Message Analysis settings
+        if ($('enableAiAnalysis')) {
+          $('enableAiAnalysis').checked = s.enableAiAnalysis || false;
+          if ($('aiSettingsContainer')) $('aiSettingsContainer').style.display = s.enableAiAnalysis ? 'block' : 'none';
+        }
+        if (s.transcriptionMode) {
+          const radio = document.querySelector(`input[name="transcriptionMode"][value="${s.transcriptionMode}"]`);
+          if (radio) radio.checked = true;
+        }
+        if (s.intentMode) {
+          const radio = document.querySelector(`input[name="intentMode"][value="${s.intentMode}"]`);
+          if (radio) radio.checked = true;
+        }
+        // Sync AI mode visibility after restoring radio values
+        onAiModeChange();
       } catch (e) {}
     }
 
@@ -4425,6 +5195,12 @@
         trendSource: trendSource,
         minConsecUnsuccessful: parseInt($('minConsecUnsuccessful').value) || 4,
         minRunSpanDays: parseInt($('minRunSpanDays').value) || 30,
+        includeTabTnHealth: $('includeTabTnHealth')?.checked || false,
+        includeTabVariability: $('includeTabVariability')?.checked || false,
+        includeTabNumberSummary: $('includeTabNumberSummary')?.checked || false,
+        enableAiAnalysis: $('enableAiAnalysis')?.checked || false,
+        transcriptionMode: document.querySelector('input[name="transcriptionMode"]:checked')?.value || 'local',
+        intentMode: document.querySelector('input[name="intentMode"]:checked')?.value || 'local',
         outputMode: outputMode,
         clientPrefix: $('clientPrefix')?.value || ''
       };
@@ -4572,7 +5348,7 @@
     // INIT
     // ============================================================================
     (async () => {
-      log('VoApps Tools v3.4.1');
+      log('VoApps Tools v4.0.0');
 
       loadSettings();
       initLogFilter();
@@ -4595,6 +5371,19 @@
       if ($('timezoneSelect')) {
         $('timezoneSelect').onchange = (e) => saveTimezone(e.target.value);
       }
+
+      // AI panel — wire up key toggle and save buttons, load stored key
+      if ($('toggleOpenaiKeyBtn')) {
+        $('toggleOpenaiKeyBtn').onclick = () => {
+          const inp = $('openaiApiKey');
+          if (inp) inp.type = inp.type === 'password' ? 'text' : 'password';
+        };
+      }
+      if ($('saveOpenaiKeyBtn')) {
+        $('saveOpenaiKeyBtn').onclick = saveOpenaiKey;
+      }
+      loadOpenaiKey();
+      checkAiModelStatus();
 
       try {
         const r = await fetch('/api/ping');

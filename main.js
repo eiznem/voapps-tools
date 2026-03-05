@@ -193,6 +193,15 @@ ipcMain.handle('open-path', async (event, filePath) => {
   }
 });
 
+ipcMain.handle('show-item-in-folder', async (event, filePath) => {
+  try {
+    shell.showItemInFolder(filePath);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+});
+
 ipcMain.handle('check-for-updates', async () => {
   try {
     const result = await checkForUpdates();

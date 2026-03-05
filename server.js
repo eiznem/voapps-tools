@@ -1,12 +1,18 @@
 /**
  * VoApps Tools — Local Server (Electron)
- * Version: 3.4.1 - Executive Summary & Timezone Selection
+ * Version: 4.0.0 - AI Message Intelligence
  *
- * NEW IN v3.4.1:
- * - Executive Summary search type for aggregating campaign deliverability statistics
- * - User-selectable timezone for timestamp display (ET, CT, MT, PT, UTC)
- * - Reorganized Report Output settings (combined headers, folder, timezone)
- * - Fixed Windows update checker to find .exe instead of .dmg
+ * NEW IN v4.0.0:
+ * - AI Message Analysis: transcribes DDVM recordings via local Whisper or OpenAI Whisper API
+ * - Intent & summary: local nli-deberta-v3-small (free) or GPT-4o-mini; results cached in DuckDB
+ * - Caller number match detection, URL mentions, and Voice Append detection from voapps_voice_append
+ * - New message_transcriptions DuckDB table; voapps_voice_append column in campaign_results
+ * - Report Output modal: Analysis Tabs moved above CSV Columns, tightened spacing
+ *
+ * FROM v3.4.2:
+ * - Timezone-aware campaign date filter (covers Hawaii UTC-10 through Eastern UTC-4)
+ * - Extended API query buffer to +2 days to cover Hawaii campaigns
+ * - Optional detail tabs (TN Health, Variability Analysis, Number Summary) with localStorage preference
  *
  * FROM v3.3.1:
  * - All timestamps normalized to user-selected timezone (default: UTC-7 VoApps Time)
@@ -82,13 +88,832 @@ const { generateTrendAnalysis } = require("./trendAnalyzer");
 const { Worker } = require('worker_threads');
 const { VERSION, VERSION_NAME } = require('./version');
 
+// ============================================================================
+// AI MESSAGE ANALYSIS — model status, download, transcription pipeline
+// ============================================================================
+const AI_MODEL_STATUS = { stt: { downloaded: false }, intent: { downloaded: false } };
+
+function getAiModelStatus() {
+  // Check filesystem for cached HuggingFace models (downloaded by @xenova/transformers)
+  const cacheRoot = path.join(os.homedir(), '.cache', 'huggingface', 'hub');
+  const sttModelDir  = path.join(cacheRoot, 'models--Xenova--whisper-base');
+  const intentModelDir = path.join(cacheRoot, 'models--Xenova--nli-deberta-v3-small');
+  AI_MODEL_STATUS.stt.downloaded    = fs.existsSync(sttModelDir);
+  AI_MODEL_STATUS.intent.downloaded = fs.existsSync(intentModelDir);
+  return AI_MODEL_STATUS;
+}
+
+/**
+ * Auto-install @xenova/transformers via npm, streaming output to the log function.
+ */
+function installXenovaTransformers(log) {
+  return new Promise((resolve, reject) => {
+    const { spawn } = require('child_process');
+    const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+    const appDir = __dirname;
+
+    log('[AI] Installing @xenova/transformers (this may take a minute)…');
+    const child = spawn(npmBin, ['install', '@xenova/transformers', '--no-audit', '--no-fund'], {
+      cwd: appDir,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    child.stdout.on('data', (data) => {
+      data.toString().split('\n').filter(l => l.trim()).forEach(line => log(`[npm] ${line}`));
+    });
+    child.stderr.on('data', (data) => {
+      data.toString().split('\n').filter(l => l.trim()).forEach(line => log(`[npm] ${line}`));
+    });
+    child.on('close', (code) => {
+      if (code === 0) {
+        log('[AI] ✅ @xenova/transformers installed successfully');
+        resolve();
+      } else {
+        reject(new Error(`npm install exited with code ${code}`));
+      }
+    });
+    child.on('error', reject);
+  });
+}
+
+async function downloadAiModelBackground(type, log = (msg, isError = false) => isError ? console.error(msg) : console.log(msg)) {
+  const label = type === 'stt' ? 'Whisper (STT)' : 'Intent (nli-deberta-v3-small)';
+  const modelId = type === 'stt' ? 'Xenova/whisper-base' : 'Xenova/nli-deberta-v3-small';
+  log(`[AI] Starting ${label} model download: ${modelId}`);
+
+  // Import @xenova/transformers — auto-install if missing.
+  // IMPORTANT: After installation we import via explicit file URL rather than the bare specifier,
+  // because Node.js/Electron caches the "not found" result for bare specifiers at startup and
+  // that cache entry persists even after npm installs the package in the same session.
+  // File URL imports have a separate cache key and always resolve fresh from disk.
+  let pipeline;
+
+  const tryBareImport = async () => {
+    try { return (await import('@xenova/transformers')).pipeline; }
+    catch (e) {
+      if (e.code === 'ERR_MODULE_NOT_FOUND' || e.message?.includes('Cannot find package')) return null;
+      throw e;
+    }
+  };
+
+  pipeline = await tryBareImport();
+
+  if (!pipeline) {
+    // Not found — auto-install, then import via file URL to bypass the ESM specifier cache
+    try {
+      await installXenovaTransformers(log);
+    } catch (installErr) {
+      log(`[AI] ❌ Install failed: ${installErr.message}`, true);
+      return;
+    }
+    try {
+      const { pathToFileURL } = require('url');
+      const pkgDir = path.join(__dirname, 'node_modules', '@xenova', 'transformers');
+      const pkgJson = JSON.parse(await fsp.readFile(path.join(pkgDir, 'package.json'), 'utf8'));
+      const exp = pkgJson.exports?.['.'];
+      const mainFile = (typeof exp === 'string' ? exp
+        : exp?.import || exp?.default || exp?.require
+          || pkgJson.module || pkgJson.main
+          || 'src/transformers.js');
+      const entryPath = path.join(pkgDir, mainFile.replace(/^\.\//, ''));
+      log('[AI] Loading module from disk…');
+      ({ pipeline } = await import(pathToFileURL(entryPath).href));
+    } catch (retryErr) {
+      log(`[AI] ❌ Failed to load after install: ${retryErr.message}`, true);
+      log('[AI] Please restart VoApps Tools and try again.', true);
+      return;
+    }
+  }
+
+  try {
+    // Track last reported % per file to avoid flooding the log
+    const lastPct = {};
+    const progress_callback = (data) => {
+      if (data.status === 'initiate') {
+        log(`[AI] Fetching: ${data.file}`);
+      } else if (data.status === 'progress' && data.file) {
+        const pct = Math.round(data.progress || 0);
+        const prev = lastPct[data.file] ?? -1;
+        if (pct - prev >= 10 || pct === 100) {
+          lastPct[data.file] = pct;
+          log(`[AI] ${data.file}: ${pct}%`);
+        }
+      } else if (data.status === 'done' && data.file) {
+        log(`[AI] ✅ ${data.file} ready`);
+      }
+    };
+
+    if (type === 'stt') {
+      log('[AI] Loading Whisper base model (~142 MB)…');
+      await pipeline('automatic-speech-recognition', modelId, { progress_callback });
+    } else {
+      log('[AI] Loading nli-deberta-v3-small model (~85 MB)…');
+      await pipeline('zero-shot-classification', modelId, { progress_callback });
+    }
+    log(`[AI] ✅ ${label} model downloaded and cached`);
+  } catch (e) {
+    log(`[AI] ❌ Failed to download ${label} model: ${e.message}`, true);
+  }
+}
+
+/**
+ * Transcribe and analyze messages using AI (local Whisper or OpenAI Whisper API).
+ * Results are cached in message_transcriptions DuckDB table.
+ * Returns transcriptMap: { "accountId:messageId" -> {transcript, intent, intent_summary, mentioned_phone, mentions_url} }
+ */
+async function transcribeAndAnalyzeMessages(messageInfo, aiSettings, log) {
+  const transcriptMap = {};
+  if (!dbReady) log('[AI] Note: Database not ready — transcripts will run but will not be cached this session');
+
+  const { transcriptionMode = 'local', intentMode = 'local', openaiApiKey = '', notify = null } = aiSettings;
+  let quotaExceeded = false;   // set to true on first 429 — skip remaining messages
+
+  // Collect unique messages that have a file_url
+  const uniqueMessages = new Map(); // key -> { messageId, accountId, file_url }
+  for (const [key, info] of Object.entries(messageInfo)) {
+    if (info.file_url && !uniqueMessages.has(key)) {
+      const [accountId, messageId] = key.split(':');
+      uniqueMessages.set(key, { messageId, accountId, file_url: info.file_url });
+    }
+  }
+
+  if (uniqueMessages.size === 0) {
+    log('[AI] No message audio URLs found — skipping AI analysis');
+    return transcriptMap;
+  }
+
+  const sttLabel    = transcriptionMode === 'openai' ? 'OpenAI Whisper' : 'local Whisper';
+  const intentLabel = intentMode === 'openai' ? 'GPT-4o-mini' : 'local nli-deberta';
+  log(`[AI] Analyzing ${uniqueMessages.size} unique message(s) — STT: ${sttLabel}, intent: ${intentLabel}`);
+
+  for (const [key, { messageId, accountId, file_url }] of uniqueMessages) {
+    try {
+      // Check cache (skip when DB not available — e.g. Windows)
+      let cached = null;
+      if (dbReady) {
+        cached = await runQuery(
+          `SELECT transcript, intent, intent_summary, mentioned_phone, mentions_url FROM message_transcriptions WHERE message_id = ? AND account_id = ?`,
+          [messageId, accountId]
+        );
+      }
+      if (cached && cached.length > 0) {
+        const c = cached[0];
+        const cachedTranscript = c.transcript || '';
+        // Skip stale hallucination results — re-transcribe rather than use garbage cache
+        if (isWhisperHallucination(cachedTranscript) && !c.intent) {
+          const msgName = messageInfo[key]?.name || messageId;
+          log(`[AI]   ♻️  Stale hallucination in cache for ${msgName} — re-transcribing`);
+          // Fall through to re-transcribe
+        } else {
+          transcriptMap[key] = {
+            transcript: cachedTranscript,
+            intent: c.intent || '',
+            intent_summary: c.intent_summary || '',
+            mentioned_phone: c.mentioned_phone || '',
+            mentions_url: !!c.mentions_url
+          };
+          const msgName = messageInfo[key]?.name || messageId;
+          log(`[AI]   [cached] ${msgName} → ${c.intent || 'unknown'}`);
+          continue;
+        }
+      }
+
+      // Download audio to temp file
+      const tmpFile = path.join(os.tmpdir(), `voapps_msg_${messageId}.mp3`);
+      try {
+        await downloadFile(file_url, tmpFile, log);
+      } catch (dlErr) {
+        log(`[AI]   ⚠️  Could not download audio for ${messageId}: ${dlErr.message}`);
+        continue;
+      }
+
+      const t0 = Date.now();
+      let transcript = '';
+
+      // Skip remaining messages if OpenAI quota was already exceeded
+      if (quotaExceeded) {
+        try { fs.unlinkSync(tmpFile); } catch (_) {}
+        continue;
+      }
+
+      // Transcribe
+      if (transcriptionMode === 'openai') {
+        if (!openaiApiKey) { log('[AI]   ⚠️  OpenAI API key not set — skipping transcription'); fs.unlinkSync(tmpFile); continue; }
+        transcript = await transcribeWithOpenAI(tmpFile, openaiApiKey, log, () => {
+          quotaExceeded = true;
+          if (notify) {
+            notify(
+              'OpenAI quota exceeded — add credits to your account and run the analysis again.',
+              'Add Credits',
+              'https://platform.openai.com/docs/guides/error-codes/api-errors'
+            );
+          }
+        });
+        if (transcript === '__QUOTA_EXCEEDED__') transcript = '';
+      } else {
+        transcript = await transcribeWithLocalWhisper(tmpFile, log);
+      }
+
+      // Clean up temp file
+      try { fs.unlinkSync(tmpFile); } catch (_) {}
+
+      if (!transcript) {
+        log(`[AI]   ⚠️  No transcript for ${messageId}`);
+        continue;
+      }
+
+      // Extract metadata from transcript (no API needed)
+      const mentionedPhone = extractMentionedPhone(transcript);
+      const mentionsUrl    = detectUrlMention(transcript);
+
+      // Intent + summary
+      let intent = '';
+      let intentSummary = '';
+      let intentModelLabel = '';
+      let sttModelLabel = transcriptionMode === 'openai' ? 'openai-whisper-1' : 'whisper-base-local';
+
+      if (intentMode === 'openai') {
+        if (!openaiApiKey) { log('[AI]   ⚠️  OpenAI API key not set — using name-based intent'); }
+        else {
+          const result = await classifyIntentWithOpenAI(transcript, openaiApiKey, log);
+          intent = result.intent;
+          intentSummary = result.summary;
+          intentModelLabel = 'openai-gpt4o-mini';
+        }
+      } else {
+        const result = await classifyIntentLocal(transcript, log);
+        intent = result.intent;
+        intentSummary = result.summary;
+        intentModelLabel = 'nli-deberta-v3-local';
+      }
+
+      const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+      const urlNote = mentionsUrl ? ' | mentions URL' : '';
+      const msgName = messageInfo[key]?.name || messageId;
+      log(`[AI]   [transcribed] ${msgName} → ${intent || 'unknown'} | ${elapsed}s${urlNote}`);
+
+      // Cache in DB (skip when DB not available — e.g. Windows; results still returned in-memory)
+      if (dbReady) {
+        await runQuery(
+          `INSERT OR REPLACE INTO message_transcriptions
+             (message_id, account_id, audio_url, transcript, intent, intent_summary,
+              mentioned_phone, mentions_url, stt_model, intent_model, transcribed_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          [messageId, accountId, file_url, transcript, intent, intentSummary,
+           mentionedPhone || null, mentionsUrl ? 1 : 0, sttModelLabel, intentModelLabel]
+        );
+      }
+
+      transcriptMap[key] = { transcript, intent, intent_summary: intentSummary, mentioned_phone: mentionedPhone || '', mentions_url: mentionsUrl };
+
+    } catch (err) {
+      log(`[AI]   ⚠️  Error processing message ${messageId}: ${err.message}`);
+    }
+  }
+
+  return transcriptMap;
+}
+
+/**
+ * Scan CSV rows for VoApps result codes 408/409/410 and log warnings.
+ * Returns a summary object for use in API responses.
+ */
+function checkInvalidResultCodes(rows, log) {
+  const INVALID_CODES = {
+    '408': 'Invalid Caller Number',
+    '409': 'Invalid Message ID',
+    '410': 'Prohibited Self Call'
+  };
+  const found = {};  // code -> { count, campaigns: Set }
+
+  for (const row of rows) {
+    const code = String(row.voapps_code || '').trim();
+    if (INVALID_CODES[code]) {
+      if (!found[code]) found[code] = { count: 0, campaigns: new Set() };
+      found[code].count++;
+      const cid = row.campaign_id || row.campaign_name || 'unknown';
+      found[code].campaigns.add(cid);
+    }
+  }
+
+  const alerts = [];
+  for (const [code, info] of Object.entries(found)) {
+    const label = INVALID_CODES[code];
+    const campaignList = [...info.campaigns].slice(0, 10).join(', ');
+    const moreNote = info.campaigns.size > 10 ? ` (+${info.campaigns.size - 10} more)` : '';
+    const msg = `⚠️  ${label} (${code}): ${info.count.toLocaleString()} result(s) in campaigns: ${campaignList}${moreNote}`;
+    log(msg, true);  // log as warning
+    alerts.push({ code, label, count: info.count, campaigns: [...info.campaigns] });
+  }
+
+  if (alerts.length > 0) {
+    log('⚠️  Review your campaign configuration for the codes above. Invalid results do not count toward delivery but may indicate misconfigured caller numbers or message IDs.', true);
+  }
+
+  return alerts;
+}
+
+async function downloadFile(url, destPath, log, maxRedirects = 5) {
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(url);
+    const mod = urlObj.protocol === 'https:' ? require('https') : require('http');
+    const file = fs.createWriteStream(destPath);
+    mod.get(url, (res) => {
+      // Follow redirects (301, 302, 303, 307, 308)
+      if ([301, 302, 303, 307, 308].includes(res.statusCode)) {
+        file.close();
+        const location = res.headers?.location;
+        if (!location || maxRedirects <= 0) {
+          reject(new Error(`HTTP ${res.statusCode} redirect loop or no Location header`));
+          return;
+        }
+        if (log) log(`[AI]   🔍 Audio redirect ${res.statusCode} → ${location.slice(0, 80)}`);
+        // Recurse with decremented redirect count and a fresh stream
+        downloadFile(location, destPath, log, maxRedirects - 1).then(resolve).catch(reject);
+        return;
+      }
+      if (res.statusCode !== 200) { file.close(); reject(new Error(`HTTP ${res.statusCode}`)); return; }
+      const contentType = res.headers?.['content-type'] || 'unknown';
+      const contentLength = res.headers?.['content-length'];
+      if (log) log(`[AI]   🔍 Audio download: type=${contentType}, size=${contentLength ? Math.round(contentLength/1024)+'KB' : 'unknown'}`);
+      res.pipe(file);
+      file.on('finish', () => { file.close(); resolve(); });
+    }).on('error', (e) => { file.close(); fs.unlink(destPath, () => {}); reject(e); });
+  });
+}
+
+async function transcribeWithOpenAI(audioPath, apiKey, log, onQuotaExceeded = null) {
+  try {
+    let FormData;
+    try {
+      FormData = require('form-data');
+    } catch (e) {
+      await installNpmPackage('form-data', log);
+      FormData = require('form-data');
+    }
+    const form = new FormData();
+    form.append('file', fs.createReadStream(audioPath), path.basename(audioPath));
+    form.append('model', 'whisper-1');
+
+    // crossPlatformFetch serializes the body via req.write(), which converts a FormData
+    // object to "[object Object]". npm form-data must be piped directly into the request
+    // so the multipart stream is properly transmitted with correct boundaries.
+    return new Promise((resolve) => {
+      const req = https.request({
+        hostname: 'api.openai.com',
+        port: 443,
+        path: '/v1/audio/transcriptions',
+        method: 'POST',
+        headers: { ...form.getHeaders(), Authorization: `Bearer ${apiKey}` },
+        timeout: 60000
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          if (res.statusCode === 429) {
+            log(`[AI]   ⚠️  OpenAI STT quota exceeded (429) — add credits and retry`);
+            if (onQuotaExceeded) onQuotaExceeded();
+            resolve('__QUOTA_EXCEEDED__');
+          } else if (res.statusCode < 200 || res.statusCode >= 300) {
+            log(`[AI]   ⚠️  OpenAI STT failed: OpenAI STT error ${res.statusCode}: ${data}`);
+            resolve('');
+          } else {
+            try {
+              resolve(JSON.parse(data).text || '');
+            } catch (e) {
+              log(`[AI]   ⚠️  OpenAI STT response parse error: ${e.message}`);
+              resolve('');
+            }
+          }
+        });
+      });
+      req.on('error', (err) => {
+        log(`[AI]   ⚠️  OpenAI STT failed: ${err.message}`);
+        resolve('');
+      });
+      req.on('timeout', () => {
+        req.destroy();
+        log('[AI]   ⚠️  OpenAI STT failed: Request timeout (60s)');
+        resolve('');
+      });
+      form.pipe(req);
+    });
+  } catch (e) {
+    log(`[AI]   ⚠️  OpenAI STT failed: ${e.message}`);
+    return '';
+  }
+}
+
+/**
+ * Generic npm package installer — streams output through the log callback.
+ * Works the same way as installXenovaTransformers but for any package name.
+ */
+function installNpmPackage(pkgName, log) {
+  return new Promise((resolve, reject) => {
+    const { spawn } = require('child_process');
+    const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+    log(`[AI] Installing ${pkgName}…`);
+    const child = spawn(npmBin, ['install', pkgName, '--no-audit', '--no-fund'], {
+      cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe']
+    });
+    child.stdout.on('data', d => d.toString().split('\n').filter(l => l.trim()).forEach(l => log(`[npm] ${l}`)));
+    child.stderr.on('data', d => d.toString().split('\n').filter(l => l.trim()).forEach(l => log(`[npm] ${l}`)));
+    child.on('close', code => code === 0 ? resolve() : reject(new Error(`npm install exited with code ${code}`)));
+    child.on('error', reject);
+  });
+}
+
+/**
+ * Decode a RIFF/WAVE PCM file directly from a Buffer — no external library needed.
+ * Supports 8/16/24/32-bit mono or stereo PCM (audioFormat = 1).
+ * Returns a 16 kHz mono Float32Array ready for Whisper.
+ */
+function decodeWavPcm(buffer, log) {
+  const riff = buffer.slice(0, 4).toString('ascii');
+  const wave = buffer.slice(8, 12).toString('ascii');
+  if (riff !== 'RIFF' || wave !== 'WAVE') throw new Error('Not a valid RIFF/WAVE file');
+
+  let offset = 12;
+  let sampleRate = 0, numChannels = 0, bitsPerSample = 0;
+  let dataOffset = 0, dataSize = 0;
+
+  while (offset + 8 <= buffer.length) {
+    const chunkId   = buffer.slice(offset, offset + 4).toString('ascii');
+    const chunkSize = buffer.readUInt32LE(offset + 4);
+    offset += 8;
+
+    if (chunkId === 'fmt ') {
+      const audioFormat = buffer.readUInt16LE(offset);
+      numChannels       = buffer.readUInt16LE(offset + 2);
+      sampleRate        = buffer.readUInt32LE(offset + 4);
+      bitsPerSample     = buffer.readUInt16LE(offset + 14);
+      if (audioFormat !== 1) {
+        throw new Error(`WAV audio format ${audioFormat} not supported (only PCM=1). Re-export the message as uncompressed WAV.`);
+      }
+    } else if (chunkId === 'data') {
+      dataOffset = offset;
+      dataSize   = chunkSize;
+      break;  // done scanning — data chunk found
+    }
+
+    offset += chunkSize + (chunkSize & 1); // advance (chunks are word-aligned)
+  }
+
+  if (!sampleRate || !dataOffset) throw new Error('WAV file missing fmt or data chunk');
+
+  const bytesPerSample    = bitsPerSample >> 3;
+  const frameSize         = numChannels * bytesPerSample;
+  const samplesPerChannel = Math.floor(dataSize / frameSize);
+
+  log(`[AI]   🔍 Audio decoded: ${sampleRate} Hz, ${samplesPerChannel} samples, ${(samplesPerChannel / sampleRate).toFixed(1)}s (WAV PCM ${bitsPerSample}-bit, ${numChannels}ch)`);
+
+  // Mix channels to mono Float32 in [-1, 1]
+  const scale = bitsPerSample === 8 ? 128 : Math.pow(2, bitsPerSample - 1);
+  const out   = new Float32Array(samplesPerChannel);
+
+  for (let i = 0; i < samplesPerChannel; i++) {
+    const basePos = dataOffset + i * frameSize;
+    let sum = 0;
+    for (let ch = 0; ch < numChannels; ch++) {
+      const pos = basePos + ch * bytesPerSample;
+      let val;
+      if (bitsPerSample === 8) {
+        val = buffer.readUInt8(pos) - 128;  // 8-bit WAV is unsigned; center at 0
+      } else if (bitsPerSample === 16) {
+        val = buffer.readInt16LE(pos);
+      } else if (bitsPerSample === 24) {
+        // 3-byte little-endian signed integer
+        let u = buffer.readUInt8(pos) | (buffer.readUInt8(pos + 1) << 8) | (buffer.readUInt8(pos + 2) << 16);
+        if (u & 0x800000) u |= 0xFF000000;  // sign-extend to 32-bit
+        val = u | 0;
+      } else if (bitsPerSample === 32) {
+        val = buffer.readInt32LE(pos);
+      } else {
+        val = 0;
+      }
+      sum += val;
+    }
+    out[i] = (sum / numChannels) / scale;
+  }
+
+  return resampleTo16kHz(out, sampleRate);
+}
+
+/**
+ * Linear-interpolation resampler — converts a Float32Array from sourceSampleRate to 16 kHz.
+ * Whisper expects 16 kHz mono audio.
+ */
+function resampleTo16kHz(samples, sourceSampleRate) {
+  if (sourceSampleRate === 16000) return samples;
+  const ratio     = sourceSampleRate / 16000;
+  const outLength = Math.ceil(samples.length / ratio);
+  const output    = new Float32Array(outLength);
+  for (let i = 0; i < outLength; i++) {
+    const srcIdx = i * ratio;
+    const lo = Math.floor(srcIdx);
+    const hi = Math.min(lo + 1, samples.length - 1);
+    const t  = srcIdx - lo;
+    output[i] = samples[lo] * (1 - t) + samples[hi] * t;
+  }
+  return output;
+}
+
+/**
+ * Decode an audio file (WAV or MP3) to a 16 kHz mono Float32Array for Whisper.
+ *
+ * WAV/RIFF files: decoded natively via decodeWavPcm() — no external library needed.
+ *   VoApps DDVM message files are typically 16 kHz mono PCM WAV, so no resampling needed.
+ *
+ * MP3 files: decoded via mpg123-decoder (pure-WASM, auto-installed on first use).
+ *
+ * Why we can't pass file paths to the Whisper pipeline directly: @xenova/transformers
+ * falls back to AudioContext when given a path, but AudioContext is a browser API
+ * unavailable in Node.js / Electron main process. A pre-decoded Float32Array bypasses this.
+ */
+async function decodeMp3File(audioPath, log) {
+  // Read once — used for format detection and decoding
+  const fileBuffer = fs.readFileSync(audioPath);
+  const magic = fileBuffer.slice(0, 4).toString('ascii');
+
+  // ── WAV/RIFF: parse PCM directly (no external library) ──────────────────────
+  if (magic === 'RIFF') {
+    log(`[AI]   🔍 Detected WAV format — using native PCM decoder`);
+    return decodeWavPcm(fileBuffer, log);
+  }
+
+  // ── MP3: use mpg123-decoder (WASM-based, no native compilation) ─────────────
+  // Helper to import mpg123-decoder via file URL (bypasses ESM specifier cache after install)
+  const importMpg123 = async () => {
+    const { pathToFileURL } = require('url');
+    const pkgDir  = path.join(__dirname, 'node_modules', 'mpg123-decoder');
+    const pkgJson = JSON.parse(await fsp.readFile(path.join(pkgDir, 'package.json'), 'utf8'));
+    const exp = pkgJson.exports?.['.'];
+    const mainFile = (typeof exp === 'string' ? exp
+      : exp?.import || exp?.default || exp?.require
+        || pkgJson.module || pkgJson.main
+        || 'src/mpg123-decoder.js');
+    const entryPath = path.join(pkgDir, mainFile.replace(/^\.\//, ''));
+    return await import(pathToFileURL(entryPath).href);
+  };
+
+  let MPEGDecoder;
+  try {
+    ({ MPEGDecoder } = await import('mpg123-decoder'));
+  } catch (e) {
+    if (e.code === 'ERR_MODULE_NOT_FOUND' || e.message?.includes('Cannot find')) {
+      // Auto-install mpg123-decoder on first use (~71 KB WASM, no native compilation)
+      await installNpmPackage('mpg123-decoder', log);
+      ({ MPEGDecoder } = await importMpg123());
+    } else {
+      throw e;
+    }
+  }
+
+  const decoder = new MPEGDecoder();
+  await decoder.ready;
+  // decode() is synchronous — takes Uint8Array/Buffer, returns { channelData, samplesDecoded, sampleRate }
+  const { channelData, samplesDecoded, sampleRate } = decoder.decode(fileBuffer);
+  decoder.free();
+
+  // Diagnostic: log decode results so we can verify audio is healthy before transcription
+  log(`[AI]   🔍 Audio decoded: ${sampleRate} Hz, ${samplesDecoded} samples, ${(samplesDecoded / (sampleRate || 1)).toFixed(1)}s (MP3)`);
+
+  if (!sampleRate || samplesDecoded === 0) {
+    throw new Error('MP3 decode produced no samples — file may be corrupt or unsupported');
+  }
+
+  // Collapse stereo → mono (average L + R channels)
+  let samples;
+  if (Array.isArray(channelData) && channelData.length > 1) {
+    const L = channelData[0];
+    const R = channelData[1];
+    samples = new Float32Array(L.length);
+    for (let i = 0; i < L.length; i++) samples[i] = (L[i] + R[i]) * 0.5;
+  } else {
+    samples = Array.isArray(channelData) ? channelData[0] : channelData;
+  }
+
+  // Resample to 16 kHz — Whisper's required input sample rate
+  return resampleTo16kHz(samples, sampleRate);
+}
+
+/**
+ * Detect Whisper hallucination output — transcripts that contain ONLY non-speech
+ * event tokens (music, chiming, applause, etc.) with no real words.
+ * These occur when the audio is music, telephony tones, or spectrally unusual content.
+ * Returns true if the transcript should be discarded.
+ */
+function isWhisperHallucination(text) {
+  if (!text || !text.trim()) return true;
+  // Strip all known Whisper event annotations: [Music], (chiming), [APPLAUSE], etc.
+  const stripped = text
+    .replace(/\[[\w\s]+\]/gi, '')      // [Music], [MUSIC], [Applause], [Laughter]
+    .replace(/\([\w\s]+\)/gi, '')      // (chiming), (whistling), (whimsical music), (beeping)
+    .replace(/\s+/g, ' ')
+    .trim();
+  // If nothing real is left, it's a hallucination
+  if (!stripped) return true;
+  // If real content is very short (< 3 chars after stripping), also discard
+  if (stripped.length < 3) return true;
+  return false;
+}
+
+async function transcribeWithLocalWhisper(audioPath, log) {
+  try {
+    // Import @xenova/transformers (auto-install + file-URL fallback if bare specifier fails)
+    let pipelineFn;
+    try {
+      ({ pipeline: pipelineFn } = await import('@xenova/transformers'));
+    } catch (e) {
+      if (e.code === 'ERR_MODULE_NOT_FOUND' || e.message?.includes('Cannot find package')) {
+        log('[AI]   Installing @xenova/transformers…');
+        await installXenovaTransformers(log);
+        const { pathToFileURL } = require('url');
+        const pkgDir = path.join(__dirname, 'node_modules', '@xenova', 'transformers');
+        const pkgJson = JSON.parse(await fsp.readFile(path.join(pkgDir, 'package.json'), 'utf8'));
+        const exp = pkgJson.exports?.['.'];
+        const mainFile = (typeof exp === 'string' ? exp
+          : exp?.import || exp?.default || exp?.require
+            || pkgJson.module || pkgJson.main
+            || 'src/transformers.js');
+        const entryPath = path.join(pkgDir, mainFile.replace(/^\.\//, ''));
+        ({ pipeline: pipelineFn } = await import((require('url').pathToFileURL(entryPath)).href));
+      } else { throw e; }
+    }
+
+    // Node.js / Electron main process has no AudioContext — passing a file path to the
+    // pipeline would fail with "Unable to load audio … AudioContext is not available".
+    // Instead: decode the MP3 ourselves to a 16 kHz mono Float32Array and pass that directly.
+    const audioData = await decodeMp3File(audioPath, log);
+
+    // --- Amplitude checks on the FULL resampled audio --------------------------------
+    // The earlier diagnostic only covers the first 1000 samples (≈62 ms), which is often
+    // silence/intro.  We need the full-file peak for two reasons:
+    //
+    //   1. Some MP3 encoders / decoders produce values outside [-1, 1].  Whisper's
+    //      WhisperFeatureExtractor computes a log-mel spectrogram that is calibrated for
+    //      audio in that range.  Amplitude 10× too large shifts every log-mel bin by
+    //      log₁₀(10) = 1, producing feature vectors completely outside the training
+    //      distribution → the model hallucinates "(chiming)" / "(whistling)" etc.
+    //
+    //   2. Genuinely silent files (blank templates, unrecorded placeholders) should be
+    //      skipped rather than wasting Whisper time producing noise-hallucinations.
+    // ---------------------------------------------------------------------------------
+    let peakAmp = 0;
+    for (let i = 0; i < audioData.length; i++) {
+      const abs = Math.abs(audioData[i]);
+      if (abs > peakAmp) peakAmp = abs;
+    }
+    log(`[AI]   🔍 Peak amplitude (full resampled audio): ${peakAmp.toFixed(4)}`);
+
+    if (peakAmp < 0.001) {
+      log('[AI]   ⚠️  Audio is silent — no transcription');
+      return '';
+    }
+    if (peakAmp > 1.0) {
+      // Peak-normalize: bring the loudest sample to exactly ±1.0
+      for (let i = 0; i < audioData.length; i++) audioData[i] /= peakAmp;
+      log(`[AI]   🔍 Normalized amplitude from ${peakAmp.toFixed(4)} → 1.0`);
+    }
+
+    // Log audio duration for diagnostics
+    const audioDurationSec = audioData.length / 16000;
+    log(`[AI]   🔍 Audio duration: ${audioDurationSec.toFixed(1)}s (${audioData.length} samples @ 16kHz)`);
+
+    const transcriber = await pipelineFn('automatic-speech-recognition', 'Xenova/whisper-base');
+    // Pass the Float32Array directly — @xenova/transformers v2.x WhisperFeatureExtractor
+    // requires a raw Float32Array, not a { data, sampling_rate } wrapper object.
+    // decodeMp3File already resamples to 16 kHz so no sampling_rate hint is needed.
+    // No chunk_length_s/stride_length_s — those trigger long-form transcription mode
+    // (timestamp-guided beam search) which hallucinates on short voicemails (≤40s).
+    // Whisper-base context window is 30s; for longer audio it silently truncates.
+    const result = await transcriber(audioData, { language: 'english' });
+    const rawText = result.text || '';
+    log(`[AI]   🔍 Raw Whisper output: ${JSON.stringify(rawText.slice(0, 200))}`);
+
+    // Discard hallucination-only output (e.g. "[Music] (chiming) [Music]" with no real words)
+    if (isWhisperHallucination(rawText)) {
+      log(`[AI]   ⚠️  Whisper produced only non-speech tokens ("${rawText.slice(0, 80).trim()}") — discarding`);
+      return '';
+    }
+    return rawText;
+  } catch (e) {
+    if (e.code === 'ERR_MODULE_NOT_FOUND' || e.message?.includes('Cannot find')) {
+      log('[AI]   ⚠️  @xenova/transformers not installed. Use OpenAI Whisper mode or download the model first.');
+    } else {
+      log(`[AI]   ⚠️  Local Whisper failed: ${e.message}`);
+    }
+    return '';
+  }
+}
+
+async function classifyIntentWithOpenAI(transcript, apiKey, log) {
+  const INTENT_CATEGORIES = ['collections', 'payment reminder', 'appointment reminder', 'welcome', 'general', 'sales', 'survey', 'follow-up'];
+  try {
+    const body = JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [{
+        role: 'user',
+        content: `You are classifying a short voicemail message. Given the transcript below, return ONLY valid JSON with these fields:
+- "intent": one of ${JSON.stringify(INTENT_CATEGORIES)}
+- "summary": 6 words or fewer describing the message's purpose — no filler words, direct and specific (e.g. "MCM collections call 800-358-4172" or "Appointment reminder tomorrow 3pm")
+
+Transcript:
+"""
+${transcript.slice(0, 1000)}
+"""
+
+Respond with only valid JSON, no markdown.`
+      }],
+      max_tokens: 100,
+      temperature: 0
+    });
+    const response = await crossPlatformFetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body
+    });
+    if (!response.ok) throw new Error(`OpenAI chat error ${response.status}`);
+    const data = await response.json();
+    const raw = data.choices?.[0]?.message?.content || '{}';
+    const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+    return { intent: parsed.intent || '', summary: parsed.summary || '' };
+  } catch (e) {
+    log(`[AI]   ⚠️  OpenAI intent failed: ${e.message}`);
+    return { intent: '', summary: '' };
+  }
+}
+
+async function classifyIntentLocal(transcript, log) {
+  // Extractive summary: first meaningful sentence trimmed to ≤6 words, no filler
+  const sentences = transcript.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 10);
+  const firstSentence = sentences[0] || transcript.trim();
+  const words = firstSentence.split(/\s+/).filter(Boolean);
+  const summary = words.slice(0, 6).join(' ');
+
+  try {
+    const { pipeline } = await import('@xenova/transformers');
+    const INTENT_LABELS = ['collections', 'payment reminder', 'appointment reminder', 'welcome message', 'general', 'sales', 'survey', 'follow-up'];
+    const classifier = await pipeline('zero-shot-classification', 'Xenova/nli-deberta-v3-small');
+    const result = await classifier(transcript.slice(0, 500), INTENT_LABELS);
+    const intent = result.labels?.[0] || '';
+    return { intent, summary };
+  } catch (e) {
+    if (e.code === 'ERR_MODULE_NOT_FOUND' || e.message?.includes('Cannot find')) {
+      log('[AI]   ⚠️  @xenova/transformers not installed — using extractive intent only.');
+    } else {
+      log(`[AI]   ⚠️  Local intent classification failed: ${e.message}`);
+    }
+    return { intent: '', summary };
+  }
+}
+
+function extractMentionedPhone(transcript) {
+  if (!transcript) return null;
+  // Match common spoken phone number patterns: "8005551234", "800-555-1234", "(800) 555-1234"
+  const digitMatch = transcript.match(/\b(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})\b/);
+  if (digitMatch) return digitMatch[0].replace(/\D/g, '').replace(/^1(\d{10})$/, '$1');
+
+  // Match spelled-out numbers like "eight hundred five five five one two three four"
+  // (basic — converts common word groups to digits)
+  const numberWords = { zero:0, one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9,
+    ten:10, eleven:11, twelve:12, hundred:100, thousand:1000 };
+  const wordNumRegex = /\b(zero|one|two|three|four|five|six|seven|eight|nine)\b/gi;
+  const spokenDigits = [];
+  let m;
+  const lc = transcript.toLowerCase();
+  // Simple: collect consecutive digit words near "call", "dial", "number", "reach"
+  const triggerIdx = Math.max(lc.indexOf('call us'), lc.indexOf('dial'), lc.indexOf('our number'), lc.indexOf('reach us'));
+  const searchStr = triggerIdx >= 0 ? lc.slice(triggerIdx, triggerIdx + 200) : lc.slice(0, 200);
+  wordNumRegex.lastIndex = 0;
+  while ((m = wordNumRegex.exec(searchStr)) !== null) {
+    spokenDigits.push(numberWords[m[1].toLowerCase()]);
+  }
+  if (spokenDigits.length >= 7) {
+    const num = spokenDigits.join('');
+    return num.length >= 10 ? num.slice(0, 10) : null;
+  }
+  return null;
+}
+
+function detectUrlMention(transcript) {
+  if (!transcript) return false;
+  const lc = transcript.toLowerCase();
+  return /\.(com|org|net|io|gov|edu)\b/.test(lc) ||
+    /\bwww\b/.test(lc) ||
+    /\bhttps?:\/\//.test(lc) ||
+    /\bvisit (us at|our (website|site|page))\b/.test(lc) ||
+    /\bgo to (our|the) (website|site|page)\b/.test(lc) ||
+    /\bcheck (us )?out (at|online)\b/.test(lc);
+}
+
 /**
  * Run generateTrendAnalysis in a worker thread so the main/UI thread stays responsive.
  */
-function runAnalysisInWorker(inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel) {
+function runAnalysisInWorker(inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel, includeDetailTabs = true, transcriptMap = {}) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(path.join(__dirname, 'analysisWorker.js'), {
-      workerData: { inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel },
+      workerData: { inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel, includeDetailTabs, transcriptMap },
       // Allow up to 6GB heap for large dataset analysis
       resourceLimits: { maxOldGenerationSizeMb: 6144 }
     });
@@ -265,6 +1090,22 @@ function sendProgress(jobId, update) {
 }
 
 /**
+ * Send a persistent notification (action toast) to the connected SSE client.
+ * The renderer will display this as a non-dismissing toast with an action button.
+ */
+function sendNotify(jobId, message, actionLabel, url) {
+  const job = jobs.get(jobId);
+  if (!job) return;
+  if (job.stream && !job.stream.destroyed) {
+    try {
+      job.stream.write(`data: ${JSON.stringify({ type: 'notify', jobId, message, actionLabel, url })}\n\n`);
+    } catch (e) {
+      job.stream = null;
+    }
+  }
+}
+
+/**
  * Send log message to connected SSE client
  */
 function sendLog(jobId, message, isError = false) {
@@ -345,6 +1186,7 @@ async function initDatabase() {
         voapps_timestamp VARCHAR,
         campaign_url VARCHAR,
         target_date VARCHAR,
+        voapps_voice_append VARCHAR,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -356,6 +1198,30 @@ async function initDatabase() {
     } catch (e) {
       // Ignore if already exists or not supported
     }
+    // Migration: add voapps_voice_append column if it doesn't exist (for existing DBs)
+    try {
+      await runQuery(`ALTER TABLE campaign_results ADD COLUMN IF NOT EXISTS voapps_voice_append VARCHAR`);
+    } catch (e) {
+      // Ignore if already exists or not supported
+    }
+
+    // Message transcription cache (AI Message Analysis)
+    await runQuery(`
+      CREATE TABLE IF NOT EXISTS message_transcriptions (
+        message_id      VARCHAR NOT NULL,
+        account_id      VARCHAR NOT NULL,
+        audio_url       VARCHAR,
+        transcript      VARCHAR,
+        intent          VARCHAR,
+        intent_summary  VARCHAR,
+        mentioned_phone VARCHAR,
+        mentions_url    BOOLEAN DEFAULT false,
+        stt_model       VARCHAR,
+        intent_model    VARCHAR,
+        transcribed_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (message_id, account_id)
+      )
+    `);
 
     // Create indexes for faster queries
     await runQuery(`CREATE INDEX IF NOT EXISTS idx_number ON campaign_results(number)`);
@@ -363,7 +1229,7 @@ async function initDatabase() {
     await runQuery(`CREATE INDEX IF NOT EXISTS idx_campaign ON campaign_results(campaign_id)`);
     await runQuery(`CREATE INDEX IF NOT EXISTS idx_target_date ON campaign_results(target_date)`);
     await runQuery(`CREATE INDEX IF NOT EXISTS idx_timestamp ON campaign_results(voapps_timestamp)`);
-    
+
     dbReady = true;
     console.log(`[DuckDB] Database initialized at ${DB_PATH}`);
   } catch (err) {
@@ -652,8 +1518,9 @@ async function insertRows(rows, logger = null) {
             INSERT INTO campaign_results (
               row_id, number, account_id, account_name, campaign_id, campaign_name,
               caller_number, caller_number_name, message_id, message_name, message_description,
-              voapps_result, voapps_code, voapps_timestamp, campaign_url, target_date
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              voapps_result, voapps_code, voapps_timestamp, campaign_url, target_date,
+              voapps_voice_append
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `, [
             rowId,
             row.number || '',
@@ -670,7 +1537,8 @@ async function insertRows(rows, logger = null) {
             row.voapps_code || '',
             row.voapps_timestamp || '',
             row.campaign_url || '',
-            row.target_date || ''
+            row.target_date || '',
+            row.voapps_voice_append || ''
           ]);
           inserted++;
         }
@@ -1085,6 +1953,36 @@ function setTimezone(timezone) {
   return saveSettings(settings);
 }
 
+function getOpenaiKey() {
+  const settings = loadSettings();
+  return settings.openaiApiKey || '';
+}
+
+function setOpenaiKey(key) {
+  const settings = loadSettings();
+  settings.openaiApiKey = key;
+  return saveSettings(settings);
+}
+
+function getAiSettings() {
+  const settings = loadSettings();
+  return {
+    enabled: settings.enableAiAnalysis || false,
+    transcriptionMode: settings.aiTranscriptionMode || 'local',
+    intentMode: settings.aiIntentMode || 'local',
+    openaiApiKey: settings.openaiApiKey || ''
+  };
+}
+
+function setAiSettings(updates) {
+  const settings = loadSettings();
+  if (updates.enabled !== undefined) settings.enableAiAnalysis = updates.enabled;
+  if (updates.transcriptionMode !== undefined) settings.aiTranscriptionMode = updates.transcriptionMode;
+  if (updates.intentMode !== undefined) settings.aiIntentMode = updates.intentMode;
+  if (updates.openaiApiKey !== undefined) settings.openaiApiKey = updates.openaiApiKey;
+  return saveSettings(settings);
+}
+
 function createOutputFolders() {
   const base = getOutputFolder();
   const logs = path.join(base, "Logs");
@@ -1103,20 +2001,31 @@ function createOutputFolders() {
 
 function createLogger(logPath, errorPath, verbosity = "normal", jobId = null) {
   const logStream = fs.createWriteStream(logPath, { flags: "a" });
-  const errorStream = errorPath ? fs.createWriteStream(errorPath, { flags: "a" }) : null;
+  // Lazily create the error stream — only open the file on the first actual error write.
+  // This prevents empty error files from being created when no errors occur.
+  let errorStream = null;
+  function getErrorStream() {
+    if (!errorStream && errorPath) {
+      errorStream = fs.createWriteStream(errorPath, { flags: "a" });
+    }
+    return errorStream;
+  }
 
   function log(message, isError = false) {
     if (verbosity === "none") return;
-    
+
     const timestamp = getLogTimestamp();
     const line = `${timestamp} ${message}\n`;
 
     // Safety check: only write if streams are still writable
-    if (isError && errorStream && !errorStream.writableEnded) {
-      try {
-        errorStream.write(line);
-      } catch (e) {
-        // Stream closed, ignore
+    if (isError) {
+      const es = getErrorStream();
+      if (es && !es.writableEnded) {
+        try {
+          es.write(line);
+        } catch (e) {
+          // Stream closed, ignore
+        }
       }
     }
     if (logStream && !logStream.writableEnded) {
@@ -1127,7 +2036,7 @@ function createLogger(logPath, errorPath, verbosity = "normal", jobId = null) {
       }
     }
 
-    // NEW: Send to SSE stream if jobId provided
+    // Send to SSE stream if jobId provided
     if (jobId) {
       sendLog(jobId, message, isError);
     }
@@ -1309,9 +2218,7 @@ async function callVoAppsApi(endpoint, apiKey, logger = null, verbosity = "norma
     logger(`      curl -H "Authorization: Bearer ${maskedKey}" -H "Content-Type: application/json" -H "Accept: application/json" "${url}"`);
   }
 
-  // Debug logging for troubleshooting
   console.log(`[API Request] ${url}`);
-  console.log(`[API Request] Auth header length: ${apiKey.length} chars`);
 
   try {
     // Use cross-platform fetch for Windows compatibility
@@ -1508,7 +2415,7 @@ async function fetchAllCampaigns(apiKey, accountIds, startDate, endDate, logger 
   const bufferedStart = dateToYMD(start);
 
   const end = new Date(endDate);
-  end.setDate(end.getDate() + 1);
+  end.setDate(end.getDate() + 2);
   const bufferedEnd = dateToYMD(end);
 
   if (logger) {
@@ -1584,12 +2491,29 @@ async function fetchAllCampaigns(apiKey, accountIds, startDate, endDate, logger 
     const filtered = accountCampaigns.filter(c => {
       const targetDate = c?.target_date;
       if (!targetDate) return false;
-      
+
       try {
-        const target = new Date(targetDate);
-        const startObj = new Date(startDate);
-        const endObj = new Date(endDate);
-        return target >= startObj && target <= endObj;
+        // For plain YYYY-MM-DD strings, compare directly (avoids UTC midnight timezone shift).
+        // For full datetime strings (e.g. '2026-03-02T08:30:00-07:00'), check whether
+        // the UTC time falls on the selected date in ANY US timezone (UTC-4 EDT through UTC-10 HST).
+        // This ensures campaigns targeted on the last date of the range are not excluded
+        // simply because their local delivery time maps to a later UTC date.
+        if (/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+          return targetDate >= startDate && targetDate <= endDate;
+        }
+
+        const targetUTC = new Date(targetDate);
+        if (isNaN(targetUTC.getTime())) return false;
+
+        // US timezone offsets (hours behind UTC): EDT=4, EST=5, CDT=5, CST=6,
+        // MDT=6, MST=7, PDT=7, PST=8, AKDT=8, AKST=9, HST=10
+        const usOffsets = [4, 5, 6, 7, 8, 9, 10];
+        for (const offsetHours of usOffsets) {
+          const localDateStr = new Date(targetUTC.getTime() - offsetHours * 3600 * 1000)
+            .toISOString().slice(0, 10);
+          if (localDateStr >= startDate && localDateStr <= endDate) return true;
+        }
+        return false;
       } catch (e) {
         return false;
       }
@@ -1738,15 +2662,21 @@ async function runNumberSearch(config) {
     const messageInfo = {};
     if (include_message_meta) {
       // Fetch message metadata for all accounts
+      let _loggedMsgFields = false;
       for (const accountId of account_ids) {
         try {
           const data = await retryableApiCall(`/accounts/${accountId}/messages?filter=all`, api_key, log, "normal");
           if (Array.isArray(data.messages)) {
+            if (!_loggedMsgFields && data.messages.length > 0) {
+              log(`[AI] Messages API fields: ${Object.keys(data.messages[0]).join(', ')}`);
+              _loggedMsgFields = true;
+            }
             for (const msg of data.messages) {
               const key = `${accountId}:${msg.id}`;
               messageInfo[key] = {
                 name: msg.name || '',
-                description: msg.description || ''
+                description: msg.description || '',
+                file_url: msg.file_url || msg.audio_url || msg.recording_url || msg.url || ''
               };
             }
           }
@@ -1897,8 +2827,11 @@ async function runNumberSearch(config) {
       lastArtifacts.csvPath = csvPath;
     }
 
+    // Check for invalid result codes (408/409/410)
+    const invalidCodeAlerts = checkInvalidResultCodes(allMatches, log);
+
     log(`\n✅ Search complete!`);
-    
+
     // Send completion signal
     if (job_id) {
       sendProgress(job_id, {
@@ -1907,7 +2840,7 @@ async function runNumberSearch(config) {
         message: `Search complete! Found ${allMatches.length.toLocaleString()} matches`
       });
     }
-    
+
     close();
 
     return {
@@ -1915,6 +2848,7 @@ async function runNumberSearch(config) {
       allCsvFiles,
       logPath,
       matches: allMatches.length,
+      invalidCodeAlerts,
       wasSplit,
       fileCount
     };
@@ -2206,9 +3140,15 @@ async function runCombineCampaigns(config) {
     generate_trend_analysis = false,
     min_consec_unsuccessful = 4,
     min_run_span_days = 30,
-    output_mode = "csv", // NEW: "csv", "database", or "both"
+    include_detail_tabs = false, // TN Health, Variability Analysis, Number Summary tabs
+    output_mode = "csv", // "csv", "database", or "both"
     job_id = null,
-    client_prefix = "" // Optional prefix for output files
+    client_prefix = "", // Optional prefix for output files
+    // AI settings come from the frontend request payload (UI/localStorage).
+    // getAiSettings() reads from disk and never sees the UI toggle state.
+    ai_enabled = false,
+    ai_transcription_mode = 'local',
+    ai_intent_mode = 'local'
   } = config;
 
   // Build filename prefix
@@ -2274,15 +3214,21 @@ async function runCombineCampaigns(config) {
 
     const messageInfo = {};
     if (include_message_meta) {
+      let _loggedMsgFields = false;
       for (const accountId of account_ids) {
         try {
           const data = await retryableApiCall(`/accounts/${accountId}/messages?filter=all`, api_key, log, "normal");
           if (Array.isArray(data.messages)) {
+            if (!_loggedMsgFields && data.messages.length > 0) {
+              log(`[AI] Messages API fields: ${Object.keys(data.messages[0]).join(', ')}`);
+              _loggedMsgFields = true;
+            }
             for (const msg of data.messages) {
               const key = `${accountId}:${msg.id}`;
               messageInfo[key] = {
                 name: msg.name || '',
-                description: msg.description || ''
+                description: msg.description || '',
+                file_url: msg.file_url || msg.audio_url || msg.recording_url || msg.url || ''
               };
             }
           }
@@ -2463,10 +3409,19 @@ async function runCombineCampaigns(config) {
       tempAnalysisCsvFiles = csvResult.files;
     }
 
+    // Check for invalid result codes (408/409/410) before clearing allRows
+    const invalidCodeAlerts = checkInvalidResultCodes(allRows, log);
+
     // Capture row count then free the in-memory rows array before spawning the worker.
     // This is critical for large datasets: the worker reads from the CSV files on disk,
     // so holding allRows in memory at the same time would double memory usage and OOM.
     const totalRows = allRows.length;
+    // Capture AI scoping data BEFORE clearing allRows — the AI block needs to know which
+    // messages/accounts were actually represented in this dataset, but runs after the clear.
+    const _aiUsedMessageKeys = new Set(
+      allRows.filter(r => r.account_id && r.message_id).map(r => `${r.account_id}:${r.message_id}`)
+    );
+    const _aiActiveAccountIds = new Set(allRows.map(r => r.account_id).filter(Boolean));
     allRows.length = 0;
 
     // Generate trend analysis if requested
@@ -2482,6 +3437,95 @@ async function runCombineCampaigns(config) {
       const userTimezone = getTimezone();
       const userTimezoneLabel = getTimezoneLabel(userTimezone);
 
+      // AI Message Analysis (optional, opt-in)
+      // Re-fetch message list right before transcription regardless of include_message_meta:
+      //   1. The initial messageInfo fetch is gated by include_message_meta (CSV column selection)
+      //      but AI needs file_urls even when those columns aren't selected.
+      //   2. Pre-signed S3 URLs expire after 1 hour — fetching fresh here avoids stale URLs
+      //      on long-running combine jobs.
+      // Build aiSettings from the request payload values (enable/mode come from the UI
+      // via localStorage, so they're sent in the request body).  The OpenAI API key is
+      // stored server-side via /api/settings/openai-key, so we still read that from disk.
+      const aiSettings = {
+        enabled: ai_enabled,
+        transcriptionMode: ai_transcription_mode,
+        intentMode: ai_intent_mode,
+        openaiApiKey: getAiSettings().openaiApiKey,
+        notify: (message, actionLabel, url) => sendNotify(jobId, message, actionLabel, url)
+      };
+      if (ai_enabled) {
+        log(`[AI] Message Analysis enabled (stt: ${ai_transcription_mode}, intent: ${ai_intent_mode})`);
+      }
+      let transcriptMap = {};
+      if (aiSettings.enabled) {
+        try {
+          log('[AI] Fetching fresh message audio URLs...');
+          const aiMessageInfo = { ...messageInfo }; // keep any name/description already collected
+          for (const accountId of account_ids) {
+            try {
+              const freshData = await retryableApiCall(`/accounts/${accountId}/messages?filter=all`, api_key, log, "normal");
+              if (Array.isArray(freshData.messages)) {
+                for (const msg of freshData.messages) {
+                  const key = `${accountId}:${msg.id}`;
+                  const existing = aiMessageInfo[key] || {};
+                  aiMessageInfo[key] = {
+                    name: existing.name || msg.name || '',
+                    description: existing.description || msg.description || '',
+                    file_url: msg.file_url || msg.audio_url || msg.recording_url || msg.url || ''
+                  };
+                }
+              }
+            } catch (urlErr) {
+              log(`[AI] ⚠️  Could not fetch messages for account ${accountId}: ${urlErr.message}`);
+            }
+          }
+          // Only transcribe messages that were actually used in this dataset, not every
+          // message available for these accounts. This avoids wasting time and API/compute
+          // resources on messages that didn't appear in any of the campaign rows being analyzed.
+          //
+          // Two-tier scoping strategy:
+          //   Tier 1 (precise) — if campaign rows have reliable message_id values, filter by
+          //     matching "accountId:messageId" keys. This is the ideal path.
+          //   Tier 2 (fallback) — campaign.message_id is sometimes null/0 (API returns no
+          //     message_id for some campaign types), so all rows end up with message_id=''.
+          //     In that case, fall back to account-level scoping: include all messages that
+          //     belong to accounts which have at least one row in this dataset. Messages from
+          //     accounts with zero dataset rows are still excluded.
+          //
+          // NOTE: allRows was cleared (allRows.length = 0) earlier to free memory before the
+          // worker spawns. The sets _aiUsedMessageKeys and _aiActiveAccountIds were captured
+          // from allRows just before that clear, so they still contain the right data.
+          const filteredAiMessageInfo = {};
+          const totalCount = Object.keys(aiMessageInfo).length;
+          if (_aiUsedMessageKeys.size > 0) {
+            // Tier 1: precise message-level filter
+            for (const [key, info] of Object.entries(aiMessageInfo)) {
+              if (_aiUsedMessageKeys.has(key)) filteredAiMessageInfo[key] = info;
+            }
+          } else {
+            // Tier 2: fallback — message IDs not available in row data; scope by active accounts
+            for (const [key, info] of Object.entries(aiMessageInfo)) {
+              const accountId = key.split(':')[0];
+              if (_aiActiveAccountIds.has(accountId)) filteredAiMessageInfo[key] = info;
+            }
+            if (_aiActiveAccountIds.size > 0) {
+              log(`[AI] Note: campaign rows have no message IDs — scoping by account (${_aiActiveAccountIds.size} active account(s))`);
+            }
+          }
+          const usedCount = Object.keys(filteredAiMessageInfo).length;
+          if (totalCount > usedCount) {
+            log(`[AI] Scoped to ${usedCount} message(s) used in this dataset (${totalCount - usedCount} available but unused — skipped)`);
+          }
+          if (usedCount > 0) {
+            transcriptMap = await transcribeAndAnalyzeMessages(filteredAiMessageInfo, aiSettings, log);
+          } else {
+            log('[AI] No messages from this dataset have audio URLs — skipping transcription');
+          }
+        } catch (aiErr) {
+          log(`[AI] ⚠️  AI analysis failed, continuing without transcripts: ${aiErr.message}`);
+        }
+      }
+
       await runAnalysisInWorker(
         allCsvFiles,
         analysisPath,
@@ -2491,7 +3535,9 @@ async function runCombineCampaigns(config) {
         callerNumberNames,
         accountTimezones,
         userTimezone,
-        userTimezoneLabel
+        userTimezoneLabel,
+        include_detail_tabs,
+        transcriptMap
       );
 
       lastArtifacts.analysisPath = analysisPath;
@@ -2711,6 +3757,9 @@ async function runBulkCampaignExport(config) {
           ? ` (enriched: caller=${!hasCallerNumberCol ? campaignCallerNumber : 'from CSV'}, msg=${!hasMessageIdCol ? campaignMessageId : 'from CSV'})`
           : '';
         log(`   ✅ ${rows.length.toLocaleString()} rows → ${year}/${month}/${filename}${enrichmentNote}`);
+
+        // Check for invalid result codes (408/409/410) in this campaign's rows
+        checkInvalidResultCodes(enrichedRows, log);
       } catch (err) {
         stats.failed++;
         log(`   ❌ Error: ${err.message}`, true);
@@ -2934,6 +3983,137 @@ function createHttpServer() {
       }
     }
 
+    // Settings - Get OpenAI API key
+    if (req.method === "GET" && pathname === "/api/settings/openai-key") {
+      const key = getOpenaiKey();
+      return sendJson(res, 200, { ok: true, key });
+    }
+
+    // Settings - Set OpenAI API key
+    if (req.method === "POST" && pathname === "/api/settings/openai-key") {
+      try {
+        const body = await readJson(req);
+        const { key } = body;
+        if (!key || typeof key !== 'string') return sendJson(res, 400, { ok: false, error: 'key required' });
+        const success = setOpenaiKey(key.trim());
+        return sendJson(res, success ? 200 : 500, { ok: success });
+      } catch (e) {
+        return sendJson(res, 500, { ok: false, error: e.message });
+      }
+    }
+
+    // AI - Download local model
+    if (req.method === "POST" && pathname === "/api/ai/download-model") {
+      try {
+        const body = await readJson(req);
+        const { type, job_id } = body; // 'stt' or 'intent'
+        if (type !== 'stt' && type !== 'intent') {
+          return sendJson(res, 400, { ok: false, error: 'type must be stt or intent' });
+        }
+
+        // Register a job so the SSE stream endpoint can attach and replay logs
+        const jobId = job_id || `dl_${Date.now()}`;
+        jobs.set(jobId, { status: 'running', progress: 0, logs: [], stream: null, startTime: Date.now() });
+
+        // Log function pipes through the SSE stream
+        const log = (msg, isError = false) => {
+          isError ? console.error(msg) : console.log(msg);
+          sendLog(jobId, msg, isError);
+        };
+
+        // Fire-and-forget — logs stream live via SSE; on finish signal complete/error
+        downloadAiModelBackground(type, log).then(() => {
+          sendProgress(jobId, { status: 'complete', progress: 100 });
+        }).catch(e => {
+          sendLog(jobId, `[AI] Unexpected error: ${e.message}`, true);
+          sendProgress(jobId, { status: 'error', progress: 0 });
+        });
+
+        return sendJson(res, 200, { ok: true, job_id: jobId, message: `${type === 'stt' ? 'Whisper' : 'Intent'} model download started.` });
+      } catch (e) {
+        return sendJson(res, 500, { ok: false, error: e.message });
+      }
+    }
+
+    // AI - Model download status
+    if (req.method === "GET" && pathname === "/api/ai/model-status") {
+      const status = getAiModelStatus();
+      return sendJson(res, 200, { ok: true, ...status });
+    }
+
+    // AI - Transcript cache stats
+    if (req.method === "GET" && pathname === "/api/ai/cache-stats") {
+      try {
+        const rows = await runQuery('SELECT COUNT(*) as count FROM message_transcriptions');
+        return sendJson(res, 200, { ok: true, count: Number(rows[0]?.count) || 0 });
+      } catch (e) {
+        return sendJson(res, 200, { ok: true, count: 0 }); // DB not ready — not an error
+      }
+    }
+
+    // AI - Clear transcript cache
+    if (req.method === "POST" && pathname === "/api/ai/clear-cache") {
+      try {
+        await runQuery('DELETE FROM message_transcriptions');
+        console.log('[AI] Transcript cache cleared');
+        return sendJson(res, 200, { ok: true, message: 'Transcript cache cleared' });
+      } catch (e) {
+        // If DB isn't ready there's nothing to clear — treat as success
+        if (!db || e.message === 'Database not initialized') {
+          return sendJson(res, 200, { ok: true, message: 'Cache is empty (database not initialized)' });
+        }
+        return sendJson(res, 500, { ok: false, error: e.message });
+      }
+    }
+
+    // AI - List all cached transcriptions
+    if (req.method === "GET" && pathname === "/api/ai/cache-list") {
+      try {
+        const rows = await runQuery(
+          `SELECT message_id, account_id, audio_url, transcript, intent, intent_summary,
+                  mentioned_phone, mentions_url, stt_model, intent_model, transcribed_at
+           FROM message_transcriptions ORDER BY transcribed_at DESC`
+        );
+        return sendJson(res, 200, { ok: true, entries: rows || [] });
+      } catch (e) {
+        return sendJson(res, 200, { ok: true, entries: [] });
+      }
+    }
+
+    // AI - Update a cached transcription entry
+    if (req.method === "POST" && pathname === "/api/ai/cache-update") {
+      try {
+        const body = await readJson(req);
+        const { message_id, account_id, transcript, intent, intent_summary } = body;
+        if (!message_id || !account_id) return sendJson(res, 400, { ok: false, error: 'message_id and account_id required' });
+        await runQuery(
+          `UPDATE message_transcriptions SET transcript = ?, intent = ?, intent_summary = ? WHERE message_id = ? AND account_id = ?`,
+          [transcript ?? '', intent ?? '', intent_summary ?? '', message_id, account_id]
+        );
+        console.log(`[AI] Cache entry updated: ${message_id} / ${account_id}`);
+        return sendJson(res, 200, { ok: true });
+      } catch (e) {
+        return sendJson(res, 500, { ok: false, error: e.message });
+      }
+    }
+
+    // AI - Delete a single cached transcription entry
+    if (req.method === "POST" && pathname === "/api/ai/cache-delete-entry") {
+      try {
+        const body = await readJson(req);
+        const { message_id, account_id } = body;
+        if (!message_id || !account_id) return sendJson(res, 400, { ok: false, error: 'message_id and account_id required' });
+        await runQuery(
+          `DELETE FROM message_transcriptions WHERE message_id = ? AND account_id = ?`,
+          [message_id, account_id]
+        );
+        console.log(`[AI] Cache entry deleted: ${message_id} / ${account_id}`);
+        return sendJson(res, 200, { ok: true });
+      } catch (e) {
+        return sendJson(res, 500, { ok: false, error: e.message });
+      }
+    }
+
     // Accounts endpoint
     if (req.method === "POST" && pathname === "/api/accounts") {
       try {
@@ -2984,7 +4164,21 @@ function createHttpServer() {
       // Send initial connection event
       res.write(`data: ${JSON.stringify({ type: 'connected', jobId })}\n\n`);
 
-      // Send current job state
+      // Send accumulated logs FIRST — client must see all log lines before receiving
+      // a 'complete' or 'error' status that would cause it to close the stream
+      if (job.logs && job.logs.length > 0) {
+        for (const logEntry of job.logs) {
+          const data = {
+            type: 'log',
+            jobId,
+            message: logEntry.message,
+            isError: logEntry.isError
+          };
+          res.write(`data: ${JSON.stringify(data)}\n\n`);
+        }
+      }
+
+      // Send current job state AFTER logs so the client closes only after it has seen everything
       if (job.progress > 0 || job.status !== 'starting') {
         const data = {
           type: 'progress',
@@ -2996,19 +4190,6 @@ function createHttpServer() {
           message: job.message
         };
         res.write(`data: ${JSON.stringify(data)}\n\n`);
-      }
-
-      // Send any accumulated logs
-      if (job.logs && job.logs.length > 0) {
-        for (const logEntry of job.logs) {
-          const data = {
-            type: 'log',
-            jobId,
-            message: logEntry.message,
-            isError: logEntry.isError
-          };
-          res.write(`data: ${JSON.stringify(data)}\n\n`);
-        }
       }
 
       // Store response object in job for live updates
@@ -3182,9 +4363,16 @@ function createHttpServer() {
           generate_trend_analysis: !!body.generate_trend_analysis,
           min_consec_unsuccessful: body.min_consec_unsuccessful,
           min_run_span_days: body.min_run_span_days,
+          include_detail_tabs: !!body.include_detail_tabs,
           output_mode: body.output_mode || "csv",
           job_id: body.job_id || null,
-          client_prefix: body.client_prefix || ""
+          client_prefix: body.client_prefix || "",
+          // AI settings come from the frontend payload (UI / localStorage).
+          // The enable toggle and mode radios are only stored in localStorage,
+          // so getAiSettings() (disk-based) would always return enabled:false.
+          ai_enabled: body.ai_enabled === true,
+          ai_transcription_mode: body.ai_transcription_mode || 'local',
+          ai_intent_mode: body.ai_intent_mode || 'local'
         });
 
         const artifacts = { 
@@ -3313,7 +4501,7 @@ function createHttpServer() {
           const tempCsvPath = path.join(outDir, `UploadedCSV_${suffix}.csv`);
           const csvResult = await writeCsv(tempCsvPath, allRows, headers, null, dynamicRowLimit);
 
-          await runAnalysisInWorker(csvResult.files, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel);
+          await runAnalysisInWorker(csvResult.files, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel, false);
 
           lastArtifacts.analysisPath = analysisPath;
 
@@ -3325,7 +4513,7 @@ function createHttpServer() {
           });
         }
 
-        await runAnalysisInWorker(allRows, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel);
+        await runAnalysisInWorker(allRows, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel, false);
 
         lastArtifacts.analysisPath = analysisPath;
 
@@ -3470,7 +4658,8 @@ function createHttpServer() {
           {},  // callerMap
           {},  // accountTimezones
           userTz,
-          userTzLabel
+          userTzLabel,
+          include_detail_tabs
         );
 
         // Clean up temp CSV files

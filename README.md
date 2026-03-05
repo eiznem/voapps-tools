@@ -2,7 +2,7 @@
 
 Desktop application for searching and analyzing VoApps DirectDrop Voicemail campaign data.
 
-![Version](https://img.shields.io/badge/version-3.4.1-blue)
+![Version](https://img.shields.io/badge/version-3.4.2-blue)
 ![Platform](https://img.shields.io/badge/platform-macOS%20|%20Windows-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -14,7 +14,7 @@ Desktop application for searching and analyzing VoApps DirectDrop Voicemail camp
 - **📁 Bulk Campaign Export** - Export campaigns individually, organized by year and month
 - **📊 Executive Summary** - Generate aggregate deliverability reports with per-campaign statistics
 - **📈 Delivery Intelligence Report** - Generate comprehensive Excel workbook analyzing phone numbers, caller numbers, and messages:
-  - TN Health Classification (Healthy/Degrading/Toxic)
+  - TN Health Classification (Healthy/Delivery Unlikely)
   - Success Probability decay curves
   - Variability Score analysis
   - Day-of-week usage recommendations
@@ -45,7 +45,7 @@ Desktop application for searching and analyzing VoApps DirectDrop Voicemail camp
 ### Main Interface
 Clean, modern two-panel layout with resizable sections and intuitive controls.
 
-![Main Interface](screenshots/main-interface.png)
+![Main Interface](<screenshots/VoApps Tools - Combine Campaigns Full Screen.png>)
 
 ---
 
@@ -53,31 +53,22 @@ Clean, modern two-panel layout with resizable sections and intuitive controls.
 
 <table>
 <tr>
-<td width="33%">
+<td width="50%">
 
 **Phone Number Search**
 
 Search all campaigns for specific phone numbers with batch support up to 1,000 numbers.
 
-![Phone Search](screenshots/phone-search.png)
+![Phone Search](<screenshots/VoApps Tools - Phone Number Search.png>)
 
 </td>
-<td width="33%">
+<td width="50%">
 
 **Combine Campaigns**
 
 Merge all campaigns into a single CSV with optional Delivery Intelligence Report.
 
-![Combine](screenshots/combine.png)
-
-</td>
-<td width="33%">
-
-**Bulk Campaign Export**
-
-Download each campaign separately, organized by year and month.
-
-![Bulk Export](screenshots/bulk-export.png)
+![Combine](<screenshots/VoApps Tools - Combine Campaigns Full Screen with Progress.png>)
 
 </td>
 </tr>
@@ -89,32 +80,18 @@ Download each campaign separately, organized by year and month.
 
 Generate comprehensive Excel analysis of phone numbers, caller numbers, and messages with success rates, cadence patterns, and consecutive unsuccessful detection.
 
-![Delivery Intelligence](screenshots/trend-analyzer.png)
-
----
-
-### Real-Time Progress & Logging
-
-Live progress tracking with detailed API call logging and campaign-by-campaign status updates.
-
-![Running Log](screenshots/running-log.png)
-
----
-
-### Completion Notifications
-
-Desktop notifications and sound alerts when jobs complete, with direct access to results.
+![Delivery Intelligence](screenshots/number%20analysis%20screenshot1.png)
 
 <table>
 <tr>
 <td width="50%">
 
-![Notification](screenshots/notification.png)
+![Analysis 2](screenshots/number%20analysis%20screenshot2.png)
 
 </td>
 <td width="50%">
 
-![Completed](screenshots/completed-job.png)
+![Analysis 3](screenshots/number%20analysis%20screenshot3.png)
 
 </td>
 </tr>
@@ -122,20 +99,39 @@ Desktop notifications and sound alerts when jobs complete, with direct access to
 
 ---
 
-### Auto-Update Checker
+### Report Settings & Database
 
-Automatic update checking every 24 hours with one-click downloads from GitHub releases.
+<table>
+<tr>
+<td width="50%">
 
-![Update Checker](screenshots/update-checker.png)
+**Report Output Settings**
+
+Configure timezone, output folder, headers, and optional detail tabs.
+
+![Report Headers](<screenshots/VoApps Tools - Report Headers.png>)
+
+</td>
+<td width="50%">
+
+**Database Management**
+
+DuckDB integration for fast re-analysis without re-downloading.
+
+![Database](<screenshots/VoApps Tools - Database.png>)
+
+</td>
+</tr>
+</table>
 
 ## 📥 Download & Installation
 
 ### Download
 
-**Latest Version:** [v3.4.1](https://github.com/eiznem/voapps-tools/releases/latest)
+**Latest Version:** [v3.4.2](https://github.com/eiznem/voapps-tools/releases/latest)
 
-**macOS:** `VoApps Tools-3.4.1-arm64.dmg`
-**Windows:** `VoApps Tools Setup 3.4.1.exe`
+**macOS:** `VoApps Tools-3.4.2-arm64.dmg`
+**Windows:** `VoApps Tools Setup 3.4.2.exe`
 
 ### System Requirements
 
@@ -158,7 +154,7 @@ Automatic update checking every 24 hours with one-click downloads from GitHub re
 Click the download link above or visit the [Releases page](https://github.com/eiznem/voapps-tools/releases)
 
 #### 2. Open the DMG File
-Double-click `VoApps Tools-3.4.1-arm64.dmg` in your Downloads folder
+Double-click `VoApps Tools-3.4.2-arm64.dmg` in your Downloads folder
 
 #### 3. Drag to Applications
 Drag the VoApps Tools icon to your Applications folder
@@ -275,14 +271,14 @@ The Delivery Intelligence Report analyzes **phone numbers**, **caller numbers**,
 ### Worksheets
 
 1. **Executive Summary** - Key metrics, TN Health distribution, decay curve, and actionable recommendations with column C explanations
-2. **TN Health** - Toxic and Degrading numbers with success rate, consecutive failures, and suppression actions (capped at 100K rows)
+2. **TN Health** - Delivery Unlikely numbers with success rate, consecutive failures, and suppression actions (capped at 100K rows)
 3. **Variability Analysis** - Numbers with variability score < 60 sorted by score (capped at 100K rows)
 4. **Number Summary** - All flagged numbers combining TN Health and variability issues (capped at 100K rows)
-5. **Consecutive Unsuccessful** - Numbers flagged for list hygiene based on configurable run thresholds
+5. **Suppression Candidates** - Delivery Unlikely numbers with repeated failure patterns — suppression recommended
 6. **Retry Decay Curve** - Success probability by attempt number with sample size
 7. **Day Insights** - Day-of-week recommendations per account and message
 8. **Global Insights (Msg & Caller)** - Message and caller performance with success rates
-9. **Global Insights (Time)** - Hourly and daily success patterns
+9. **Global Insights (Days)** - Day-of-week success patterns per account and message
 10. **Glossary** - Explanation of all metrics, result codes, and terminology
 
 ### Using Delivery Intelligence
@@ -447,8 +443,8 @@ npm start
 # Build DMG for distribution
 npm run build
 
-# Output: dist/VoApps Tools-3.4.1-arm64.dmg (macOS)
-# Output: dist/VoApps Tools Setup 3.4.1.exe (Windows)
+# Output: dist/VoApps Tools-3.4.2-arm64.dmg (macOS)
+# Output: dist/VoApps Tools Setup 3.4.2.exe (Windows)
 ```
 
 ### Project Structure
@@ -506,7 +502,7 @@ VoApps™ and DirectDrop™ are trademarks of their respective owners. This soft
 
 ---
 
-**Version:** 3.4.1
+**Version:** 3.4.2
 **Last Updated:** February 27, 2026
 
 ---
