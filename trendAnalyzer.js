@@ -2225,8 +2225,8 @@ async function generateTrendAnalysis(
       // Caller # Match and Contains URL only mean something when a transcript exists
       !transcript ? '' : (!mentionedPhone ? '—' : '⚠️ Check caller ID'),
       !transcript ? '' : (msg.mentions_url ? 'Yes' : 'No'),
-      // Voice Append comes from the campaign CSV (not AI), so "No" is a real value
-      msg.voice_append ? 'Yes' : 'No'
+      // Voice Append: only show 'Yes' when confirmed — blank when not detected (data may not be available)
+      msg.voice_append ? 'Yes' : ''
     ];
     msgSheet.getCell(`H${msgRow}`).numFmt = '0.0%';
 

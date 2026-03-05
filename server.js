@@ -111,6 +111,17 @@ function installXenovaTransformers(log) {
     const { spawn } = require('child_process');
     const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
     const appDir = __dirname;
+    // Quick check: if npm.cmd can't be found at all, give a helpful message
+    if (process.platform === 'win32') {
+      const { execSync } = require('child_process');
+      let npmFound = false;
+      try { execSync('where.exe npm.cmd', { timeout: 2000 }); npmFound = true; } catch (e) { /* not in PATH */ }
+      if (!npmFound) {
+        return reject(new Error(
+          'Node.js/npm not found. AI features require Node.js — please install it from https://nodejs.org and restart the app.'
+        ));
+      }
+    }
 
     log('[AI] Installing @xenova/transformers (this may take a minute)…');
     const child = spawn(npmBin, ['install', '@xenova/transformers', '--no-audit', '--no-fund'], {

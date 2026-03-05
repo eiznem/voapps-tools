@@ -2,7 +2,7 @@
 // VoApps Tools Version Management
 //
 // Notes:
-// - Current version reflects the newest release (4.0.0).
+// - Current version reflects the newest release (4.0.1).
 // - Keeps feature flags + author from the original "DuckDB Edition" file.
 // - Changelog is unified so each version can include: changes/features, fixes, and breaking changes.
 
@@ -10,9 +10,9 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '4.0.0',
+  VERSION: '4.0.1',
   VERSION_NAME: 'AI Message Intelligence',
-  RELEASE_DATE: '2026-03-04',
+  RELEASE_DATE: '2026-03-05',
   AUTHOR: 'Brett Menzie',
 
   // -----------------------------
@@ -50,6 +50,18 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '4.0.1': {
+      date: '2026-03-05',
+      title: 'Windows AI Compatibility & Voice Append Fix',
+      changes: [],
+      features: [],
+      fixes: [
+        'Fixed Windows crash when loading AI models — onnxruntime DLLs were locked inside the ASAR archive; now unpacked so native binaries can load correctly',
+        'Fixed "Cannot find module sharp-win32-x64.node" crash on Windows — added Windows x64 native binary and stubbed sharp gracefully so text/audio AI models work even without image processing',
+        'Voice Append column now shows blank instead of "No" when no campaign transaction data was processed — "No" was misleading when Voice Append status was simply unknown'
+      ]
+    },
+
     '4.0.0': {
       date: '2026-03-04',
       title: 'AI Message Intelligence',
