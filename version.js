@@ -2,7 +2,7 @@
 // VoApps Tools Version Management
 //
 // Notes:
-// - Current version reflects the newest release (4.0.2).
+// - Current version reflects the newest release (4.0.3).
 // - Keeps feature flags + author from the original "DuckDB Edition" file.
 // - Changelog is unified so each version can include: changes/features, fixes, and breaking changes.
 
@@ -10,7 +10,7 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '4.0.2',
+  VERSION: '4.0.3',
   VERSION_NAME: 'AI Message Intelligence',
   RELEASE_DATE: '2026-03-06',
   AUTHOR: 'Brett Menzie',
@@ -50,6 +50,18 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '4.0.3': {
+      date: '2026-03-06',
+      title: 'Performance & AI Stability',
+      changes: [],
+      features: [],
+      fixes: [
+        'Database saves on Windows now use bulk INSERT with a single transaction — eliminates the per-row SELECT+INSERT loop (107 K+ queries for a 53 K row import → ~3 queries); typical import that took minutes now completes in seconds',
+        'Fixed "[AI] Unexpected error: Cannot read properties of undefined (reading \'output\')" on Windows — onnxruntime-node DLL search path is now injected at startup so Windows LoadLibraryW finds onnxruntime.dll correctly; tryBareImport no longer re-throws native init errors, giving a clear diagnostic message instead of a cryptic crash',
+        'Version number in the app UI (title bar, sidebar footer, Help modal) now reads from the server at startup via /api/ping — version can never be stale between releases'
+      ]
+    },
+
     '4.0.2': {
       date: '2026-03-06',
       title: 'DuckDB on Windows',

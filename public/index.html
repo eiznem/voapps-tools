@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>VoApps Tools v4.0.0</title>
+  <title>VoApps Tools v4.0.3</title>
   <style>
     :root {
       --success: #16a34a;
@@ -1820,7 +1820,7 @@
       </div>
 
       <div class="sidebar-footer">
-        <div class="sidebar-version">v4.0.0</div>
+        <div class="sidebar-version" id="appVersionDisplay">v4.0.3</div>
       </div>
     </nav>
 
@@ -2860,7 +2860,7 @@
   <div id="helpModal" class="info-modal" onclick="if(event.target === this) hideInfoModal('help')">
     <div class="info-modal-content" style="max-width: 700px; max-height: 85vh; overflow-y: auto;">
       <div class="info-modal-header">
-        <div class="info-modal-title">VoApps Tools v4.0.0 — Help</div>
+        <div class="info-modal-title" id="helpModalTitle">VoApps Tools v4.0.3 — Help</div>
         <button class="info-modal-close" onclick="hideInfoModal('help')">×</button>
       </div>
       <div class="info-modal-body" style="font-size: 12px;">
@@ -2922,7 +2922,7 @@
         </ul>
 
         <h4 style="border-top: 1px solid #e0e0e0; padding-top: 12px; margin-top: 16px;">📝 Release Notes</h4>
-        <p><strong>v4.0.0 - AI Message Intelligence</strong></p>
+        <p><strong>v4.0.3 - AI Message Intelligence</strong></p>
         <ul style="margin-left: 16px;">
           <li>AI Message Analysis — transcribe DDVM recordings via local Whisper or OpenAI, infer intent & summary, detect caller number match, URL mentions, and Voice Append</li>
           <li>New AI sidebar panel with independent transcription and intent engine selection (local free vs. OpenAI API)</li>
@@ -5348,7 +5348,23 @@
     // INIT
     // ============================================================================
     (async () => {
-      log('VoApps Tools v4.0.0');
+      // Fetch live version from server and update all version displays
+      try {
+        const pongData = await fetch('/api/ping').then(r => r.json()).catch(() => null);
+        if (pongData?.version) {
+          const vStr = `v${pongData.version}`;
+          document.title = `VoApps Tools ${vStr}`;
+          const verEl = $('appVersionDisplay');
+          if (verEl) verEl.textContent = vStr;
+          const helpTitleEl = $('helpModalTitle');
+          if (helpTitleEl) helpTitleEl.textContent = `VoApps Tools ${vStr} — Help`;
+          log(`VoApps Tools ${vStr}`);
+        } else {
+          log('VoApps Tools v4.0.3');
+        }
+      } catch (_) {
+        log('VoApps Tools v4.0.3');
+      }
 
       loadSettings();
       initLogFilter();
