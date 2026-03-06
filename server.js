@@ -1165,9 +1165,8 @@ async function initDatabase() {
 
   // Check if DuckDB is available
   if (!duckdb) {
-    const platform = process.platform === 'win32' ? 'Windows' : process.platform;
-    console.warn('[DuckDB] Cannot initialize - native module not loaded on', platform);
-    throw new Error(`Database features not available on ${platform}. This is normal - please use CSV output mode instead.`);
+    console.warn('[DuckDB] Cannot initialize - native module not loaded:', duckdbLoadError);
+    throw new Error(`Database features unavailable — DuckDB failed to load (${duckdbLoadError}). Please use CSV output mode instead.`);
   }
 
   try {
@@ -2606,11 +2605,6 @@ async function runNumberSearch(config) {
     log(`Accounts: ${account_ids.join(", ")}`);
     log(`Date Range: ${start_date} to ${end_date}`);
 
-    // Fail fast on Windows if database mode is selected
-    if ((output_mode === "database" || output_mode === "both") && process.platform === "win32") {
-      throw new Error("Database output mode is not available on Windows. Please switch to CSV output mode in the Report Output settings and try again.");
-    }
-
     // Check database for existing data if database mode
     if (output_mode === "database" || output_mode === "both") {
       if (!dbReady) await initDatabase();
@@ -3204,12 +3198,6 @@ async function runCombineCampaigns(config) {
     log(`Date Range: ${start_date} to ${end_date}`);
     if (generate_trend_analysis) {
       log(`Trend Analysis: Enabled (min_consec=${min_consec_unsuccessful}, min_span=${min_run_span_days} days)`);
-    }
-
-    // Fail fast on Windows if database mode is selected — avoids downloading
-    // all campaign data only to fail when saving to the database at the end.
-    if ((output_mode === "database" || output_mode === "both") && process.platform === "win32") {
-      throw new Error("Database output mode is not available on Windows. Please switch to CSV output mode in the Report Output settings and try again.");
     }
 
     // Fetch campaigns

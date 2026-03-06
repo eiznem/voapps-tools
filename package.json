@@ -1,6 +1,6 @@
 {
   "name": "voapps-tools",
-  "version": "4.0.1",
+  "version": "4.0.2",
   "description": "VoApps DDVM Campaign Analysis Tool - Delivery Intelligence Platform",
   "main": "main.js",
   "author": "Brett Menzie",
@@ -22,7 +22,8 @@
     "npmRebuild": false,
     "asarUnpack": [
       "node_modules/onnxruntime-node/**/*",
-      "node_modules/sharp/build/Release/**/*"
+      "node_modules/sharp/build/Release/**/*",
+      "node_modules/duckdb/lib/binding/**/*"
     ],
     "directories": {
       "output": "dist"

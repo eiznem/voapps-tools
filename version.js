@@ -2,7 +2,7 @@
 // VoApps Tools Version Management
 //
 // Notes:
-// - Current version reflects the newest release (4.0.1).
+// - Current version reflects the newest release (4.0.2).
 // - Keeps feature flags + author from the original "DuckDB Edition" file.
 // - Changelog is unified so each version can include: changes/features, fixes, and breaking changes.
 
@@ -10,9 +10,9 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '4.0.1',
+  VERSION: '4.0.2',
   VERSION_NAME: 'AI Message Intelligence',
-  RELEASE_DATE: '2026-03-05',
+  RELEASE_DATE: '2026-03-06',
   AUTHOR: 'Brett Menzie',
 
   // -----------------------------
@@ -50,6 +50,18 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '4.0.2': {
+      date: '2026-03-06',
+      title: 'DuckDB on Windows',
+      changes: [],
+      features: [
+        'DuckDB database mode now works on Windows — pre-built Windows x64 binary included; database output, Phone Search caching, and Transcript Cache all work natively on Windows'
+      ],
+      fixes: [
+        'Fixed "[AI] Unexpected error: Something went wrong installing the sharp module" on Windows — sharp stub now returns silent no-ops instead of throwing, so @xenova/transformers fully initializes and Whisper/nli-deberta models download and run correctly'
+      ]
+    },
+
     '4.0.1': {
       date: '2026-03-05',
       title: 'Windows AI Compatibility & Voice Append Fix',
