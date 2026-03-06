@@ -1,6 +1,6 @@
 /**
  * VoApps Tools — Local Server (Electron)
- * Version: 4.0.3
+ * Version: 4.0.4
  *
  * NEW IN v4.0.3:
  * - Bulk INSERT with transaction (ON CONFLICT DO NOTHING) replaces per-row SELECT+INSERT;
@@ -217,16 +217,23 @@ async function downloadAiModelBackground(type, log = (msg, isError = false) => i
   pipeline = await tryBareImport();
 
   if (!pipeline) {
-    // Not found — auto-install, then import via file URL to bypass the ESM specifier cache
-    try {
-      await installXenovaTransformers(log);
-    } catch (installErr) {
-      log(`[AI] ❌ Install failed: ${installErr.message}`, true);
-      return;
+    const pkgDir = path.join(__dirname, 'node_modules', '@xenova', 'transformers');
+    const alreadyOnDisk = fs.existsSync(path.join(pkgDir, 'package.json'));
+
+    if (!alreadyOnDisk) {
+      // Package not installed at all — auto-install it
+      try {
+        await installXenovaTransformers(log);
+      } catch (installErr) {
+        log(`[AI] ❌ Install failed: ${installErr.message}`, true);
+        return;
+      }
     }
+    // Package is on disk (either just installed, or was present but the bare
+    // import failed due to an init error like the sharp stub issue).
+    // Import via file URL to bypass the ESM specifier cache.
     try {
       const { pathToFileURL } = require('url');
-      const pkgDir = path.join(__dirname, 'node_modules', '@xenova', 'transformers');
       const pkgJson = JSON.parse(await fsp.readFile(path.join(pkgDir, 'package.json'), 'utf8'));
       const exp = pkgJson.exports?.['.'];
       const mainFile = (typeof exp === 'string' ? exp
@@ -237,8 +244,8 @@ async function downloadAiModelBackground(type, log = (msg, isError = false) => i
       log('[AI] Loading module from disk…');
       ({ pipeline } = await import(pathToFileURL(entryPath).href));
     } catch (retryErr) {
-      log(`[AI] ❌ Failed to load after install: ${retryErr.message}`, true);
-      log('[AI] Please restart VoApps Tools and try again.', true);
+      log(`[AI] ❌ Failed to load: ${retryErr.message}`, true);
+      if (!alreadyOnDisk) log('[AI] Please restart VoApps Tools and try again.', true);
       return;
     }
   }
@@ -784,19 +791,21 @@ async function transcribeWithLocalWhisper(audioPath, log) {
       ({ pipeline: pipelineFn } = await import('@xenova/transformers'));
     } catch (e) {
       const isNotFound = e.code === 'ERR_MODULE_NOT_FOUND' || e.message?.includes('Cannot find package');
-      // If it's a non-module-not-found error (e.g. onnxruntime-node DLL issue on Windows),
-      // log it for diagnosis but still try the file-URL fallback path.
+      const pkgDir = path.join(__dirname, 'node_modules', '@xenova', 'transformers');
+      const alreadyOnDisk = fs.existsSync(path.join(pkgDir, 'package.json'));
+
       if (!isNotFound) {
+        // Package is on disk but failed to init — log for diagnosis
         log(`[AI]   ⚠️  @xenova/transformers init error: ${e.message}`, true);
         if (e.stack) log(`[AI]      ${e.stack.split('\n').slice(1, 4).join(' | ')}`, true);
-      } else {
+      } else if (!alreadyOnDisk) {
+        // Package genuinely not installed — auto-install it
         log('[AI]   Installing @xenova/transformers…');
         await installXenovaTransformers(log);
       }
       // Attempt file-URL import (bypasses ESM specifier cache; also works after install)
       try {
         const { pathToFileURL } = require('url');
-        const pkgDir = path.join(__dirname, 'node_modules', '@xenova', 'transformers');
         const pkgJson = JSON.parse(await fsp.readFile(path.join(pkgDir, 'package.json'), 'utf8'));
         const exp = pkgJson.exports?.['.'];
         const mainFile = (typeof exp === 'string' ? exp

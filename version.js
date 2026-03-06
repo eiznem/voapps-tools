@@ -2,7 +2,7 @@
 // VoApps Tools Version Management
 //
 // Notes:
-// - Current version reflects the newest release (4.0.3).
+// - Current version reflects the newest release (4.0.4).
 // - Keeps feature flags + author from the original "DuckDB Edition" file.
 // - Changelog is unified so each version can include: changes/features, fixes, and breaking changes.
 
@@ -10,7 +10,7 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '4.0.3',
+  VERSION: '4.0.4',
   VERSION_NAME: 'AI Message Intelligence',
   RELEASE_DATE: '2026-03-06',
   AUTHOR: 'Brett Menzie',
@@ -50,6 +50,17 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '4.0.4': {
+      date: '2026-03-06',
+      title: 'AI Model Loading Fix (Windows)',
+      changes: [],
+      features: [],
+      fixes: [
+        'Fixed root cause of "[AI] Cannot read properties of undefined (reading \'output\')" on Windows — sharp/lib/sharp.js Proxy stub now returns the Proxy itself (not the bare noop function) from get and apply traps, so deep property chains like sharp.format().heif.output.alias never resolve to undefined during @xenova/transformers initialization',
+        'Fixed "[AI] Install failed: spawn npm.cmd ENOENT" on Windows packaged app — when @xenova/transformers is already bundled on disk but failed to initialize, the code now skips the npm install step and goes directly to file-URL import instead of trying to run npm (which does not exist in a packaged Electron app)'
+      ]
+    },
+
     '4.0.3': {
       date: '2026-03-06',
       title: 'Performance & AI Stability',
