@@ -2,7 +2,7 @@
 
 Desktop application for searching and analyzing VoApps DirectDrop Voicemail campaign data.
 
-![Version](https://img.shields.io/badge/version-4.0.0-blue)
+![Version](https://img.shields.io/badge/version-4.0.3-blue)
 ![Platform](https://img.shields.io/badge/platform-macOS%20|%20Windows-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -144,10 +144,10 @@ Transcribe and analyze your DDVM message audio — free locally via Whisper, or 
 
 ### Download
 
-**Latest Version:** [v4.0.0](https://github.com/eiznem/voapps-tools/releases/latest)
+**Latest Version:** [v4.0.3](https://github.com/eiznem/voapps-tools/releases/latest)
 
-**macOS:** `VoApps Tools-4.0.0-arm64.dmg`
-**Windows:** `VoApps Tools Setup 4.0.0.exe`
+**macOS:** `VoApps Tools-4.0.3-arm64.dmg`
+**Windows:** `VoApps Tools Setup 4.0.3.exe`
 
 ### System Requirements
 
@@ -170,7 +170,7 @@ Transcribe and analyze your DDVM message audio — free locally via Whisper, or 
 Click the download link above or visit the [Releases page](https://github.com/eiznem/voapps-tools/releases)
 
 #### 2. Open the DMG File
-Double-click `VoApps Tools-4.0.0-arm64.dmg` in your Downloads folder
+Double-click `VoApps Tools-4.0.3-arm64.dmg` in your Downloads folder
 
 #### 3. Drag to Applications
 Drag the VoApps Tools icon to your Applications folder
@@ -500,8 +500,8 @@ npm start
 # Build DMG for distribution
 npm run build
 
-# Output: dist/VoApps Tools-4.0.0-arm64.dmg (macOS)
-# Output: dist/VoApps Tools Setup 4.0.0.exe (Windows)
+# Output: dist/VoApps Tools-4.0.3-arm64.dmg (macOS)
+# Output: dist/VoApps Tools Setup 4.0.3.exe (Windows)
 ```
 
 ### Project Structure
@@ -562,8 +562,8 @@ VoApps™ and DirectDrop™ are trademarks of their respective owners. This soft
 
 ---
 
-**Version:** 4.0.0
-**Last Updated:** March 4, 2026
+**Version:** 4.0.3
+**Last Updated:** March 6, 2026
 
 ---
 
