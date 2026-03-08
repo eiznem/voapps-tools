@@ -110,9 +110,10 @@ function checkForUpdates() {
               let downloadAsset = null;
 
               if (process.platform === 'win32') {
-                // Windows: Find .exe installer
+                // Windows: always prefer the NSIS Setup installer (contains "Setup")
+                // Fall back to any .exe only if no Setup variant is found.
                 downloadAsset = release.assets.find(asset =>
-                  asset.name.endsWith('.exe') && !asset.name.includes('portable')
+                  /Setup.*\.exe$/i.test(asset.name)
                 ) || release.assets.find(asset => asset.name.endsWith('.exe'));
               } else {
                 // macOS: Find .dmg installer
