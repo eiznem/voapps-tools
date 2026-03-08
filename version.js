@@ -56,7 +56,7 @@ module.exports = {
       changes: [],
       features: [],
       fixes: [
-        'Windows update download button now always links to the NSIS Setup installer (VoApps.Tools.Setup.x.x.x.exe) — previously the portable .exe could be selected instead because neither filename contains the word 'portable'',
+        'Windows update download button now always links to the NSIS Setup installer (VoApps.Tools.Setup.x.x.x.exe) — previously the portable .exe could be selected because neither filename contains the word "portable"',
       ]
     },
 
