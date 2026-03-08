@@ -1,6 +1,6 @@
 {
   "name": "voapps-tools",
-  "version": "4.0.4",
+  "version": "4.0.5",
   "description": "VoApps DDVM Campaign Analysis Tool - Delivery Intelligence Platform",
   "main": "main.js",
   "author": "Brett Menzie",
