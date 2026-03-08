@@ -1,6 +1,6 @@
 /**
  * VoApps Tools — Local Server (Electron)
- * Version: 4.0.4
+ * Version: 4.0.5
  *
  * NEW IN v4.0.3:
  * - Bulk INSERT with transaction (ON CONFLICT DO NOTHING) replaces per-row SELECT+INSERT;

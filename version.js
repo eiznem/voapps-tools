@@ -2,7 +2,7 @@
 // VoApps Tools Version Management
 //
 // Notes:
-// - Current version reflects the newest release (4.0.4).
+// - Current version reflects the newest release (4.0.5).
 // - Keeps feature flags + author from the original "DuckDB Edition" file.
 // - Changelog is unified so each version can include: changes/features, fixes, and breaking changes.
 
@@ -10,7 +10,7 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '4.0.4',
+  VERSION: '4.0.5',
   VERSION_NAME: 'AI Message Intelligence',
   RELEASE_DATE: '2026-03-06',
   AUTHOR: 'Brett Menzie',
@@ -50,6 +50,16 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '4.0.5': {
+      date: '2026-03-08',
+      title: 'Windows Update Link Fix',
+      changes: [],
+      features: [],
+      fixes: [
+        'Windows update download button now always links to the NSIS Setup installer (VoApps.Tools.Setup.x.x.x.exe) — previously the portable .exe could be selected because neither filename contains the word "portable"',
+      ]
+    },
+
     '4.0.4': {
       date: '2026-03-06',
       title: 'AI Model Loading Fix (Windows)',
