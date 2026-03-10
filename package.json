@@ -23,7 +23,8 @@
     "asarUnpack": [
       "node_modules/onnxruntime-node/**/*",
       "node_modules/sharp/build/Release/**/*",
-      "node_modules/duckdb/lib/binding/**/*"
+      "node_modules/duckdb/lib/binding/**/*",
+      "node_modules/@xenova/**/*"
     ],
     "directories": {
       "output": "dist"

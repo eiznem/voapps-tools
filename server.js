@@ -176,13 +176,49 @@ function getAiModelStatus() {
 }
 
 /**
+ * Return the on-disk path to the @xenova/transformers package directory.
+ *
+ * In development __dirname is the project root, so the package is at
+ * __dirname/node_modules/@xenova/transformers.
+ *
+ * In a packaged Electron app the source is inside app.asar (a virtual archive
+ * that Node's native ESM loader cannot read via file:// URLs).  electron-builder
+ * extracts asarUnpack entries to app.asar.unpacked/ next to the archive, so we
+ * look there instead.  Both paths are tried; whichever exists wins.
+ */
+function xenovaPkgDir() {
+  const inAsar = __dirname.includes('app.asar');
+  if (inAsar) {
+    // Primary: extracted via asarUnpack
+    const unpackedDir = path.join(process.resourcesPath, 'app.asar.unpacked',
+      'node_modules', '@xenova', 'transformers');
+    if (fs.existsSync(path.join(unpackedDir, 'package.json'))) return unpackedDir;
+    // Fallback: resources root (user-installed after first run)
+    const resourcesDir = path.join(process.resourcesPath,
+      'node_modules', '@xenova', 'transformers');
+    if (fs.existsSync(path.join(resourcesDir, 'package.json'))) return resourcesDir;
+  }
+  return path.join(__dirname, 'node_modules', '@xenova', 'transformers');
+}
+
+/**
+ * Return a writable directory to use as the cwd for npm install.
+ * Inside a packaged ASAR __dirname is a virtual path — spawning npm with
+ * cwd set to it fails with ENOTDIR.  Use process.resourcesPath instead,
+ * which is the real on-disk directory containing app.asar.
+ */
+function xenovaInstallDir() {
+  return __dirname.includes('app.asar') ? process.resourcesPath : __dirname;
+}
+
+/**
  * Auto-install @xenova/transformers via npm, streaming output to the log function.
  */
 function installXenovaTransformers(log) {
   return new Promise((resolve, reject) => {
     const { spawn } = require('child_process');
     const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-    const appDir = __dirname;
+    const appDir = xenovaInstallDir();
     // Quick check: if npm.cmd can't be found at all, give a helpful message
     if (process.platform === 'win32') {
       const { execSync } = require('child_process');
@@ -251,7 +287,7 @@ async function downloadAiModelBackground(type, log = (msg, isError = false) => i
   pipeline = await tryBareImport();
 
   if (!pipeline) {
-    const pkgDir = path.join(__dirname, 'node_modules', '@xenova', 'transformers');
+    const pkgDir = xenovaPkgDir();
     const alreadyOnDisk = fs.existsSync(path.join(pkgDir, 'package.json'));
 
     if (!alreadyOnDisk) {
@@ -866,7 +902,7 @@ async function transcribeWithLocalWhisper(audioPath, log) {
       ({ pipeline: pipelineFn } = await getXenovaMod(log));
     } catch (e) {
       const isNotFound = e.code === 'ERR_MODULE_NOT_FOUND' || e.message?.includes('Cannot find package');
-      const pkgDir = path.join(__dirname, 'node_modules', '@xenova', 'transformers');
+      const pkgDir = xenovaPkgDir();
       const alreadyOnDisk = fs.existsSync(path.join(pkgDir, 'package.json'));
 
       if (!isNotFound) {
