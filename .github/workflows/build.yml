@@ -41,7 +41,9 @@ jobs:
         run: npm install
 
       - name: Build
-        run: npm run ${{ matrix.build_cmd }}
+        # --publish=never prevents electron-builder from trying to auto-upload
+        # assets to GitHub (we handle uploads ourselves with gh release upload)
+        run: npm run ${{ matrix.build_cmd }} -- --publish=never
 
       - name: Determine release tag
         id: tag
