@@ -129,6 +129,40 @@ if (process.platform === 'win32') {
 // ============================================================================
 // AI MESSAGE ANALYSIS — model status, download, transcription pipeline
 // ============================================================================
+
+// Electron patches the global import() function to redirect ASAR paths.
+// That patch can prevent ESM-only packages like @xenova/transformers from loading
+// in the main process.  new Function() creates an import() call in a fresh
+// function scope that bypasses the patch and goes through V8's native ESM loader.
+const esImport = new Function('p', 'return import(p)');
+
+// Cached @xenova/transformers module reference — set on first successful load.
+// Keeps us from re-importing the module on every transcription/classification call.
+let _xenovaMod = null;
+
+/**
+ * Import @xenova/transformers once, configure ONNX Runtime log severity so the
+ * thousands of "Removing initializer" C++ optimizer warnings are suppressed, then
+ * cache the module reference for all subsequent calls.
+ */
+async function getXenovaMod(log, fallbackEntryPath = null) {
+  if (_xenovaMod) return _xenovaMod;
+  try {
+    const mod = fallbackEntryPath
+      ? await esImport(fallbackEntryPath)
+      : await esImport('@xenova/transformers');
+    // Suppress ONNX Runtime C++ INFO/WARNING logs (graph optimiser "Removing initializer" spam).
+    // logSeverityLevel: 0=verbose 1=info 2=warning 3=error — set to 3 to show errors only.
+    if (mod.env?.onnx !== undefined) mod.env.onnx = { logSeverityLevel: 3 };
+    else if (mod.env) mod.env.onnx = { logSeverityLevel: 3 };
+    _xenovaMod = mod;
+    return mod;
+  } catch (e) {
+    if (log) log(`[AI] ⚠️  getXenovaMod failed: ${e.message}`, true);
+    throw e;
+  }
+}
+
 const AI_MODEL_STATUS = { stt: { downloaded: false }, intent: { downloaded: false } };
 
 function getAiModelStatus() {
@@ -198,7 +232,7 @@ async function downloadAiModelBackground(type, log = (msg, isError = false) => i
   let pipeline;
 
   const tryBareImport = async () => {
-    try { return (await import('@xenova/transformers')).pipeline; }
+    try { return (await getXenovaMod(log)).pipeline; }
     catch (e) {
       if (e.code === 'ERR_MODULE_NOT_FOUND' || e.message?.includes('Cannot find package')) {
         return null; // not installed — fall through to auto-install path
@@ -242,7 +276,7 @@ async function downloadAiModelBackground(type, log = (msg, isError = false) => i
           || 'src/transformers.js');
       const entryPath = path.join(pkgDir, mainFile.replace(/^\.\//, ''));
       log('[AI] Loading module from disk…');
-      ({ pipeline } = await import(pathToFileURL(entryPath).href));
+      ({ pipeline } = await getXenovaMod(log, pathToFileURL(entryPath).href));
     } catch (retryErr) {
       log(`[AI] ❌ Failed to load: ${retryErr.message}`, true);
       if (!alreadyOnDisk) log('[AI] Please restart VoApps Tools and try again.', true);
@@ -391,9 +425,8 @@ async function transcribeAndAnalyzeMessages(messageInfo, aiSettings, log) {
       const mentionedPhone = extractMentionedPhone(transcript);
       const mentionsUrl    = detectUrlMention(transcript);
 
-      // Intent + summary
+      // Intent
       let intent = '';
-      let intentSummary = '';
       let intentModelLabel = '';
       let sttModelLabel = transcriptionMode === 'openai' ? 'openai-whisper-1' : 'whisper-base-local';
 
@@ -402,13 +435,11 @@ async function transcribeAndAnalyzeMessages(messageInfo, aiSettings, log) {
         else {
           const result = await classifyIntentWithOpenAI(transcript, openaiApiKey, log);
           intent = result.intent;
-          intentSummary = result.summary;
           intentModelLabel = 'openai-gpt4o-mini';
         }
       } else {
         const result = await classifyIntentLocal(transcript, log);
         intent = result.intent;
-        intentSummary = result.summary;
         intentModelLabel = 'nli-deberta-v3-local';
       }
 
@@ -424,12 +455,12 @@ async function transcribeAndAnalyzeMessages(messageInfo, aiSettings, log) {
              (message_id, account_id, audio_url, transcript, intent, intent_summary,
               mentioned_phone, mentions_url, stt_model, intent_model, transcribed_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-          [messageId, accountId, file_url, transcript, intent, intentSummary,
+          [messageId, accountId, file_url, transcript, intent, '',
            mentionedPhone || null, mentionsUrl ? 1 : 0, sttModelLabel, intentModelLabel]
         );
       }
 
-      transcriptMap[key] = { transcript, intent, intent_summary: intentSummary, mentioned_phone: mentionedPhone || '', mentions_url: mentionsUrl };
+      transcriptMap[key] = { transcript, intent, intent_summary: '', mentioned_phone: mentionedPhone || '', mentions_url: mentionsUrl };
 
     } catch (err) {
       log(`[AI]   ⚠️  Error processing message ${messageId}: ${err.message}`);
@@ -718,7 +749,7 @@ async function decodeMp3File(audioPath, log) {
         || pkgJson.module || pkgJson.main
         || 'src/mpg123-decoder.js');
     const entryPath = path.join(pkgDir, mainFile.replace(/^\.\//, ''));
-    return await import(pathToFileURL(entryPath).href);
+    return await esImport(pathToFileURL(entryPath).href);
   };
 
   let MPEGDecoder;
@@ -783,27 +814,69 @@ function isWhisperHallucination(text) {
   return false;
 }
 
+/**
+ * Stitch together transcript segments that were transcribed with overlapping audio windows.
+ * Finds the longest word-level sequence that appears at the tail of one segment and the
+ * head of the next, then concatenates without duplicating the overlap.
+ *
+ * If no overlap is found (e.g. segments cover non-overlapping audio), the segments are
+ * simply joined with a space.
+ */
+function stitchTranscriptSegments(texts) {
+  if (!texts.length) return '';
+  let result = texts[0];
+  for (let i = 1; i < texts.length; i++) {
+    const next = (texts[i] || '').trim();
+    if (!next) continue;
+    const rWords = result.trim().split(/\s+/);
+    const nWords = next.split(/\s+/);
+    // Search for the longest common word-ngram (up to 15 words) at the seam.
+    // Normalise to lowercase, strip punctuation for comparison only.
+    const norm = (w) => w.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const rNorm = rWords.map(norm);
+    const nNorm = nWords.map(norm);
+    let stitchAt = 0;
+    const maxSearch = Math.min(rWords.length, nWords.length, 15);
+    outer: for (let len = maxSearch; len >= 2; len--) {
+      const rTail = rNorm.slice(-len);
+      for (let offset = 0; offset <= Math.min(nNorm.length - len, 5); offset++) {
+        const nChunk = nNorm.slice(offset, offset + len);
+        if (rTail.every((w, j) => w === nChunk[j])) {
+          stitchAt = offset + len; // unique content starts here in next
+          break outer;
+        }
+      }
+    }
+    if (stitchAt > 0) {
+      result = result + ' ' + nWords.slice(stitchAt).join(' ');
+    } else {
+      result = result + ' ' + next;
+    }
+  }
+  return result.trim();
+}
+
 async function transcribeWithLocalWhisper(audioPath, log) {
   try {
-    // Import @xenova/transformers (auto-install + file-URL fallback if bare specifier fails)
+    // Import @xenova/transformers — auto-install if missing, file-URL fallback if specifier
+    // cache is stale (e.g. package was just installed in this session).
+    // getXenovaMod() also configures ONNX log severity to suppress optimizer noise.
     let pipelineFn;
     try {
-      ({ pipeline: pipelineFn } = await import('@xenova/transformers'));
+      ({ pipeline: pipelineFn } = await getXenovaMod(log));
     } catch (e) {
       const isNotFound = e.code === 'ERR_MODULE_NOT_FOUND' || e.message?.includes('Cannot find package');
       const pkgDir = path.join(__dirname, 'node_modules', '@xenova', 'transformers');
       const alreadyOnDisk = fs.existsSync(path.join(pkgDir, 'package.json'));
 
       if (!isNotFound) {
-        // Package is on disk but failed to init — log for diagnosis
         log(`[AI]   ⚠️  @xenova/transformers init error: ${e.message}`, true);
         if (e.stack) log(`[AI]      ${e.stack.split('\n').slice(1, 4).join(' | ')}`, true);
       } else if (!alreadyOnDisk) {
-        // Package genuinely not installed — auto-install it
         log('[AI]   Installing @xenova/transformers…');
         await installXenovaTransformers(log);
       }
-      // Attempt file-URL import (bypasses ESM specifier cache; also works after install)
+      // File-URL import bypasses the ESM specifier cache — also sets ONNX log severity.
       try {
         const { pathToFileURL } = require('url');
         const pkgJson = JSON.parse(await fsp.readFile(path.join(pkgDir, 'package.json'), 'utf8'));
@@ -813,7 +886,7 @@ async function transcribeWithLocalWhisper(audioPath, log) {
             || pkgJson.module || pkgJson.main
             || 'src/transformers.js');
         const entryPath = path.join(pkgDir, mainFile.replace(/^\.\//, ''));
-        ({ pipeline: pipelineFn } = await import((require('url').pathToFileURL(entryPath)).href));
+        ({ pipeline: pipelineFn } = await getXenovaMod(log, pathToFileURL(entryPath).href));
       } catch (retryErr) {
         log(`[AI]   ❌ File-URL import also failed: ${retryErr.message}`, true);
         return '';
@@ -862,20 +935,60 @@ async function transcribeWithLocalWhisper(audioPath, log) {
     const transcriber = await pipelineFn('automatic-speech-recognition', 'Xenova/whisper-base');
     // Pass the Float32Array directly — @xenova/transformers v2.x WhisperFeatureExtractor
     // requires a raw Float32Array, not a { data, sampling_rate } wrapper object.
-    // decodeMp3File already resamples to 16 kHz so no sampling_rate hint is needed.
-    // No chunk_length_s/stride_length_s — those trigger long-form transcription mode
-    // (timestamp-guided beam search) which hallucinates on short voicemails (≤40s).
-    // Whisper-base context window is 30s; for longer audio it silently truncates.
-    const result = await transcriber(audioData, { language: 'english' });
-    const rawText = result.text || '';
+    //
+    // no_repeat_ngram_size: 3 — prevents Whisper's decoder from entering a repetition loop
+    // (e.g. "registros" → "rosrosros...") that silently truncates the transcript.
+    //
+    // For audio > 30s we do NOT use the library's built-in chunk_length_s/stride_length_s.
+    // That creates a very short final chunk (audio_len − 30s) padded with lots of silence,
+    // which destabilises the decoder and causes the repetition loop even with no_repeat_ngram.
+    // Instead we split manually with a generous 8s overlap so every segment is ≥ 18s of real
+    // audio (well within Whisper-base's sweet spot), then stitch the segments at the text level.
+    const WHISPER_SR      = 16000;
+    const MANUAL_CHUNK_S  = 30;  // each audio segment fed to Whisper
+    const MANUAL_OVERLAP_S = 8;  // overlap between consecutive segments for reliable stitching
+    const passOpts = { no_repeat_ngram_size: 3 };
+
+    let rawText;
+    if (audioDurationSec > 30) {
+      const segTexts = [];
+      let segStart = 0;
+      let segIdx   = 0;
+      while (segStart < audioData.length) {
+        const segEnd   = Math.min(segStart + MANUAL_CHUNK_S * WHISPER_SR, audioData.length);
+        const segAudio = audioData.slice(segStart, segEnd);
+        const segSec   = segAudio.length / WHISPER_SR;
+        const segRes   = await transcriber(segAudio, passOpts);
+        const segText  = (segRes.text || '')
+          .replace(/(\s*\[S\])+/g, '')
+          .replace(/\[BLANK_AUDIO\]/gi, '')
+          .trim();
+        log(`[AI]   🔍 Segment ${++segIdx} (${(segStart/WHISPER_SR)|0}–${(segEnd/WHISPER_SR)|0}s, ${segSec.toFixed(1)}s): ${JSON.stringify(segText.slice(0, 120))}`);
+        segTexts.push(segText);
+        if (segEnd >= audioData.length) break;
+        segStart += (MANUAL_CHUNK_S - MANUAL_OVERLAP_S) * WHISPER_SR;
+      }
+      rawText = stitchTranscriptSegments(segTexts);
+    } else {
+      const result = await transcriber(audioData, passOpts);
+      rawText = result.text || '';
+    }
     log(`[AI]   🔍 Raw Whisper output: ${JSON.stringify(rawText.slice(0, 200))}`);
 
+    // Strip Whisper silence/padding tokens — [S] appears when a chunk contains silence
+    // after the speech ends (common at chunk boundaries or end of short audio padded to 30s).
+    // Also strip [BLANK_AUDIO] and similar filler tokens that add no transcript value.
+    const cleanText = rawText
+      .replace(/(\s*\[S\])+/g, '')
+      .replace(/\[BLANK_AUDIO\]/gi, '')
+      .trim();
+
     // Discard hallucination-only output (e.g. "[Music] (chiming) [Music]" with no real words)
-    if (isWhisperHallucination(rawText)) {
+    if (isWhisperHallucination(cleanText)) {
       log(`[AI]   ⚠️  Whisper produced only non-speech tokens ("${rawText.slice(0, 80).trim()}") — discarding`);
       return '';
     }
-    return rawText;
+    return cleanText;
   } catch (e) {
     if (e.code === 'ERR_MODULE_NOT_FOUND' || e.message?.includes('Cannot find')) {
       log('[AI]   ⚠️  @xenova/transformers not installed. Use OpenAI Whisper mode or download the model first.');
@@ -886,16 +999,72 @@ async function transcribeWithLocalWhisper(audioPath, log) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Pattern-based intent detection (runs before AI models)
+// ---------------------------------------------------------------------------
+
+// LCM = Limited Content Message: a message that intentionally avoids identifying
+// the debt — just asks the recipient to call back. No payment/loan/debt terms.
+const LCM_CALLBACK_PATTERN  = /please (return my call|call (?:me|us) back)\b|call (me|us)(?: or \w+)? back at\b|personal business matter/i;
+const LCM_DEBT_TERMS        = /payment|past due|loan|account balance|debt|owe\b|credit|mortgage|delinquent|overdrawn|amount due/i;
+
+function detectLCM(transcript) {
+  if (!transcript) return false;
+  return LCM_CALLBACK_PATTERN.test(transcript) && !LCM_DEBT_TERMS.test(transcript);
+}
+
+// Modified Zortman: message contains formal debt-collection disclosure language.
+const MODIFIED_ZORTMAN_PATTERN = /this is an attempt to collect a debt|debt collector\b|any information obtained will be used for that purpose|fair debt collection practices act|fdcpa/i;
+
+function detectModifiedZortman(transcript) {
+  return MODIFIED_ZORTMAN_PATTERN.test(transcript || '');
+}
+
+// ---------------------------------------------------------------------------
+// Shared intent label set (used by both local NLI and OpenAI)
+// ---------------------------------------------------------------------------
+const INTENT_LABELS = [
+  // ── Collections ─────────────────────────────────────────────────────────
+  'first payment default',
+  'delinquent loan payment',
+  'pre-charge-off collections',
+  'overdrawn account',
+  'friendly payment reminder',
+  'healthcare or third-party collections',   // EBO, Early Out, 3rd-party, debt buyers
+  // ── Consumer / Direct Lending ────────────────────────────────────────────
+  'loan application follow-up',
+  'pre-approval or refinance offer',
+  'CPI or insurance notification',
+  'title perfection reminder',
+  'holiday skip payment offer',
+  'unused rewards notification',
+  // ── Servicing ───────────────────────────────────────────────────────────
+  'dormant account notification',
+  'fraud alert',
+  'card services notification',              // card activation, card issues
+  'system update or downtime notice',
+  // ── Marketing / Outreach ─────────────────────────────────────────────────
+  'new member welcome',
+  'product or rate promotion',
+  'educational event or workshop',
+  'marketing or lead response',
+  'disaster recovery or closure notice',
+  // ── General ──────────────────────────────────────────────────────────────
+  'general notice',
+];
+
 async function classifyIntentWithOpenAI(transcript, apiKey, log) {
-  const INTENT_CATEGORIES = ['collections', 'payment reminder', 'appointment reminder', 'welcome', 'general', 'sales', 'survey', 'follow-up'];
+  // Pattern-detect before calling the model
+  if (detectLCM(transcript))             return { intent: 'LCM' };
+  if (detectModifiedZortman(transcript)) return { intent: 'Modified Zortman' };
+
   try {
     const body = JSON.stringify({
       model: 'gpt-4o-mini',
       messages: [{
         role: 'user',
-        content: `You are classifying a short voicemail message. Given the transcript below, return ONLY valid JSON with these fields:
-- "intent": one of ${JSON.stringify(INTENT_CATEGORIES)}
-- "summary": 6 words or fewer describing the message's purpose — no filler words, direct and specific (e.g. "MCM collections call 800-358-4172" or "Appointment reminder tomorrow 3pm")
+        content: `You are classifying a short voicemail message left by a business. Return ONLY valid JSON with:
+- "intent": a concise label (3–6 words) describing the message purpose. Prefer one of these if it fits well: ${JSON.stringify(INTENT_LABELS)} — but use your own label if none of them accurately describes the message.
 
 Transcript:
 """
@@ -904,7 +1073,7 @@ ${transcript.slice(0, 1000)}
 
 Respond with only valid JSON, no markdown.`
       }],
-      max_tokens: 100,
+      max_tokens: 30,
       temperature: 0
     });
     const response = await crossPlatformFetch('https://api.openai.com/v1/chat/completions', {
@@ -916,35 +1085,78 @@ Respond with only valid JSON, no markdown.`
     const data = await response.json();
     const raw = data.choices?.[0]?.message?.content || '{}';
     const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
-    return { intent: parsed.intent || '', summary: parsed.summary || '' };
+    return { intent: parsed.intent || '' };
   } catch (e) {
     log(`[AI]   ⚠️  OpenAI intent failed: ${e.message}`);
-    return { intent: '', summary: '' };
+    return { intent: '' };
   }
 }
 
 async function classifyIntentLocal(transcript, log) {
-  // Extractive summary: first meaningful sentence trimmed to ≤6 words, no filler
-  const sentences = transcript.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 10);
-  const firstSentence = sentences[0] || transcript.trim();
-  const words = firstSentence.split(/\s+/).filter(Boolean);
-  const summary = words.slice(0, 6).join(' ');
+  // Pattern-detect before running the model (deterministic, no model needed)
+  if (detectLCM(transcript))             return { intent: 'LCM' };
+  if (detectModifiedZortman(transcript)) return { intent: 'Modified Zortman' };
 
   try {
-    const { pipeline } = await import('@xenova/transformers');
-    const INTENT_LABELS = ['collections', 'payment reminder', 'appointment reminder', 'welcome message', 'general', 'sales', 'survey', 'follow-up'];
+    const { pipeline } = await getXenovaMod(log);
     const classifier = await pipeline('zero-shot-classification', 'Xenova/nli-deberta-v3-small');
-    const result = await classifier(transcript.slice(0, 500), INTENT_LABELS);
+    const result = await classifier(normalizeSttText(transcript).slice(0, 500), INTENT_LABELS);
     const intent = result.labels?.[0] || '';
-    return { intent, summary };
+    return { intent };
   } catch (e) {
     if (e.code === 'ERR_MODULE_NOT_FOUND' || e.message?.includes('Cannot find')) {
       log('[AI]   ⚠️  @xenova/transformers not installed — using extractive intent only.');
     } else {
       log(`[AI]   ⚠️  Local intent classification failed: ${e.message}`);
     }
-    return { intent: '', summary };
+    return { intent: '' };
   }
+}
+
+// ---------------------------------------------------------------------------
+// STT normalization dictionary
+// Ordered [pattern, replacement] pairs applied to raw Whisper output before
+// summary generation and NLI classification. Add entries as new errors appear.
+// ---------------------------------------------------------------------------
+const STT_CORRECTIONS = [
+  // ── English phoneme confusions ──────────────────────────────────────────
+  [/\bpassed due\b/gi,       'past due'],       // Whisper hears "past" as "passed"
+  [/\bover draft\b/gi,       'overdraft'],
+
+  // ── Spanish financial terms (Whisper merges/mangles these) ───────────────
+  [/\bsuprestemo\b/gi,       'su préstamo'],    // "su préstamo" → "Suprestemo"
+  [/\bsuprestamo\b/gi,       'su préstamo'],
+  [/\bprestamo\b/gi,         'préstamo'],       // accent frequently dropped
+];
+
+// DB-backed correction entries loaded into memory at startup and refreshed on change.
+// Each entry: { raw_text, corrected } — applied as whole-word case-insensitive replacements.
+let sttCorrectionCache = [];
+
+async function loadSttCorrectionCache() {
+  if (!dbReady) return;
+  try {
+    const rows = await runQuery('SELECT raw_text, corrected FROM stt_dictionary ORDER BY created_at');
+    sttCorrectionCache = rows || [];
+  } catch (e) {
+    sttCorrectionCache = [];
+  }
+}
+
+function normalizeSttText(text) {
+  if (!text) return text;
+  let out = text;
+  // Apply hardcoded corrections first
+  for (const [pattern, replacement] of STT_CORRECTIONS) {
+    out = out.replace(pattern, replacement);
+  }
+  // Apply user-defined DB corrections (whole-word, case-insensitive)
+  for (const { raw_text, corrected } of sttCorrectionCache) {
+    if (!raw_text) continue;
+    const escaped = raw_text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    out = out.replace(new RegExp(`\\b${escaped}\\b`, 'gi'), corrected);
+  }
+  return out;
 }
 
 function extractMentionedPhone(transcript) {
@@ -1301,6 +1513,17 @@ async function initDatabase() {
       )
     `);
 
+    // STT normalization dictionary (user-managed corrections applied at analysis time)
+    await runQuery(`
+      CREATE TABLE IF NOT EXISTS stt_dictionary (
+        id         VARCHAR PRIMARY KEY,
+        raw_text   VARCHAR NOT NULL,
+        corrected  VARCHAR NOT NULL,
+        note       VARCHAR DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // Create indexes for faster queries
     await runQuery(`CREATE INDEX IF NOT EXISTS idx_number ON campaign_results(number)`);
     await runQuery(`CREATE INDEX IF NOT EXISTS idx_account ON campaign_results(account_id)`);
@@ -1559,6 +1782,18 @@ async function checkExistingData(numbers, accountIds, startDate, endDate) {
 async function insertRows(rows, logger = null) {
   if (!dbReady) await initDatabase();
   if (rows.length === 0) return { inserted: 0, updated: 0, skipped: 0 };
+
+  // Deduplicate by row_id within this batch.  DuckDB's ON CONFLICT DO NOTHING
+  // handles conflicts against existing table rows but throws a PRIMARY KEY error
+  // when the same row_id appears twice within a single VALUES list.  Source CSVs
+  // can contain duplicate rows (same data → same MD5), so we filter them out here.
+  const seen = new Set();
+  rows = rows.filter(row => {
+    const id = generateRowId(row);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
 
   // Rows per INSERT statement.  17 columns × 500 rows = 8,500 bound params,
   // comfortably within DuckDB's limit.
@@ -4234,6 +4469,72 @@ function createHttpServer() {
       }
     }
 
+    // ── STT Dictionary CRUD ──────────────────────────────────────────────────
+
+    if (req.method === "GET" && pathname === "/api/ai/dict-list") {
+      try {
+        const rows = await runQuery('SELECT id, raw_text, corrected, note, created_at FROM stt_dictionary ORDER BY created_at');
+        return sendJson(res, 200, { ok: true, entries: rows || [] });
+      } catch (e) {
+        return sendJson(res, 200, { ok: true, entries: [] });
+      }
+    }
+
+    if (req.method === "POST" && pathname === "/api/ai/dict-add") {
+      try {
+        const body = await readJson(req);
+        const { raw_text, corrected, note } = body;
+        if (!raw_text || !corrected) return sendJson(res, 400, { ok: false, error: 'raw_text and corrected are required' });
+        const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        await runQuery(
+          `INSERT INTO stt_dictionary (id, raw_text, corrected, note) VALUES (?, ?, ?, ?)`,
+          [id, raw_text.trim(), corrected.trim(), (note || '').trim()]
+        );
+        await loadSttCorrectionCache();
+        return sendJson(res, 200, { ok: true, id });
+      } catch (e) {
+        return sendJson(res, 500, { ok: false, error: e.message });
+      }
+    }
+
+    if (req.method === "POST" && pathname === "/api/ai/dict-update") {
+      try {
+        const body = await readJson(req);
+        const { id, raw_text, corrected, note } = body;
+        if (!id) return sendJson(res, 400, { ok: false, error: 'id is required' });
+        await runQuery(
+          `UPDATE stt_dictionary SET raw_text = ?, corrected = ?, note = ? WHERE id = ?`,
+          [raw_text.trim(), corrected.trim(), (note || '').trim(), id]
+        );
+        await loadSttCorrectionCache();
+        return sendJson(res, 200, { ok: true });
+      } catch (e) {
+        return sendJson(res, 500, { ok: false, error: e.message });
+      }
+    }
+
+    if (req.method === "POST" && pathname === "/api/ai/dict-delete") {
+      try {
+        const body = await readJson(req);
+        const { id } = body;
+        if (!id) return sendJson(res, 400, { ok: false, error: 'id is required' });
+        await runQuery('DELETE FROM stt_dictionary WHERE id = ?', [id]);
+        await loadSttCorrectionCache();
+        return sendJson(res, 200, { ok: true });
+      } catch (e) {
+        return sendJson(res, 500, { ok: false, error: e.message });
+      }
+    }
+
+    if (req.method === "GET" && pathname === "/api/ai/dict-stats") {
+      try {
+        const rows = await runQuery('SELECT COUNT(*) as count FROM stt_dictionary');
+        return sendJson(res, 200, { ok: true, count: Number(rows[0]?.count) || 0 });
+      } catch (e) {
+        return sendJson(res, 200, { ok: true, count: 0 });
+      }
+    }
+
     // Accounts endpoint
     if (req.method === "POST" && pathname === "/api/accounts") {
       try {
@@ -4929,6 +5230,7 @@ async function startServer() {
   // Initialize database on startup
   try {
     await initDatabase();
+    await loadSttCorrectionCache();
   } catch (err) {
     console.error('[DuckDB] Failed to initialize database:', err);
   }
