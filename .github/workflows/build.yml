@@ -4,40 +4,83 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to build and upload assets to (e.g. v4.0.6)'
+        required: true
+        default: ''
 
 jobs:
   build:
     runs-on: ${{ matrix.os }}
-    
+
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: macos-latest
-            platform: mac
+            build_cmd: build:mac
           - os: windows-latest
-            platform: win
-    
+            build_cmd: build:win
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-      
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
-      
+
+      # npm install triggers postinstall.js which:
+      #   1. Restores the sharp Proxy stub
+      #   2. Runs electron-rebuild -f -w duckdb  ← compiles duckdb.node for THIS
+      #      platform's ABI (macOS arm64 on mac runner, Windows x64 on win runner)
       - name: Install dependencies
         run: npm install
-      
+
       - name: Build
-        run: npm run build
-      
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: voapps-tools-${{ matrix.platform }}
-          path: |
-            dist/*.dmg
-            dist/*.exe
-            dist/*.zip
-          if-no-files-found: warn
+        run: npm run ${{ matrix.build_cmd }}
+
+      - name: Determine release tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "TAG=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "TAG=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Create the release if it does not already exist (no-op if it does)
+      - name: Ensure release exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG="${{ steps.tag.outputs.TAG }}"
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --generate-notes \
+              --draft=false
+          fi
+
+      - name: Upload macOS assets
+        if: runner.os == 'macOS'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG="${{ steps.tag.outputs.TAG }}"
+          gh release upload "$TAG" dist/*.dmg dist/*-mac.zip --clobber
+
+      - name: Upload Windows assets
+        if: runner.os == 'Windows'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG="${{ steps.tag.outputs.TAG }}"
+          gh release upload "$TAG" dist/*.exe --clobber
