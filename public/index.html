@@ -2377,7 +2377,7 @@
                 <input type="checkbox" id="enableAiAnalysis" onchange="onAiEnableChange()" style="margin-top: 2px; flex-shrink: 0;">
                 <span>
                   <strong>Enable AI Message Analysis</strong><br>
-                  <span style="font-size: 11px; color: #666; font-weight: normal;">Transcribes your DDVM recordings and infers message intent, summary, and caller insights. Runs automatically during analysis.</span>
+                  <span style="font-size: 11px; color: #666; font-weight: normal;">Transcribes your DDVM recordings and infers message intent and caller insights. Runs automatically during analysis.</span>
                 </span>
               </label>
             </div>
@@ -2417,13 +2417,13 @@
 
               <!-- Tab: Intent & Summary Engine -->
               <div id="aiTab-intent" class="drawer-tab-panel" style="display:none;">
-                <div class="settings-section-subtitle">Classify intent and generate a short summary</div>
+                <div class="settings-section-subtitle">Classify message intent</div>
                 <div style="margin-top: 8px;">
                   <label class="checkbox-label" style="margin-bottom: 2px;">
                     <input type="radio" name="intentMode" id="intentLocal" value="local" onchange="onAiModeChange()">
                     🖥 Local Model &nbsp;<span style="font-size: 11px; color: #4caf50; font-weight: 600;">Free</span>
                   </label>
-                  <div style="font-size: 11px; color: #777; margin: 1px 0 8px 20px;">~85 MB one-time download · offline · zero-shot classification + extractive summary</div>
+                  <div style="font-size: 11px; color: #777; margin: 1px 0 8px 20px;">~85 MB one-time download · offline · zero-shot classification</div>
                   <label class="checkbox-label" style="margin-bottom: 2px;">
                     <input type="radio" name="intentMode" id="intentOpenai" value="openai" onchange="onAiModeChange()">
                     ☁ OpenAI GPT-4o-mini
@@ -2470,20 +2470,43 @@
                 </div>
               </div>
 
-              <!-- Transcript Cache -->
+              <!-- Transcript Cache + Dictionary (tabbed) -->
               <div class="settings-section" style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #e0e0e0;">
-                <div class="settings-section-title">Transcript Cache</div>
-                <div class="settings-section-subtitle">Transcripts are cached to avoid re-processing messages. Review and correct any inaccuracies.</div>
-                <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                  <span id="aiCacheCount" style="font-size: 12px; color: #666;">— entries</span>
-                  <button class="btn btn-sm" onclick="openCacheBrowser()" id="browseCacheBtn" style="margin-left: auto;">
-                    <svg class="btn-icon" viewBox="0 0 24 24"><path d="M20 6h-2.18c.07-.44.18-.86.18-1.3C18 2.57 15.43 1 13.28 1c-1.22 0-2.33.52-3.1 1.37l-.18.21-.18-.21C9.05 1.52 7.94 1 6.72 1 4.57 1 2 2.57 2 4.7c0 .44.11.86.18 1.3H0v2h20V6zm-3.18 0h-1.64c.41-.3.82-.6.82-1.3 0-.58-.47-1-1.21-1-.74 0-1.43.44-2.01 1.19L12 5.28l-.78-.39C10.64 4.14 9.95 3.7 9.21 3.7c-.74 0-1.21.42-1.21 1 0 .7.41 1 .82 1.3H7.18C6.58 5.6 6 5 6 4.7c0-.8 1.07-1.7 2.72-1.7.73 0 1.42.35 1.79.87l1.49 1.79 1.49-1.79C13.86 3.35 14.55 3 15.28 3 16.93 3 18 3.9 18 4.7c0 .3-.58.9-1.18.9z"/><path d="M1 9h9v12H1zm11 0h9v12H13z" style="fill:none;stroke:currentColor;stroke-width:1.5"/><rect x="3" y="11" width="5" height="1.5" rx=".5"/><rect x="15" y="11" width="5" height="1.5" rx=".5"/><rect x="3" y="14" width="5" height="1.5" rx=".5"/><rect x="15" y="14" width="5" height="1.5" rx=".5"/></svg>
-                    Browse &amp; Edit
-                  </button>
-                  <button class="btn btn-sm" onclick="clearAiCache()" id="clearAiCacheBtn">
-                    <svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
-                    Clear All
-                  </button>
+                <div class="drawer-tabs" style="margin-bottom: 10px;">
+                  <button class="drawer-tab active" onclick="switchDrawerTab(this,'aiCachePanel')">Transcript Cache</button>
+                  <button class="drawer-tab" onclick="switchDrawerTab(this,'aiDictPanel')">Transcript Dictionary</button>
+                </div>
+
+                <!-- Transcript Cache panel -->
+                <div id="aiCachePanel" class="drawer-tab-panel">
+                  <div class="settings-section-subtitle">Transcripts are cached to avoid re-processing messages. Review and correct any inaccuracies.</div>
+                  <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <span id="aiCacheCount" style="font-size: 12px; color: #666;">— entries</span>
+                    <button class="btn btn-sm" onclick="openCacheBrowser()" id="browseCacheBtn" style="margin-left: auto;">
+                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M20 6h-2.18c.07-.44.18-.86.18-1.3C18 2.57 15.43 1 13.28 1c-1.22 0-2.33.52-3.1 1.37l-.18.21-.18-.21C9.05 1.52 7.94 1 6.72 1 4.57 1 2 2.57 2 4.7c0 .44.11.86.18 1.3H0v2h20V6zm-3.18 0h-1.64c.41-.3.82-.6.82-1.3 0-.58-.47-1-1.21-1-.74 0-1.43.44-2.01 1.19L12 5.28l-.78-.39C10.64 4.14 9.95 3.7 9.21 3.7c-.74 0-1.21.42-1.21 1 0 .7.41 1 .82 1.3H7.18C6.58 5.6 6 5 6 4.7c0-.8 1.07-1.7 2.72-1.7.73 0 1.42.35 1.79.87l1.49 1.79 1.49-1.79C13.86 3.35 14.55 3 15.28 3 16.93 3 18 3.9 18 4.7c0 .3-.58.9-1.18.9z"/><path d="M1 9h9v12H1zm11 0h9v12H13z" style="fill:none;stroke:currentColor;stroke-width:1.5"/><rect x="3" y="11" width="5" height="1.5" rx=".5"/><rect x="15" y="11" width="5" height="1.5" rx=".5"/><rect x="3" y="14" width="5" height="1.5" rx=".5"/><rect x="15" y="14" width="5" height="1.5" rx=".5"/></svg>
+                      Browse &amp; Edit
+                    </button>
+                    <button class="btn btn-sm" onclick="clearAiCache()" id="clearAiCacheBtn">
+                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                      Clear All
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Transcript Dictionary panel -->
+                <div id="aiDictPanel" class="drawer-tab-panel" style="display:none;">
+                  <div class="settings-section-subtitle">Map mistranscribed words or phrases to their correct form. Applied automatically during analysis.</div>
+                  <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <span id="aiDictCount" style="font-size: 12px; color: #666;">— entries</span>
+                    <button class="btn btn-sm" onclick="openDictBrowser()" id="browseDictBtn" style="margin-left: auto;">
+                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M20 6h-2.18c.07-.44.18-.86.18-1.3C18 2.57 15.43 1 13.28 1c-1.22 0-2.33.52-3.1 1.37l-.18.21-.18-.21C9.05 1.52 7.94 1 6.72 1 4.57 1 2 2.57 2 4.7c0 .44.11.86.18 1.3H0v2h20V6zm-3.18 0h-1.64c.41-.3.82-.6.82-1.3 0-.58-.47-1-1.21-1-.74 0-1.43.44-2.01 1.19L12 5.28l-.78-.39C10.64 4.14 9.95 3.7 9.21 3.7c-.74 0-1.21.42-1.21 1 0 .7.41 1 .82 1.3H7.18C6.58 5.6 6 5 6 4.7c0-.8 1.07-1.7 2.72-1.7.73 0 1.42.35 1.79.87l1.49 1.79 1.49-1.79C13.86 3.35 14.55 3 15.28 3 16.93 3 18 3.9 18 4.7c0 .3-.58.9-1.18.9z"/><path d="M1 9h9v12H1zm11 0h9v12H13z" style="fill:none;stroke:currentColor;stroke-width:1.5"/><rect x="3" y="11" width="5" height="1.5" rx=".5"/><rect x="15" y="11" width="5" height="1.5" rx=".5"/><rect x="3" y="14" width="5" height="1.5" rx=".5"/><rect x="15" y="14" width="5" height="1.5" rx=".5"/></svg>
+                      Browse &amp; Edit
+                    </button>
+                    <button class="btn btn-sm" onclick="openDictEdit(null)" id="addDictBtn">
+                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                      Add Entry
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -2924,7 +2947,7 @@
         <h4 style="border-top: 1px solid #e0e0e0; padding-top: 12px; margin-top: 16px;">📝 Release Notes</h4>
         <p><strong>v4.0.5 - AI Message Intelligence</strong></p>
         <ul style="margin-left: 16px;">
-          <li>AI Message Analysis — transcribe DDVM recordings via local Whisper or OpenAI, infer intent & summary, detect caller number match, URL mentions, and Voice Append</li>
+          <li>AI Message Analysis — transcribe DDVM recordings via local Whisper or OpenAI, infer intent, detect caller number match, URL mentions, and Voice Append</li>
           <li>New AI sidebar panel with independent transcription and intent engine selection (local free vs. OpenAI API)</li>
           <li>DuckDB message_transcriptions cache — each message transcribed once, recalled automatically on re-runs</li>
           <li>New Excel columns on Global Insights (Msg & Caller): Transcript, Message Summary, Mentioned Phone, Caller # Match, Contains URL, Voice Append</li>
@@ -3032,7 +3055,7 @@
       </div>
       <div class="info-modal-body" style="padding:0;overflow:hidden;">
         <div style="padding:10px 14px 8px;border-bottom:1px solid #eee;font-size:11px;color:#666;">
-          Review and correct AI transcriptions and summaries. Edits are saved immediately to the cache and will be used the next time you run a report.
+          Review and correct AI transcriptions and intents. Edits are saved immediately to the cache and will be used the next time you run a report.
         </div>
         <div id="cacheBrowserContent" style="overflow-y:auto;max-height:calc(80vh - 110px);padding:0;">
           <table id="cacheTable" style="width:100%;border-collapse:collapse;font-size:11px;">
@@ -3041,13 +3064,12 @@
                 <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #ddd;font-weight:600;white-space:nowrap;">Message ID</th>
                 <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #ddd;font-weight:600;">Transcript</th>
                 <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #ddd;font-weight:600;white-space:nowrap;">Intent</th>
-                <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #ddd;font-weight:600;white-space:nowrap;">Summary (≤6 words)</th>
                 <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #ddd;font-weight:600;white-space:nowrap;">Transcribed</th>
                 <th style="padding:8px 6px;text-align:center;border-bottom:1px solid #ddd;font-weight:600;white-space:nowrap;">Actions</th>
               </tr>
             </thead>
             <tbody id="cacheTableBody">
-              <tr><td colspan="6" style="padding:20px;text-align:center;color:#999;">Loading…</td></tr>
+              <tr><td colspan="5" style="padding:20px;text-align:center;color:#999;">Loading…</td></tr>
             </tbody>
           </table>
         </div>
@@ -3076,27 +3098,112 @@
             <label style="font-size:11px;font-weight:600;color:#444;display:block;margin-bottom:4px;">Intent</label>
             <select id="editCacheIntent" style="width:100%;font-size:11px;border:1px solid #ccc;border-radius:4px;padding:5px 6px;">
               <option value="">— unknown —</option>
-              <option value="collections">collections</option>
-              <option value="payment reminder">payment reminder</option>
-              <option value="appointment reminder">appointment reminder</option>
-              <option value="welcome">welcome</option>
-              <option value="general">general</option>
-              <option value="sales">sales</option>
-              <option value="survey">survey</option>
-              <option value="follow-up">follow-up</option>
+              <optgroup label="Collections">
+                <option value="LCM">LCM (Limited Content Message)</option>
+                <option value="Modified Zortman">Modified Zortman</option>
+                <option value="first payment default">first payment default</option>
+                <option value="delinquent loan payment">delinquent loan payment</option>
+                <option value="pre-charge-off collections">pre-charge-off collections</option>
+                <option value="overdrawn account">overdrawn account</option>
+                <option value="friendly payment reminder">friendly payment reminder</option>
+                <option value="healthcare or third-party collections">healthcare or third-party collections</option>
+              </optgroup>
+              <optgroup label="Consumer / Direct Lending">
+                <option value="loan application follow-up">loan application follow-up</option>
+                <option value="pre-approval or refinance offer">pre-approval or refinance offer</option>
+                <option value="CPI or insurance notification">CPI or insurance notification</option>
+                <option value="title perfection reminder">title perfection reminder</option>
+                <option value="holiday skip payment offer">holiday skip payment offer</option>
+                <option value="unused rewards notification">unused rewards notification</option>
+              </optgroup>
+              <optgroup label="Servicing">
+                <option value="dormant account notification">dormant account notification</option>
+                <option value="fraud alert">fraud alert</option>
+                <option value="card services notification">card services notification</option>
+                <option value="system update or downtime notice">system update or downtime notice</option>
+              </optgroup>
+              <optgroup label="Marketing">
+                <option value="new member welcome">new member welcome</option>
+                <option value="product or rate promotion">product or rate promotion</option>
+                <option value="educational event or workshop">educational event or workshop</option>
+                <option value="marketing or lead response">marketing or lead response</option>
+                <option value="disaster recovery or closure notice">disaster recovery or closure notice</option>
+              </optgroup>
+              <optgroup label="General">
+                <option value="general notice">general notice</option>
+              </optgroup>
             </select>
           </div>
-          <div style="flex:1;">
-            <label style="font-size:11px;font-weight:600;color:#444;display:block;margin-bottom:4px;">Summary <span style="font-weight:400;color:#999;">(≤6 words)</span></label>
-            <input id="editCacheSummary" type="text" maxlength="80"
-              style="width:100%;box-sizing:border-box;font-size:11px;border:1px solid #ccc;border-radius:4px;padding:5px 6px;"
-              placeholder="e.g. MCM collections call 800-358-4172">
-          </div>
         </div>
-        <div id="editCacheWordCount" style="font-size:10px;color:#999;margin-bottom:10px;"></div>
         <div style="display:flex;gap:8px;justify-content:flex-end;">
           <button class="btn" onclick="closeCacheEdit()" style="min-width:80px;">Cancel</button>
           <button class="btn btn-primary" onclick="saveCacheEdit()" id="saveCacheEditBtn" style="min-width:100px;">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRANSCRIPT DICTIONARY BROWSER MODAL -->
+  <div id="dictBrowserModal" class="info-modal" onclick="if(event.target===this)closeDictBrowser()" style="display:none;">
+    <div class="info-modal-content" style="max-width:820px;width:96vw;">
+      <div class="info-modal-header">
+        <div class="info-modal-title">📖 Transcript Dictionary</div>
+        <button class="info-modal-close" onclick="closeDictBrowser()">×</button>
+      </div>
+      <div class="info-modal-body" style="padding:0;overflow:hidden;">
+        <div style="padding:10px 14px 8px;border-bottom:1px solid #eee;display:flex;align-items:center;gap:10px;">
+          <span style="font-size:11px;color:#666;flex:1;">Corrections are applied to Whisper output before intent classification. Whole-word, case-insensitive.</span>
+          <button class="btn btn-sm btn-primary" onclick="closeDictBrowser();openDictEdit(null);" style="white-space:nowrap;">+ Add Entry</button>
+        </div>
+        <div style="overflow-y:auto;max-height:calc(80vh - 110px);padding:0;">
+          <table id="dictTable" style="width:100%;border-collapse:collapse;font-size:11px;">
+            <thead>
+              <tr style="background:#f5f5f5;position:sticky;top:0;z-index:1;">
+                <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #ddd;font-weight:600;">Mistranscribed (raw)</th>
+                <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #ddd;font-weight:600;">Corrected</th>
+                <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #ddd;font-weight:600;">Note</th>
+                <th style="padding:8px 6px;text-align:center;border-bottom:1px solid #ddd;font-weight:600;white-space:nowrap;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="dictTableBody">
+              <tr><td colspan="4" style="padding:20px;text-align:center;color:#999;">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRANSCRIPT DICTIONARY ADD/EDIT MODAL -->
+  <div id="dictEditModal" class="info-modal" onclick="if(event.target===this)closeDictEdit()" style="display:none;">
+    <div class="info-modal-content" style="max-width:480px;width:90vw;">
+      <div class="info-modal-header">
+        <div class="info-modal-title" id="dictEditTitle">Add Dictionary Entry</div>
+        <button class="info-modal-close" onclick="closeDictEdit()">×</button>
+      </div>
+      <div class="info-modal-body" style="padding:14px 16px;">
+        <input type="hidden" id="dictEditId">
+        <div style="margin-bottom:12px;">
+          <label style="font-size:11px;font-weight:600;color:#444;display:block;margin-bottom:4px;">Mistranscribed text <span style="font-weight:400;color:#999;">(what Whisper says)</span></label>
+          <input id="dictEditRaw" type="text"
+            style="width:100%;box-sizing:border-box;font-size:12px;border:1px solid #ccc;border-radius:4px;padding:6px 8px;"
+            placeholder="e.g. passed due">
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:11px;font-weight:600;color:#444;display:block;margin-bottom:4px;">Corrected text <span style="font-weight:400;color:#999;">(what it should be)</span></label>
+          <input id="dictEditCorrected" type="text"
+            style="width:100%;box-sizing:border-box;font-size:12px;border:1px solid #ccc;border-radius:4px;padding:6px 8px;"
+            placeholder="e.g. past due">
+        </div>
+        <div style="margin-bottom:14px;">
+          <label style="font-size:11px;font-weight:600;color:#444;display:block;margin-bottom:4px;">Note <span style="font-weight:400;color:#999;">(optional)</span></label>
+          <input id="dictEditNote" type="text"
+            style="width:100%;box-sizing:border-box;font-size:11px;border:1px solid #ccc;border-radius:4px;padding:5px 8px;"
+            placeholder="e.g. Whisper mishears past/passed">
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button class="btn" onclick="closeDictEdit()" style="min-width:80px;">Cancel</button>
+          <button class="btn btn-primary" onclick="saveDictEntry()" id="saveDictBtn" style="min-width:100px;">Save</button>
         </div>
       </div>
     </div>
@@ -3166,6 +3273,7 @@
       // Special handling for AI drawer — refresh cache count and model status on open
       if (drawerName === 'ai') {
         loadAiCacheStats();
+        loadDictStats();
         const sttMode    = document.querySelector('input[name="transcriptionMode"]:checked')?.value || 'local';
         const intentMode = document.querySelector('input[name="intentMode"]:checked')?.value || 'local';
         refreshAiModelButtonState(sttMode, intentMode);
@@ -4898,10 +5006,10 @@
         msg = '✅ Fully local &amp; free. No API key needed.';
         bg = '#f5f9f5'; border = '#c8e6c9';
       } else if (sttMode === 'local' && intentMode === 'openai') {
-        msg = '💳 ~$0.0001/message for intent &amp; summary via GPT-4o-mini. Transcription is free (local).';
+        msg = '💳 ~$0.0001/message for intent via GPT-4o-mini. Transcription is free (local).';
         bg = '#fff8f0'; border = '#ffe0b2';
       } else if (sttMode === 'openai' && intentMode === 'local') {
-        msg = '💳 ~$0.003–$0.006/message for OpenAI transcription. Intent &amp; summary are free (local).';
+        msg = '💳 ~$0.003–$0.006/message for OpenAI transcription. Intent is free (local).';
         bg = '#fff8f0'; border = '#ffe0b2';
       } else {
         msg = '💳 ~$0.003–$0.006/message transcription + ~$0.0001/message intent via OpenAI.';
@@ -4972,7 +5080,7 @@
     }
 
     // ── Cache Browser ──────────────────────────────────────────────────────────
-    const INTENT_OPTIONS = ['', 'collections', 'payment reminder', 'appointment reminder', 'welcome', 'general', 'sales', 'survey', 'follow-up'];
+    const INTENT_OPTIONS = ['', 'LCM', 'Modified Zortman', 'first payment default', 'delinquent loan payment', 'pre-charge-off collections', 'overdrawn account', 'friendly payment reminder', 'healthcare or third-party collections', 'loan application follow-up', 'pre-approval or refinance offer', 'CPI or insurance notification', 'title perfection reminder', 'holiday skip payment offer', 'unused rewards notification', 'dormant account notification', 'fraud alert', 'card services notification', 'system update or downtime notice', 'new member welcome', 'product or rate promotion', 'educational event or workshop', 'marketing or lead response', 'disaster recovery or closure notice', 'general notice'];
 
     async function openCacheBrowser() {
       $('cacheBrowserModal').style.display = 'flex';
@@ -5006,11 +5114,10 @@
             <td style="padding:7px 10px;vertical-align:top;white-space:nowrap;color:#666;font-size:10px;">${entry.message_id}<br><span style="color:#aaa;">${entry.account_id}</span></td>
             <td style="padding:7px 10px;vertical-align:top;max-width:220px;word-break:break-word;" title="${transcript}">${shortTranscript || '<span style="color:#bbb;font-style:italic;">—</span>'}</td>
             <td style="padding:7px 10px;vertical-align:top;white-space:nowrap;">${entry.intent || '<span style="color:#bbb;font-style:italic;">—</span>'}</td>
-            <td style="padding:7px 10px;vertical-align:top;white-space:nowrap;">${entry.intent_summary || '<span style="color:#bbb;font-style:italic;">—</span>'}</td>
             <td style="padding:7px 10px;vertical-align:top;white-space:nowrap;color:#888;font-size:10px;">${ts}<br><span style="color:#bbb;">${entry.stt_model || ''}</span></td>
             <td style="padding:7px 6px;vertical-align:top;text-align:center;white-space:nowrap;">
               <button class="btn btn-sm" onclick="openCacheEdit('${entry.message_id}','${entry.account_id}')" style="margin-bottom:3px;display:block;width:100%;">Edit</button>
-              <button class="btn btn-sm" onclick="deleteCacheEntry('${entry.message_id}','${entry.account_id}',this)" style="color:#c62828;">Delete</button>
+              <button class="btn btn-sm" onclick="deleteCacheEntry('${entry.message_id}','${entry.account_id}',this)" style="display:block;width:100%;color:#c62828;">Delete</button>
             </td>`;
           tbody.appendChild(tr);
         }
@@ -5018,7 +5125,7 @@
         const countEl = $('aiCacheCount');
         if (countEl) countEl.textContent = `${d.entries.length} message${d.entries.length !== 1 ? 's' : ''} cached`;
       } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="6" style="padding:20px;text-align:center;color:#c00;">Error loading cache: ${e.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" style="padding:20px;text-align:center;color:#c00;">Error loading cache: ${e.message}</td></tr>`;
       }
     }
 
@@ -5061,8 +5168,6 @@
         $('editCacheAcctId').value = entry.account_id;
         $('editCacheTranscript').value = entry.transcript || '';
         $('editCacheIntent').value = entry.intent || '';
-        $('editCacheSummary').value = entry.intent_summary || '';
-        updateEditWordCount();
         $('cacheEditModal').style.display = 'flex';
       }).catch(() => showToast('Could not load entry', 'error'));
     }
@@ -5071,45 +5176,165 @@
       $('cacheEditModal').style.display = 'none';
     }
 
-    function updateEditWordCount() {
-      const val = ($('editCacheSummary').value || '').trim();
-      const words = val ? val.split(/\s+/).length : 0;
-      const el = $('editCacheWordCount');
-      if (el) {
-        el.textContent = `${words} word${words !== 1 ? 's' : ''}${words > 6 ? ' — over limit (max 6)' : ''}`;
-        el.style.color = words > 6 ? '#c62828' : '#999';
-      }
-    }
-    // Attach live word count update
-    document.addEventListener('DOMContentLoaded', () => {
-      const summaryInput = $('editCacheSummary');
-      if (summaryInput) summaryInput.addEventListener('input', updateEditWordCount);
-    });
-
     async function saveCacheEdit() {
-      const msgId   = $('editCacheMsgId').value;
-      const acctId  = $('editCacheAcctId').value;
-      const transcript    = $('editCacheTranscript').value.trim();
-      const intent        = $('editCacheIntent').value;
-      const intentSummary = $('editCacheSummary').value.trim();
-      const words = intentSummary ? intentSummary.split(/\s+/).length : 0;
-      if (words > 6) {
-        showToast('Summary must be 6 words or fewer', 'error');
-        return;
-      }
+      const msgId      = $('editCacheMsgId').value;
+      const acctId     = $('editCacheAcctId').value;
+      const transcript = $('editCacheTranscript').value.trim();
+      const intent     = $('editCacheIntent').value;
       const btn = $('saveCacheEditBtn');
       if (btn) btn.disabled = true;
       try {
         const r = await fetch('/api/ai/cache-update', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message_id: msgId, account_id: acctId, transcript, intent, intent_summary: intentSummary })
+          body: JSON.stringify({ message_id: msgId, account_id: acctId, transcript, intent, intent_summary: '' })
         });
         const d = await r.json();
         if (d.ok) {
           showToast('Cache entry saved', 'success', 1800);
           closeCacheEdit();
           await loadCacheEntries(); // refresh table
+        } else {
+          showToast('Failed to save: ' + (d.error || 'unknown error'), 'error');
+        }
+      } catch (e) {
+        showToast('Failed to save: ' + e.message, 'error');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    // ── Transcript Dictionary ───────────────────────────────────────────────
+
+    async function loadDictStats() {
+      try {
+        const r = await fetch('/api/ai/dict-stats');
+        if (r.ok) {
+          const d = await r.json();
+          const el = $('aiDictCount');
+          if (el) el.textContent = `${d.count} entr${d.count !== 1 ? 'ies' : 'y'}`;
+        }
+      } catch (e) {}
+    }
+
+    async function openDictBrowser() {
+      $('dictBrowserModal').style.display = 'flex';
+      await loadDictEntries();
+    }
+
+    function closeDictBrowser() {
+      $('dictBrowserModal').style.display = 'none';
+    }
+
+    async function loadDictEntries() {
+      const tbody = $('dictTableBody');
+      tbody.innerHTML = '<tr><td colspan="4" style="padding:20px;text-align:center;color:#999;">Loading…</td></tr>';
+      try {
+        const r = await fetch('/api/ai/dict-list');
+        const d = await r.json();
+        if (!d.ok || !d.entries || d.entries.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" style="padding:20px;text-align:center;color:#999;">No entries yet. Click "+ Add Entry" to add your first correction.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = '';
+        for (const entry of d.entries) {
+          const tr = document.createElement('tr');
+          tr.style.borderBottom = '1px solid #f0f0f0';
+          tr.innerHTML = `
+            <td style="padding:7px 10px;vertical-align:middle;font-family:monospace;background:#fff8f0;color:#b71c1c;">${(entry.raw_text||'').replace(/</g,'&lt;')}</td>
+            <td style="padding:7px 10px;vertical-align:middle;font-family:monospace;color:#1b5e20;">${(entry.corrected||'').replace(/</g,'&lt;')}</td>
+            <td style="padding:7px 10px;vertical-align:middle;color:#888;font-size:10px;">${(entry.note||'').replace(/</g,'&lt;') || '<span style="color:#ccc;">—</span>'}</td>
+            <td style="padding:7px 6px;vertical-align:middle;text-align:center;white-space:nowrap;">
+              <button class="btn btn-sm" onclick="closeDictBrowser();openDictEdit('${entry.id}')" style="margin-bottom:3px;display:block;width:100%;">Edit</button>
+              <button class="btn btn-sm" onclick="deleteDictEntry('${entry.id}',this)" style="display:block;width:100%;color:#c62828;">Delete</button>
+            </td>`;
+          tbody.appendChild(tr);
+        }
+        const countEl = $('aiDictCount');
+        if (countEl) countEl.textContent = `${d.entries.length} entr${d.entries.length !== 1 ? 'ies' : 'y'}`;
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="4" style="padding:20px;text-align:center;color:#c00;">Error loading dictionary: ${e.message}</td></tr>`;
+      }
+    }
+
+    async function deleteDictEntry(id, btn) {
+      if (!confirm('Delete this dictionary entry?')) return;
+      btn.disabled = true;
+      try {
+        const r = await fetch('/api/ai/dict-delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id })
+        });
+        const d = await r.json();
+        if (d.ok) {
+          btn.closest('tr').remove();
+          showToast('Entry deleted', 'success', 1800);
+          await loadDictStats();
+        } else {
+          showToast('Failed to delete', 'error');
+          btn.disabled = false;
+        }
+      } catch (e) {
+        showToast('Failed to delete', 'error');
+        btn.disabled = false;
+      }
+    }
+
+    // id = null for Add, string id for Edit
+    async function openDictEdit(id) {
+      $('dictEditId').value = id || '';
+      $('dictEditTitle').textContent = id ? 'Edit Dictionary Entry' : 'Add Dictionary Entry';
+      $('dictEditRaw').value = '';
+      $('dictEditCorrected').value = '';
+      $('dictEditNote').value = '';
+
+      if (id) {
+        try {
+          const r = await fetch('/api/ai/dict-list');
+          const d = await r.json();
+          const entry = (d.entries || []).find(e => e.id === id);
+          if (entry) {
+            $('dictEditRaw').value       = entry.raw_text  || '';
+            $('dictEditCorrected').value = entry.corrected || '';
+            $('dictEditNote').value      = entry.note      || '';
+          }
+        } catch (e) {}
+      }
+      $('dictEditModal').style.display = 'flex';
+      $('dictEditRaw').focus();
+    }
+
+    function closeDictEdit() {
+      $('dictEditModal').style.display = 'none';
+    }
+
+    async function saveDictEntry() {
+      const id        = $('dictEditId').value;
+      const raw_text  = $('dictEditRaw').value.trim();
+      const corrected = $('dictEditCorrected').value.trim();
+      const note      = $('dictEditNote').value.trim();
+      if (!raw_text || !corrected) {
+        showToast('Both fields are required', 'error');
+        return;
+      }
+      const btn = $('saveDictBtn');
+      if (btn) btn.disabled = true;
+      try {
+        const endpoint = id ? '/api/ai/dict-update' : '/api/ai/dict-add';
+        const payload  = id ? { id, raw_text, corrected, note } : { raw_text, corrected, note };
+        const r = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const d = await r.json();
+        if (d.ok) {
+          showToast(id ? 'Entry updated' : 'Entry added', 'success', 1800);
+          closeDictEdit();
+          await loadDictStats();
+          // If the browser is open, refresh it
+          if ($('dictBrowserModal').style.display !== 'none') await loadDictEntries();
         } else {
           showToast('Failed to save: ' + (d.error || 'unknown error'), 'error');
         }

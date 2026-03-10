@@ -2,7 +2,7 @@
 // VoApps Tools Version Management
 //
 // Notes:
-// - Current version reflects the newest release (4.0.5).
+// - Current version reflects the newest release (4.0.6).
 // - Keeps feature flags + author from the original "DuckDB Edition" file.
 // - Changelog is unified so each version can include: changes/features, fixes, and breaking changes.
 
@@ -10,9 +10,9 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '4.0.5',
+  VERSION: '4.0.6',
   VERSION_NAME: 'AI Message Intelligence',
-  RELEASE_DATE: '2026-03-06',
+  RELEASE_DATE: '2026-03-09',
   AUTHOR: 'Brett Menzie',
 
   // -----------------------------
@@ -50,6 +50,35 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '4.0.6': {
+      date: '2026-03-09',
+      title: 'AI Intent Accuracy + Transcript Dictionary',
+      changes: [
+        'New Transcript Dictionary — user-managed STT correction table accessible from the AI Message Analysis panel; corrections are applied automatically to Whisper output before intent classification; stored in DuckDB, persists across runs',
+        'Transcript Cache section converted to tabbed layout (Transcript Cache | Transcript Dictionary) for easier access to both tools',
+        'Message Summary removed — intent-only classification now; summary column removed from Excel output and cache browser'
+      ],
+      features: [
+        'Transcript Dictionary: add, edit, and delete word/phrase corrections for Whisper STT errors; whole-word, case-insensitive matching; applied in normalizeSttText() before NLI classifier'
+      ],
+      fixes: [
+        'Expanded intent label set to cover full VoApps use case taxonomy across collections, consumer/direct lending, credit union, servicing, and marketing verticals — 22 specific labels replacing the previous 9 generic ones',
+        'LCM (Limited Content Message) detection — pattern-matched before AI model runs; identifies messages that ask to call back without mentioning debt/account/payment terms',
+        'Modified Zortman detection — pattern-matched before AI model runs; identifies messages containing formal debt-collection disclosure language ("this is an attempt to collect a debt", etc.)',
+        'Healthcare / third-party collections label covers EBO (Extended Business Office), Early Out, 3rd-party medical, debt buyers, and general third-party collectors',
+        'Added hardcoded STT_CORRECTIONS seed entries: "passed due" → "past due", "over draft" → "overdraft", "Suprestemo/Suprestamo" → "su préstamo", "prestamo" → "préstamo"',
+        'Rewrote inferMessageIntent() name-based fallback in trendAnalyzer.js to match the full intent taxonomy (DPD, charge-off, EBO, CPI, title, skip pay, LCM, Modified Zortman, etc.)',
+        'Intent dropdown in Transcript Cache editor now grouped by vertical with all 22+ intents',
+        'Fixed ESM loading of @xenova/transformers in Electron main process — replaced global import() with new Function("p","return import(p)") to bypass Electron\'s ASAR module loader patch',
+        'Fixed long audio transcription truncation — Whisper-base was stopping mid-message on recordings >30s (e.g. 40s Spanish IVR message truncated to 22s); root cause was the library\'s built-in chunking creating a very short final chunk padded with silence that caused a decoder repetition loop; replaced with manual 30s segments at 8s overlap + text-level stitching so every segment contains ≥18s of real audio',
+        'Added no_repeat_ngram_size: 3 to Whisper options — prevents decoder repetition loops (e.g. "registros" → "rosrosrosrosros...") that cause silent transcript truncation',
+        'Suppressed ONNX Runtime C++ graph-optimizer warnings — thousands of "Removing initializer" log lines suppressed by setting env.onnx = { logSeverityLevel: 3 } once in getXenovaMod() before any pipeline is created',
+        'Stripped [S] and [BLANK_AUDIO] silence tokens from Whisper output — these padding artifacts appear at chunk boundaries when speech ends before the 30s window; no longer visible in transcripts',
+        'Fixed DuckDB PRIMARY KEY constraint error on bulk insert — insertRows() now deduplicates rows by row_id before batching, preventing intra-batch collisions when source CSV contains duplicate records',
+        'Fixed Excel transcript truncation — trendAnalyzer.js was slicing transcripts to 400 characters; full transcript text now written to Excel'
+      ]
+    },
+
     '4.0.5': {
       date: '2026-03-08',
       title: 'Windows Update Link Fix',

@@ -72,39 +72,91 @@ function calculateEntropy(distribution) {
  */
 function inferMessageIntent(messageName) {
   if (!messageName) return 'unknown';
-  const name = messageName.toLowerCase();
+  const n = messageName.toLowerCase();
 
-  if (name.includes('collect') || name.includes('payment') || name.includes('past due') || name.includes('balance') || name.includes('debt')) {
-    return 'collections';
-  }
-  if (name.includes('remind') || name.includes('reminder')) {
-    return 'reminder';
-  }
-  if (name.includes('appt') || name.includes('appointment') || name.includes('schedule')) {
-    return 'appointment';
-  }
-  if (name.includes('callback') || name.includes('call back') || name.includes('return call')) {
-    return 'callback';
-  }
-  if (name.includes('confirm') || name.includes('verification')) {
-    return 'confirmation';
-  }
-  if (name.includes('offer') || name.includes('promo') || name.includes('sale') || name.includes('discount')) {
-    return 'marketing';
-  }
-  if (name.includes('urgent') || name.includes('important') || name.includes('immediate')) {
-    return 'urgent';
-  }
-  if (name.includes('welcome') || name.includes('intro') || name.includes('onboard')) {
-    return 'welcome';
-  }
-  if (name.includes('follow') || name.includes('followup')) {
-    return 'followup';
-  }
-  if (name.includes('loan') || name.includes('servic')) {
-    return 'loan servicing';
-  }
-  return 'general';
+  // ── Special message types (pattern-identified) ────────────────────────────
+  if (n.includes('lcm') || n.includes('limited content'))
+    return 'LCM';
+  if (n.includes('zortman') || n.includes('modified zortman'))
+    return 'Modified Zortman';
+
+  // ── Collections ───────────────────────────────────────────────────────────
+  if (n.includes('1st payment') || n.includes('first payment') || n.includes('1st pmt'))
+    return 'first payment default';
+  if (n.includes('charge off') || n.includes('charge-off') || n.includes('pre-charge') ||
+      n.includes('60+') || n.includes('60 dpd') || n.includes('90') || n.includes('pre charge'))
+    return 'pre-charge-off collections';
+  if (n.includes('overdrawn') || n.includes('negative share') || n.includes('nsf') || n.includes('overdraft'))
+    return 'overdrawn account';
+  if (n.includes('friendly') && (n.includes('remind') || n.includes('payment')))
+    return 'friendly payment reminder';
+  if (n.includes('healthcare') || n.includes('medical') || n.includes('hospital') ||
+      n.includes('ebo') || n.includes('early out') || n.includes('3rd party') ||
+      n.includes('third party') || n.includes('debt buyer') || n.includes('extended business'))
+    return 'healthcare or third-party collections';
+  if (n.includes('collect') || n.includes('past due') || n.includes('dpd') ||
+      n.includes('delinquent') || n.includes('balance due'))
+    return 'delinquent loan payment';
+
+  // ── Consumer / Direct Lending ─────────────────────────────────────────────
+  if (n.includes('pre-approv') || n.includes('pre approv') || n.includes('refinanc') ||
+      n.includes('blaster') || n.includes('rate promo'))
+    return 'pre-approval or refinance offer';
+  if (n.includes('application') || n.includes('app follow') || n.includes('pending app') ||
+      n.includes('verification') || n.includes('pending verif'))
+    return 'loan application follow-up';
+  if (n.includes('cpi') || n.includes('force place') || n.includes('force-place') || n.includes('insurance'))
+    return 'CPI or insurance notification';
+  if (n.includes('title'))
+    return 'title perfection reminder';
+  if (n.includes('skip pay') || n.includes('holiday skip') || n.includes('skip-pay'))
+    return 'holiday skip payment offer';
+  if (n.includes('unused reward') || n.includes('rewards'))
+    return 'unused rewards notification';
+  if (n.includes('lead') || n.includes('remarketing') || n.includes('automatic lead') ||
+      n.includes('auto lead'))
+    return 'marketing or lead response';
+
+  // ── Servicing ─────────────────────────────────────────────────────────────
+  if (n.includes('dormant'))
+    return 'dormant account notification';
+  if (n.includes('fraud') || n.includes('phish') || n.includes('scam'))
+    return 'fraud alert';
+  if (n.includes('card activ') || n.includes('card service') || n.includes('card issue'))
+    return 'card services notification';
+  if (n.includes('downtime') || n.includes('olb') || n.includes('system update') ||
+      n.includes('online banking'))
+    return 'system update or downtime notice';
+  if (n.includes('investment') || n.includes('wealth'))
+    return 'product or rate promotion';
+  if (n.includes('disaster') || n.includes('closure') || n.includes('holiday closure') ||
+      n.includes('emergency'))
+    return 'disaster recovery or closure notice';
+
+  // ── Marketing ─────────────────────────────────────────────────────────────
+  if (n.includes('welcome') || n.includes('intro') || n.includes('onboard') ||
+      n.includes('indirect lending welcome') || n.includes('new member'))
+    return 'new member welcome';
+  if (n.includes('offer') || n.includes('promo') || n.includes('promotion') ||
+      n.includes('rate') || n.includes('cd special') || n.includes('discount'))
+    return 'product or rate promotion';
+  if (n.includes('event') || n.includes('workshop') || n.includes('seminar') || n.includes('webinar'))
+    return 'educational event or workshop';
+  if (n.includes('cross sell') || n.includes('ancillary') || n.includes('gap ins') ||
+      n.includes('partnership'))
+    return 'product or rate promotion';
+
+  // ── Payment reminders (generic, when not more specific) ───────────────────
+  if (n.includes('remind') || n.includes('promise') || n.includes('payment reminder'))
+    return 'friendly payment reminder';
+
+  // ── Fallback ──────────────────────────────────────────────────────────────
+  if (n.includes('follow') || n.includes('follow-up') || n.includes('followup'))
+    return 'loan application follow-up';
+  if (n.includes('loan') || n.includes('servic') || n.includes('account'))
+    return 'delinquent loan payment';
+
+  return 'general notice';
 }
 
 /**
@@ -2202,7 +2254,7 @@ async function generateTrendAnalysis(
   const msgHeaders = [
     'Message ID', 'Message Name', 'Intent', 'Total DDVM Attempts', 'Unique Numbers',
     'Successful', 'Unsuccessful', 'Success Rate', 'Day Usage', 'Recommendation',
-    'Transcript', 'Message Summary', 'Mentioned Phone', 'Caller # Match', 'Contains URL', 'Voice Append'
+    'Transcript', 'Mentioned Phone', 'Caller # Match', 'Contains URL', 'Voice Append'
   ];
   msgSheet.getRow(1).values = msgHeaders;
   msgSheet.getRow(1).eachCell((cell) => {
@@ -2212,7 +2264,7 @@ async function generateTrendAnalysis(
   let msgRow = 2;
   for (const msg of messageArray) {
     const mentionedPhone = msg.mentioned_phone || '';
-    const transcript = msg.transcript ? msg.transcript.slice(0, 400) + (msg.transcript.length > 400 ? '…' : '') : '';
+    const transcript = msg.transcript || '';
     msgSheet.getRow(msgRow).values = [
       Number(msg.message_id) || msg.message_id, msg.message_name, msg.intent, msg.total, msg.uniqueNumbers,
       msg.successful, msg.unsuccessful, msg.success_rate,
@@ -2220,7 +2272,6 @@ async function generateTrendAnalysis(
       msg.dayPattern.limited ? msg.dayPattern.recommendation : '',
       // AI columns — blank when AI has not run; populated after transcription
       transcript,
-      msg.intent_summary || '',
       mentionedPhone,
       // Caller # Match and Contains URL only mean something when a transcript exists
       !transcript ? '' : (!mentionedPhone ? '—' : '⚠️ Check caller ID'),
@@ -2445,7 +2496,6 @@ Use the curve to set retry limits: when the curve drops below ~15–20%, additio
     ['Message Intent', 'Inferred purpose of a message based on its name or AI transcript (e.g., collections, reminder, appointment, callback, welcome, followup, loan servicing). When AI Message Analysis is enabled, intent is derived from the full transcript using a classification model for higher accuracy.'],
     ['List Quality Grade', 'Overall grade (A-D) for the phone number list based on TN health distribution. A: >80% Healthy, <5% Delivery Unlikely. B: >60% Healthy, <10% Delivery Unlikely. C: >40% Healthy, <20% Delivery Unlikely. D: All other cases.'],
     ['Message Transcript', 'Full spoken text of the DDVM voicemail recording, transcribed using Whisper (local or OpenAI). Populated when AI Message Analysis is enabled in settings. Stored permanently in the local DuckDB cache — each message is only transcribed once.'],
-    ['Message Summary', 'One-sentence AI-generated description of a message\'s purpose, inferred from its transcript. Generated by the local nli-deberta model or GPT-4o-mini depending on your settings.'],
     ['Caller # Match', 'Indicates whether a phone number spoken aloud in the message matches the caller ID shown to the recipient. A mismatch means the recipient hears a different callback number than what their phone displays — which can cause confusion or reduce callback rates.'],
     ['Voice Append', 'Indicates the message was used with VoApps Voice Append — a feature that appends a personalized spoken element to the base recording. Detected via the voapps_voice_append field in campaign export data.'],
     ['Contains URL', 'Indicates the message transcript references a website URL or domain name (e.g., "visit us at acme.com" or "go to our website"). Detected via regex on the transcript when AI Message Analysis is enabled.']
