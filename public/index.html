@@ -4171,7 +4171,11 @@
               end_date: endDate,
               min_consec_unsuccessful: minConsec,
               min_run_span_days: minSpan,
-              client_prefix: clientPrefix
+              client_prefix: clientPrefix,
+              api_key: $('apiKey')?.value || localStorage.getItem(KEY_STORE) || '',
+              ai_enabled: $('enableAiAnalysis')?.checked || false,
+              ai_transcription_mode: document.querySelector('input[name="transcriptionMode"]:checked')?.value || 'local',
+              ai_intent_mode: document.querySelector('input[name="intentMode"]:checked')?.value || 'local'
             })
           });
         } finally {

@@ -5180,7 +5180,11 @@ function createHttpServer() {
           min_consec_unsuccessful = 4,
           min_run_span_days = 30,
           client_prefix = "",
-          include_detail_tabs = false
+          include_detail_tabs = false,
+          api_key: dbApiKey = '',
+          ai_enabled: dbAiEnabled = false,
+          ai_transcription_mode: dbAiTranscriptionMode = 'local',
+          ai_intent_mode: dbAiIntentMode = 'local'
         } = body;
 
         if (!dbReady) {
@@ -5291,6 +5295,99 @@ function createHttpServer() {
         log(`\n📊 Generating Delivery Intelligence Report...`);
         log(`Output: ${analysisFilename}`);
 
+        // ── AI Message Analysis (optional) ───────────────────────────────────
+        // Load cached transcripts from DuckDB for any messages in this date
+        // range.  If AI is enabled and an API key was provided, also fetch and
+        // transcribe any messages that aren't yet cached.
+        let dbTranscriptMap = {};
+        try {
+          const dbLog = (msg) => { log(`[AI] ${msg}`); console.log('[AI DB]', msg); };
+
+          // Find every distinct message used in the date range
+          const usedMsgs = await runQuery(`
+            SELECT DISTINCT account_id, message_id, message_name
+            FROM campaign_results
+            WHERE target_date >= '${start_date}' AND target_date <= '${end_date}'
+              AND message_id IS NOT NULL AND message_id != '' AND message_id != '0' AND message_id != 'Unknown'
+          `);
+
+          const uniqueMessageKeys = new Set((usedMsgs || []).map(r => `${r.account_id}:${r.message_id}`));
+          const uniqueAccountIds  = new Set((usedMsgs || []).map(r => String(r.account_id)));
+
+          if (uniqueMessageKeys.size > 0) {
+            // Load already-cached transcriptions
+            const cachedRows = await runQuery(
+              'SELECT message_id, account_id, transcript, intent, intent_summary, mentioned_phone, mentions_url FROM message_transcriptions'
+            );
+            const cachedKeys = new Set();
+            for (const r of (cachedRows || [])) {
+              const k = `${r.account_id}:${r.message_id}`;
+              cachedKeys.add(k);
+              if (uniqueMessageKeys.has(k)) {
+                dbTranscriptMap[k] = {
+                  transcript: r.transcript || '',
+                  intent: r.intent || '',
+                  intent_summary: r.intent_summary || '',
+                  mentioned_phone: r.mentioned_phone || '',
+                  mentions_url: !!r.mentions_url
+                };
+              }
+            }
+
+            const uncachedKeys = new Set([...uniqueMessageKeys].filter(k => !cachedKeys.has(k)));
+            dbLog(`${Object.keys(dbTranscriptMap).length} cached, ${uncachedKeys.size} uncached of ${uniqueMessageKeys.size} message(s)`);
+
+            // Fetch + transcribe uncached messages if AI is on and key is set
+            if (dbAiEnabled && dbApiKey && uncachedKeys.size > 0) {
+              const aiMessageInfo = {};
+              // Build name map from the DB query so we can pass names to the classifier
+              const nameMap = {};
+              for (const r of (usedMsgs || [])) nameMap[`${r.account_id}:${r.message_id}`] = r.message_name || '';
+
+              for (const accountId of uniqueAccountIds) {
+                try {
+                  const freshData = await retryableApiCall(
+                    `/accounts/${accountId}/messages?filter=all`, dbApiKey, dbLog, 'normal'
+                  );
+                  if (Array.isArray(freshData?.messages)) {
+                    for (const msg of freshData.messages) {
+                      const k = `${accountId}:${msg.id}`;
+                      if (uncachedKeys.has(k)) {
+                        aiMessageInfo[k] = {
+                          name: msg.name || nameMap[k] || '',
+                          description: msg.description || '',
+                          file_url: msg.file_url || msg.audio_url || msg.recording_url || msg.url || ''
+                        };
+                      }
+                    }
+                  }
+                } catch (urlErr) {
+                  dbLog(`⚠️  Could not fetch messages for account ${accountId}: ${urlErr.message}`);
+                }
+              }
+
+              const toTranscribe = Object.keys(aiMessageInfo).length;
+              if (toTranscribe > 0) {
+                dbLog(`Fetched audio URLs for ${toTranscribe} message(s) — transcribing...`);
+                const aiSettings = {
+                  enabled: true,
+                  transcriptionMode: dbAiTranscriptionMode,
+                  intentMode: dbAiIntentMode,
+                  openaiApiKey: getAiSettings().openaiApiKey,
+                };
+                const newTranscripts = await transcribeAndAnalyzeMessages(aiMessageInfo, aiSettings, dbLog);
+                Object.assign(dbTranscriptMap, newTranscripts);
+              } else {
+                dbLog('No audio URLs found for uncached messages — skipping transcription');
+              }
+            } else if (uncachedKeys.size > 0 && !dbAiEnabled) {
+              dbLog(`${uncachedKeys.size} message(s) not yet transcribed — enable AI to transcribe them`);
+            }
+          }
+        } catch (aiErr) {
+          console.warn('[AI DB] AI analysis failed (non-fatal):', aiErr.message);
+        }
+
         await runAnalysisInWorker(
           tempCsvFiles,
           analysisPath,
@@ -5301,7 +5398,8 @@ function createHttpServer() {
           {},  // accountTimezones
           userTz,
           userTzLabel,
-          include_detail_tabs
+          include_detail_tabs,
+          dbTranscriptMap
         );
 
         // Clean up temp CSV files
