@@ -1102,6 +1102,21 @@ const INTENT_LABELS = [
   'general notice',
 ];
 
+// Intent category groups used for the category-mismatch guard.
+// If the message name clearly maps to one group but the AI returns the other,
+// the name-based hint wins — AI models (especially local NLI on Spanish text)
+// frequently confuse soft-spoken collections messages with marketing.
+const COLLECTIONS_INTENTS = new Set([
+  'first payment default', 'delinquent loan payment', 'pre-charge-off collections',
+  'overdrawn account', 'friendly payment reminder', 'healthcare or third-party collections',
+]);
+const MARKETING_INTENTS = new Set([
+  'marketing or lead response', 'product or rate promotion',
+  'new member welcome', 'educational event or workshop',
+  'pre-approval or refinance offer', 'holiday skip payment offer',
+  'unused rewards notification',
+]);
+
 async function classifyIntentWithOpenAI(transcript, apiKey, log, messageName = '') {
   // Pattern-detect before calling the model
   if (detectLCM(transcript))             return { intent: 'LCM' };
@@ -1145,7 +1160,17 @@ Respond with only valid JSON, no markdown.`
     const data = await response.json();
     const raw = data.choices?.[0]?.message?.content || '{}';
     const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
-    return { intent: parsed.intent || '' };
+    const aiIntent = parsed.intent || '';
+
+    // Category-mismatch guard: if the name says "collections" but the AI says
+    // "marketing" (or vice versa), trust the name — the AI can be confused by
+    // polite/indirect language, especially in Spanish.
+    if (nameHint && COLLECTIONS_INTENTS.has(nameHint) && MARKETING_INTENTS.has(aiIntent)) {
+      log(`[AI]   💡 Category mismatch (name: collections, GPT: marketing) — using name: ${nameHint}`);
+      return { intent: nameHint };
+    }
+
+    return { intent: aiIntent };
   } catch (e) {
     log(`[AI]   ⚠️  OpenAI intent failed: ${e.message}`);
     return { intent: '' };
@@ -1176,6 +1201,15 @@ async function classifyIntentLocal(transcript, log, messageName = '') {
     if (nameHint && nameHint !== 'general notice' && nameHint !== 'unknown' &&
         topScore < CONFIDENCE_THRESHOLD) {
       log(`[AI]   💡 Low NLI confidence (${topScore.toFixed(2)}) — using name-based intent: ${nameHint}`);
+      return { intent: nameHint };
+    }
+
+    // Category-mismatch guard: regardless of confidence, if the name clearly
+    // signals a collections intent but the NLI returns marketing (common with
+    // Spanish transcripts where the model is primarily English-trained), trust
+    // the name.
+    if (nameHint && COLLECTIONS_INTENTS.has(nameHint) && MARKETING_INTENTS.has(topLabel)) {
+      log(`[AI]   💡 Category mismatch (name: collections, NLI: marketing) — using name: ${nameHint}`);
       return { intent: nameHint };
     }
 
@@ -4950,6 +4984,10 @@ function createHttpServer() {
         const csvTexts = [];
         let minConsec = 4;
         let minSpan = 30;
+        let csvApiKey = '';
+        let csvAiEnabled = false;
+        let csvAiTranscriptionMode = 'local';
+        let csvAiIntentMode = 'local';
 
         let searchStart = 0;
         while (searchStart < bodyBuf.length) {
@@ -4972,6 +5010,14 @@ function createHttpServer() {
             minConsec = parseInt(bodyBuf.slice(contentStart, contentEnd).toString()) || 4;
           } else if (header.includes('name="min_run_span_days"')) {
             minSpan = parseInt(bodyBuf.slice(contentStart, contentEnd).toString()) || 30;
+          } else if (header.includes('name="api_key"')) {
+            csvApiKey = bodyBuf.slice(contentStart, contentEnd).toString().trim();
+          } else if (header.includes('name="ai_enabled"')) {
+            csvAiEnabled = bodyBuf.slice(contentStart, contentEnd).toString().trim() === 'true';
+          } else if (header.includes('name="ai_transcription_mode"')) {
+            csvAiTranscriptionMode = bodyBuf.slice(contentStart, contentEnd).toString().trim() || 'local';
+          } else if (header.includes('name="ai_intent_mode"')) {
+            csvAiIntentMode = bodyBuf.slice(contentStart, contentEnd).toString().trim() || 'local';
           }
         }
 
@@ -4993,6 +5039,98 @@ function createHttpServer() {
         const analysisFilename = `NumberAnalysis_${suffix}.xlsx`;
         const analysisPath = path.join(outDir, analysisFilename);
 
+        // ── AI Message Analysis (optional) ───────────────────────────────────
+        // When AI is enabled and an API key is provided, fetch audio for any
+        // messages in the dataset that aren't already in the transcription cache,
+        // transcribe them, and pass the results to the analysis worker so the
+        // report shows real intents instead of name-inferred ones.
+        let csvTranscriptMap = {};
+        if (csvAiEnabled && csvApiKey) {
+          const csvLog = (msg) => console.log('[AI CSV]', msg);
+          try {
+            // Collect unique account_id:message_id pairs from all CSV rows.
+            const uniqueMessageKeys = new Set();
+            const uniqueAccountIds  = new Set();
+            for (const row of allRows) {
+              const aId = (row.account_id || '').trim();
+              const mId = (row.message_id  || '').trim();
+              if (aId && mId && mId !== 'Unknown' && mId !== '0') {
+                uniqueMessageKeys.add(`${aId}:${mId}`);
+                uniqueAccountIds.add(aId);
+              }
+            }
+            csvLog(`Found ${uniqueMessageKeys.size} unique message(s) across ${uniqueAccountIds.size} account(s)`);
+
+            if (uniqueMessageKeys.size > 0) {
+              // Load already-cached transcriptions from DuckDB.
+              const cachedKeys = new Set();
+              if (dbReady) {
+                const cached = await runQuery(
+                  'SELECT message_id, account_id, transcript, intent, intent_summary, mentioned_phone, mentions_url FROM message_transcriptions'
+                );
+                for (const r of (cached || [])) {
+                  const k = `${r.account_id}:${r.message_id}`;
+                  cachedKeys.add(k);
+                  if (uniqueMessageKeys.has(k)) {
+                    csvTranscriptMap[k] = {
+                      transcript: r.transcript || '',
+                      intent: r.intent || '',
+                      intent_summary: r.intent_summary || '',
+                      mentioned_phone: r.mentioned_phone || '',
+                      mentions_url: !!r.mentions_url
+                    };
+                  }
+                }
+              }
+
+              const uncachedKeys = new Set([...uniqueMessageKeys].filter(k => !cachedKeys.has(k)));
+              csvLog(`${cachedKeys.size} already cached, ${uncachedKeys.size} need transcription`);
+
+              if (uncachedKeys.size > 0) {
+                // Fetch fresh audio URLs from VoApps API for each account.
+                const aiMessageInfo = {};
+                for (const accountId of uniqueAccountIds) {
+                  try {
+                    const freshData = await retryableApiCall(
+                      `/accounts/${accountId}/messages?filter=all`, csvApiKey, csvLog, 'normal'
+                    );
+                    if (Array.isArray(freshData?.messages)) {
+                      for (const msg of freshData.messages) {
+                        const k = `${accountId}:${msg.id}`;
+                        if (uncachedKeys.has(k)) {
+                          aiMessageInfo[k] = {
+                            name: msg.name || '',
+                            description: msg.description || '',
+                            file_url: msg.file_url || msg.audio_url || msg.recording_url || msg.url || ''
+                          };
+                        }
+                      }
+                    }
+                  } catch (urlErr) {
+                    csvLog(`⚠️  Could not fetch messages for account ${accountId}: ${urlErr.message}`);
+                  }
+                }
+
+                const toTranscribe = Object.keys(aiMessageInfo).length;
+                csvLog(`Fetched audio URLs for ${toTranscribe} message(s) — transcribing...`);
+
+                if (toTranscribe > 0) {
+                  const aiSettings = {
+                    enabled: true,
+                    transcriptionMode: csvAiTranscriptionMode,
+                    intentMode: csvAiIntentMode,
+                    openaiApiKey: getAiSettings().openaiApiKey,
+                  };
+                  const newTranscripts = await transcribeAndAnalyzeMessages(aiMessageInfo, aiSettings, csvLog);
+                  Object.assign(csvTranscriptMap, newTranscripts);
+                }
+              }
+            }
+          } catch (aiErr) {
+            console.warn('[AI CSV] AI analysis failed (non-fatal):', aiErr.message);
+          }
+        }
+
         // Dynamic row limit: target ~50MB of string data per split file.
         // Estimate avg bytes per row based on column count (each col ~20 chars avg).
         const colCount = headers.length || 14;
@@ -5004,7 +5142,7 @@ function createHttpServer() {
           const tempCsvPath = path.join(outDir, `UploadedCSV_${suffix}.csv`);
           const csvResult = await writeCsv(tempCsvPath, allRows, headers, null, dynamicRowLimit);
 
-          await runAnalysisInWorker(csvResult.files, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel, false);
+          await runAnalysisInWorker(csvResult.files, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel, false, csvTranscriptMap);
 
           lastArtifacts.analysisPath = analysisPath;
 
@@ -5016,7 +5154,7 @@ function createHttpServer() {
           });
         }
 
-        await runAnalysisInWorker(allRows, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel, false);
+        await runAnalysisInWorker(allRows, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel, false, csvTranscriptMap);
 
         lastArtifacts.analysisPath = analysisPath;
 

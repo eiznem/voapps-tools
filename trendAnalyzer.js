@@ -90,6 +90,9 @@ function inferMessageIntent(messageName) {
     return 'overdrawn account';
   if (n.includes('friendly') && (n.includes('remind') || n.includes('payment')))
     return 'friendly payment reminder';
+  if (n.includes('hardship') || n.includes('temporary hardship') ||
+      n.includes('financial difficulty') || n.includes('assistance program'))
+    return 'friendly payment reminder';   // hardship/assistance = soft collections
   if (n.includes('healthcare') || n.includes('medical') || n.includes('hospital') ||
       n.includes('ebo') || n.includes('early out') || /\beo\b/.test(n) ||
       n.includes('3rd party') || n.includes('third party') ||

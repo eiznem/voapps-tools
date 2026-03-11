@@ -4074,7 +4074,19 @@
         formData.append('min_consec_unsuccessful', minConsec);
         formData.append('min_run_span_days', minSpan);
 
+        // Include API key and AI settings so the server can transcribe uncached
+        // messages during CSV analysis (same AI path as the Combine flow).
+        const csvApiKey = $('apiKey')?.value || localStorage.getItem(KEY_STORE) || '';
+        const csvAiEnabled = $('enableAiAnalysis')?.checked || false;
+        formData.append('api_key', csvApiKey);
+        formData.append('ai_enabled', csvAiEnabled.toString());
+        formData.append('ai_transcription_mode',
+          document.querySelector('input[name="transcriptionMode"]:checked')?.value || 'local');
+        formData.append('ai_intent_mode',
+          document.querySelector('input[name="intentMode"]:checked')?.value || 'local');
+
         log(`Uploading and processing ${uploadedCsvFiles.length} CSV file(s)...`);
+        if (csvAiEnabled) log('  AI Message Analysis: enabled');
         updateProgress(-1, 100, 'Analyzing data...'); // -1 = indeterminate
 
         const response = await fetch('/api/analyze-csv', {
