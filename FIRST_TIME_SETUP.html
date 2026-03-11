@@ -222,8 +222,52 @@
             </p>
         </div>
 
+        <h2>Optional: AI Message Analysis Setup</h2>
+        <p>
+            VoApps Tools can transcribe DDVM recordings and automatically detect message intent using on-device AI models.
+            Models require a one-time download (~230 MB total). If your machine has internet access to Hugging Face, the app
+            will download them automatically when you click <strong>"Download"</strong> in the AI settings panel.
+        </p>
+        <p>
+            If Hugging Face is blocked on your network, you can transfer the models manually using the zip file provided
+            by your VoApps contact:
+        </p>
+
+        <div class="step">
+            <span class="step-number">1</span>
+            <span class="step-title">Download the Models Zip</span>
+            <p style="margin: 12px 0 0 38px;">
+                Get <strong>VoApps-Tools-Models.zip</strong> from the
+                <a href="https://github.com/eiznem/voapps-tools/releases/latest" style="color:#667eea;">latest GitHub release</a>
+                (under Assets) or from your VoApps contact.
+            </p>
+        </div>
+
+        <div class="step">
+            <span class="step-number">2</span>
+            <span class="step-title">Extract to the Models Folder</span>
+            <p style="margin: 12px 0 8px 38px;">
+                Open Terminal and run:
+            </p>
+            <div class="code-block" style="margin-left: 38px;">mkdir -p ~/Library/Application\ Support/VoApps\ Tools/models && unzip ~/Downloads/VoApps-Tools-Models.zip -d ~/Library/Application\ Support/VoApps\ Tools/models/</div>
+            <p style="margin: 8px 0 0 38px; font-size: 13px; color: #666;">
+                Or manually extract the zip and move the <code>Xenova</code> folder to:<br>
+                <code>~/Library/Application Support/VoApps Tools/models/</code>
+            </p>
+        </div>
+
+        <div class="step">
+            <span class="step-number">3</span>
+            <span class="step-title">Verify in the App</span>
+            <p style="margin: 12px 0 0 38px;">
+                Open VoApps Tools → click <strong>AI Message Analysis</strong> in the left sidebar.
+                Both model buttons should show <strong>"Re-download ↺"</strong>, confirming the models
+                are found. You're ready to analyze messages without any downloads.
+            </p>
+        </div>
+
         <div class="version">
-            <strong>VoApps Tools v3.4.2</strong>
+            <strong>VoApps Tools v4.1.0</strong>
         </div>
     </div>
 </body>
