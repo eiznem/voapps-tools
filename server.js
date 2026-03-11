@@ -1119,11 +1119,18 @@ async function transcribeWithLocalWhisper(audioPath, log) {
 // LCM = Limited Content Message: a message that intentionally avoids identifying
 // the debt — just asks the recipient to call back. No payment/loan/debt terms.
 const LCM_CALLBACK_PATTERN  = /please (return my call|call (?:me|us) back)\b|call (me|us)(?: or \w+)? back at\b|personal business matter/i;
+// Debt collection / financial distress terms — if present, message has substantive
+// content and is NOT an LCM even if it asks for a callback.
 const LCM_DEBT_TERMS        = /payment|past due|loan|account balance|debt|owe\b|credit|mortgage|delinquent|overdrawn|amount due/i;
+// Substantive context terms — application follow-ups, lending offers, approvals etc.
+// These messages explain WHY they are calling so they cannot be a Limited Content Message.
+const LCM_CONTEXT_TERMS     = /application|funding|financing|approv|qualif|offer|interest rate|program|steps|process|get you|we can help|lender|lending/i;
 
 function detectLCM(transcript) {
   if (!transcript) return false;
-  return LCM_CALLBACK_PATTERN.test(transcript) && !LCM_DEBT_TERMS.test(transcript);
+  return LCM_CALLBACK_PATTERN.test(transcript)
+    && !LCM_DEBT_TERMS.test(transcript)
+    && !LCM_CONTEXT_TERMS.test(transcript);
 }
 
 // Modified Zortman: message contains formal debt-collection disclosure language.
