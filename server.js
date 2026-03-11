@@ -91,7 +91,7 @@ const path = require("path");
 const os = require("os");
 const { parse: parseUrl } = require("url");
 const { createWriteStream } = require('fs');
-const { generateTrendAnalysis } = require("./trendAnalyzer");
+const { generateTrendAnalysis, inferMessageIntent } = require("./trendAnalyzer");
 const { Worker } = require('worker_threads');
 const { VERSION, VERSION_NAME } = require('./version');
 
@@ -466,22 +466,35 @@ async function transcribeAndAnalyzeMessages(messageInfo, aiSettings, log) {
       let intentModelLabel = '';
       let sttModelLabel = transcriptionMode === 'openai' ? 'openai-whisper-1' : 'whisper-base-local';
 
+      // Resolve message name early — used both as a classifier hint and for logging.
+      const msgName = messageInfo[key]?.name || messageId;
+
       if (intentMode === 'openai') {
         if (!openaiApiKey) { log('[AI]   ⚠️  OpenAI API key not set — using name-based intent'); }
         else {
-          const result = await classifyIntentWithOpenAI(transcript, openaiApiKey, log);
+          const result = await classifyIntentWithOpenAI(transcript, openaiApiKey, log, msgName);
           intent = result.intent;
           intentModelLabel = 'openai-gpt4o-mini';
         }
       } else {
-        const result = await classifyIntentLocal(transcript, log);
+        const result = await classifyIntentLocal(transcript, log, msgName);
         intent = result.intent;
         intentModelLabel = 'nli-deberta-v3-local';
       }
 
+      // Final fallback: if neither AI path returned an intent, derive it from
+      // the message name alone (no model needed, purely pattern-based).
+      if (!intent) {
+        const nameHint = inferMessageIntent(msgName);
+        if (nameHint && nameHint !== 'general notice' && nameHint !== 'unknown') {
+          intent = nameHint;
+          intentModelLabel = 'name-based';
+          log(`[AI]   💡 No AI intent returned — using name-based: ${intent}`);
+        }
+      }
+
       const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
       const urlNote = mentionsUrl ? ' | mentions URL' : '';
-      const msgName = messageInfo[key]?.name || messageId;
       log(`[AI]   [transcribed] ${msgName} → ${intent || 'unknown'} | ${elapsed}s${urlNote}`);
 
       // Cache in DB (skip when DB not available — e.g. Windows; results still returned in-memory)
@@ -1089,19 +1102,30 @@ const INTENT_LABELS = [
   'general notice',
 ];
 
-async function classifyIntentWithOpenAI(transcript, apiKey, log) {
+async function classifyIntentWithOpenAI(transcript, apiKey, log, messageName = '') {
   // Pattern-detect before calling the model
   if (detectLCM(transcript))             return { intent: 'LCM' };
   if (detectModifiedZortman(transcript)) return { intent: 'Modified Zortman' };
+
+  // Use the message name as a classification hint when available.
+  // inferMessageIntent maps common naming conventions (e.g. "Negative Shares 45+ DPD"
+  // → "overdrawn account") so the AI isn't misled by a generic-sounding transcript.
+  const nameHint = messageName ? inferMessageIntent(messageName) : '';
+  const nameContext = messageName
+    ? `\nMessage title: "${messageName}".` +
+      (nameHint && nameHint !== 'general notice' && nameHint !== 'unknown'
+        ? ` Based on this title alone, it is likely: "${nameHint}".`
+        : '')
+    : '';
 
   try {
     const body = JSON.stringify({
       model: 'gpt-4o-mini',
       messages: [{
         role: 'user',
-        content: `You are classifying a short voicemail message left by a business. Return ONLY valid JSON with:
+        content: `You are classifying a short voicemail message left by a financial institution. Return ONLY valid JSON with:
 - "intent": a concise label (3–6 words) describing the message purpose. Prefer one of these if it fits well: ${JSON.stringify(INTENT_LABELS)} — but use your own label if none of them accurately describes the message.
-
+${nameContext}
 Transcript:
 """
 ${transcript.slice(0, 1000)}
@@ -1128,22 +1152,44 @@ Respond with only valid JSON, no markdown.`
   }
 }
 
-async function classifyIntentLocal(transcript, log) {
+async function classifyIntentLocal(transcript, log, messageName = '') {
   // Pattern-detect before running the model (deterministic, no model needed)
   if (detectLCM(transcript))             return { intent: 'LCM' };
   if (detectModifiedZortman(transcript)) return { intent: 'Modified Zortman' };
+
+  // Pre-compute name-based hint so we can use it as a tiebreaker or fallback.
+  const nameHint = messageName ? inferMessageIntent(messageName) : '';
 
   try {
     const { pipeline } = await getXenovaMod(log);
     const classifier = await pipeline('zero-shot-classification', 'Xenova/nli-deberta-v3-small');
     const result = await classifier(normalizeSttText(transcript).slice(0, 500), INTENT_LABELS);
-    const intent = result.labels?.[0] || '';
-    return { intent };
+    const topLabel = result.labels?.[0] || '';
+    const topScore = result.scores?.[0] || 0;
+
+    // When the NLI model is uncertain (score below threshold) and the message
+    // name gives a specific, non-generic intent, trust the name-based hint.
+    // The local NLI model can confuse collections messages with marketing when
+    // the transcript uses polite/indirect language (e.g. "urgent message about
+    // your account" without hard collections keywords in the top tokens).
+    const CONFIDENCE_THRESHOLD = 0.30;
+    if (nameHint && nameHint !== 'general notice' && nameHint !== 'unknown' &&
+        topScore < CONFIDENCE_THRESHOLD) {
+      log(`[AI]   💡 Low NLI confidence (${topScore.toFixed(2)}) — using name-based intent: ${nameHint}`);
+      return { intent: nameHint };
+    }
+
+    return { intent: topLabel };
   } catch (e) {
     if (e.code === 'ERR_MODULE_NOT_FOUND' || e.message?.includes('Cannot find')) {
       log('[AI]   ⚠️  @xenova/transformers not installed — using extractive intent only.');
     } else {
       log(`[AI]   ⚠️  Local intent classification failed: ${e.message}`);
+    }
+    // On complete model failure, fall back to name-based intent if available.
+    if (nameHint && nameHint !== 'general notice' && nameHint !== 'unknown') {
+      log(`[AI]   💡 Model unavailable — using name-based intent: ${nameHint}`);
+      return { intent: nameHint };
     }
     return { intent: '' };
   }

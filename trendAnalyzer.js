@@ -91,8 +91,9 @@ function inferMessageIntent(messageName) {
   if (n.includes('friendly') && (n.includes('remind') || n.includes('payment')))
     return 'friendly payment reminder';
   if (n.includes('healthcare') || n.includes('medical') || n.includes('hospital') ||
-      n.includes('ebo') || n.includes('early out') || n.includes('3rd party') ||
-      n.includes('third party') || n.includes('debt buyer') || n.includes('extended business'))
+      n.includes('ebo') || n.includes('early out') || /\beo\b/.test(n) ||
+      n.includes('3rd party') || n.includes('third party') ||
+      n.includes('debt buyer') || n.includes('extended business'))
     return 'healthcare or third-party collections';
   if (n.includes('collect') || n.includes('past due') || n.includes('dpd') ||
       n.includes('delinquent') || n.includes('balance due'))
@@ -2630,4 +2631,4 @@ Use the curve to set retry limits: when the curve drops below ~15–20%, additio
   };
 }
 
-module.exports = { generateTrendAnalysis };
+module.exports = { generateTrendAnalysis, inferMessageIntent };
