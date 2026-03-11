@@ -2,7 +2,7 @@
 // VoApps Tools Version Management
 //
 // Notes:
-// - Current version reflects the newest release (4.0.7).
+// - Current version reflects the newest release (4.0.8).
 // - Keeps feature flags + author from the original "DuckDB Edition" file.
 // - Changelog is unified so each version can include: changes/features, fixes, and breaking changes.
 
@@ -10,7 +10,7 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '4.0.7',
+  VERSION: '4.0.8',
   VERSION_NAME: 'AI Message Intelligence',
   RELEASE_DATE: '2026-03-11',
   AUTHOR: 'Brett Menzie',
@@ -50,6 +50,16 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '4.0.8': {
+      date: '2026-03-11',
+      title: 'OpenAI STT Fix (Packaged App)',
+      changes: [],
+      features: [],
+      fixes: [
+        'Fixed OpenAI STT "spawn npm.cmd ENOENT" (Windows) and "spawn ENOTDIR" (Mac) — form-data package was not declared as a dependency so require("form-data") threw inside the packaged app, falling through to installNpmPackage() which tried to run npm (unavailable in packaged app). Fixed by: (1) adding form-data as a proper dependency so it is always bundled, (2) removing the dead installNpmPackage fallback from transcribeWithOpenAI, (3) fixing installNpmPackage cwd to use xenovaInstallDir() instead of __dirname (which is a virtual asar path in packaged builds, causing ENOTDIR).'
+      ]
+    },
+
     '4.0.7': {
       date: '2026-03-11',
       title: 'AI Model Cache Fix (Windows Manual Transfer)',

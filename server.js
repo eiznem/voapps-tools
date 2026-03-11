@@ -639,13 +639,10 @@ async function downloadFile(url, destPath, log, maxRedirects = 5) {
 
 async function transcribeWithOpenAI(audioPath, apiKey, log, onQuotaExceeded = null) {
   try {
-    let FormData;
-    try {
-      FormData = require('form-data');
-    } catch (e) {
-      await installNpmPackage('form-data', log);
-      FormData = require('form-data');
-    }
+    // form-data is a declared dependency and is always bundled with the app.
+    // Dynamic npm install is intentionally NOT used here — npm does not exist
+    // in a packaged Electron app and would fail with ENOENT on every call.
+    const FormData = require('form-data');
     const form = new FormData();
     form.append('file', fs.createReadStream(audioPath), path.basename(audioPath));
     form.append('model', 'whisper-1');
@@ -708,8 +705,10 @@ function installNpmPackage(pkgName, log) {
     const { spawn } = require('child_process');
     const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
     log(`[AI] Installing ${pkgName}…`);
+    // Use xenovaInstallDir() so cwd is a real directory — __dirname inside
+    // a packaged asar is a virtual path and spawn() would fail with ENOTDIR.
     const child = spawn(npmBin, ['install', pkgName, '--no-audit', '--no-fund'], {
-      cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe']
+      cwd: xenovaInstallDir(), stdio: ['ignore', 'pipe', 'pipe']
     });
     child.stdout.on('data', d => d.toString().split('\n').filter(l => l.trim()).forEach(l => log(`[npm] ${l}`)));
     child.stderr.on('data', d => d.toString().split('\n').filter(l => l.trim()).forEach(l => log(`[npm] ${l}`)));
