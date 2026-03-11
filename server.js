@@ -5179,7 +5179,8 @@ function createHttpServer() {
           end_date,
           min_consec_unsuccessful = 4,
           min_run_span_days = 30,
-          client_prefix = ""
+          client_prefix = "",
+          include_detail_tabs = false
         } = body;
 
         if (!dbReady) {
