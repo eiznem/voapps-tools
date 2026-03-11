@@ -2,7 +2,7 @@
 // VoApps Tools Version Management
 //
 // Notes:
-// - Current version reflects the newest release (4.0.8).
+// - Current version reflects the newest release (4.0.9).
 // - Keeps feature flags + author from the original "DuckDB Edition" file.
 // - Changelog is unified so each version can include: changes/features, fixes, and breaking changes.
 
@@ -10,7 +10,7 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '4.0.8',
+  VERSION: '4.0.9',
   VERSION_NAME: 'AI Message Intelligence',
   RELEASE_DATE: '2026-03-11',
   AUTHOR: 'Brett Menzie',
@@ -50,6 +50,16 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '4.0.9': {
+      date: '2026-03-11',
+      title: 'Simple Model Transfer Path',
+      changes: [],
+      features: [],
+      fixes: [
+        'AI model cache moved to standard user data directory — Windows: %APPDATA%\\VoApps Tools\\models\\  |  macOS: ~/Library/Application Support/VoApps Tools/models/. Previously buried inside app.asar.unpacked, making manual model transfer difficult. Users can now extract the VoApps-Tools-Models.zip directly into this simple, findable location. Development environment continues using the @xenova/transformers package .cache directory unchanged.'
+      ]
+    },
+
     '4.0.8': {
       date: '2026-03-11',
       title: 'OpenAI STT Fix (Packaged App)',

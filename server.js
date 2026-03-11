@@ -142,15 +142,30 @@ let _xenovaMod = null;
 
 /**
  * Return the path that @xenova/transformers uses as its FileCache root.
- * - Dev:     <project>/node_modules/@xenova/transformers/.cache
- * - Packaged: resources/app.asar.unpacked/node_modules/@xenova/transformers/.cache
  *
- * This function is the single source of truth so both getXenovaMod (which sets
- * env.cacheDir) and getAiModelStatus (which checks for downloaded model dirs)
- * always agree on the same location.
+ * In the packaged app we use the Electron userData directory so users can
+ * easily find and populate it — the path is simple and well-known:
+ *   Windows: %APPDATA%\VoApps Tools\models\
+ *   macOS:   ~/Library/Application Support/VoApps Tools/models/
+ *
+ * In development (npm start) we fall back to the @xenova/transformers
+ * package .cache directory so dev downloads don't pollute userData.
+ *
+ * Both getXenovaMod (sets env.cacheDir) and getAiModelStatus (checks
+ * whether models are present) call this function so they always agree.
  */
 function xenovaCacheDir() {
-  const pkgDir = xenovaPkgDir();          // resolves to unpacked dir in production
+  if (__dirname.includes('app.asar')) {
+    // Packaged app: use userData/models/ — simple, user-accessible path.
+    try {
+      const { app } = require('electron');
+      return path.join(app.getPath('userData'), 'models') + path.sep;
+    } catch (e) {
+      // Electron not available in this context — fall through to default.
+    }
+  }
+  // Development: use the @xenova/transformers package .cache directory.
+  const pkgDir = xenovaPkgDir();
   return path.join(pkgDir, '.cache') + path.sep;
 }
 
