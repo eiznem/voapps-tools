@@ -2,7 +2,7 @@
 // VoApps Tools Version Management
 //
 // Notes:
-// - Current version reflects the newest release (4.0.6).
+// - Current version reflects the newest release (4.0.7).
 // - Keeps feature flags + author from the original "DuckDB Edition" file.
 // - Changelog is unified so each version can include: changes/features, fixes, and breaking changes.
 
@@ -10,9 +10,9 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '4.0.6',
+  VERSION: '4.0.7',
   VERSION_NAME: 'AI Message Intelligence',
-  RELEASE_DATE: '2026-03-09',
+  RELEASE_DATE: '2026-03-11',
   AUTHOR: 'Brett Menzie',
 
   // -----------------------------
@@ -50,6 +50,17 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '4.0.7': {
+      date: '2026-03-11',
+      title: 'AI Model Cache Fix (Windows Manual Transfer)',
+      changes: [],
+      features: [],
+      fixes: [
+        'Fixed AI models not loading from manually-transferred cache files on Windows — esImport() bypasses Electron\'s asar patching so import.meta.url inside @xenova/transformers env.js could resolve to an asar-virtual path, causing env.cacheDir to point inside the archive instead of app.asar.unpacked; ONNX cache lookups always missed even though files were physically present. Fix: explicitly set env.cacheDir via xenovaCacheDir() → xenovaPkgDir() after module import.',
+        'Fixed AI model status (Download/Re-download button) always showing "not downloaded" — was checking Python HuggingFace Hub format at ~/.cache/huggingface/hub/models--Xenova--..., but @xenova/transformers FileCache stores files at <pkg>/.cache/Xenova/<model-name>/. Status now checks the correct FileCache path.'
+      ]
+    },
+
     '4.0.6': {
       date: '2026-03-09',
       title: 'AI Intent Accuracy + Transcript Dictionary',
