@@ -90,9 +90,13 @@ function inferMessageIntent(messageName) {
     return 'overdrawn account';
   if (n.includes('friendly') && (n.includes('remind') || n.includes('payment')))
     return 'friendly payment reminder';
+  if (n.includes('hardship') || n.includes('temporary hardship') ||
+      n.includes('financial difficulty') || n.includes('assistance program'))
+    return 'friendly payment reminder';   // hardship/assistance = soft collections
   if (n.includes('healthcare') || n.includes('medical') || n.includes('hospital') ||
-      n.includes('ebo') || n.includes('early out') || n.includes('3rd party') ||
-      n.includes('third party') || n.includes('debt buyer') || n.includes('extended business'))
+      n.includes('ebo') || n.includes('early out') || /\beo\b/.test(n) ||
+      n.includes('3rd party') || n.includes('third party') ||
+      n.includes('debt buyer') || n.includes('extended business'))
     return 'healthcare or third-party collections';
   if (n.includes('collect') || n.includes('past due') || n.includes('dpd') ||
       n.includes('delinquent') || n.includes('balance due'))
@@ -820,7 +824,7 @@ async function generateTrendAnalysis(
                 if (!messageStats[mId]) {
                   const txKey = `${aId}:${mId}`;
                   const txData = transcriptMap[txKey] || null;
-                  messageStats[mId] = { message_id: mId, message_name: mName, intent: txData?.intent || inferMessageIntent(mName), intent_summary: txData?.intent_summary || '', transcript: txData?.transcript || '', mentioned_phone: txData?.mentioned_phone || '', mentions_url: txData?.mentions_url || false, voice_append: false, successful: 0, unsuccessful: 0, total: 0, uniqueNumbers: 0, dayOfWeekCounts: new Uint16Array(7) };
+                  messageStats[mId] = { message_id: mId, account_id: aId, message_name: mName, intent: txData?.intent || inferMessageIntent(mName), intent_summary: txData?.intent_summary || '', transcript: txData?.transcript || '', mentioned_phone: txData?.mentioned_phone || '', mentions_url: txData?.mentions_url || false, voice_append: false, successful: 0, unsuccessful: 0, total: 0, uniqueNumbers: 0, dayOfWeekCounts: new Uint16Array(7) };
                 }
                 if (row.voapps_voice_append) messageStats[mId].voice_append = true;
                 messageStats[mId].total++; messageStats[mId].dayOfWeekCounts[localDow]++;
@@ -1074,7 +1078,7 @@ async function generateTrendAnalysis(
         if (!messageStats[mId]) {
           const txKey = `${aId}:${mId}`;
           const txData = transcriptMap[txKey] || null;
-          messageStats[mId] = { message_id: mId, message_name: mName, intent: txData?.intent || inferMessageIntent(mName), intent_summary: txData?.intent_summary || '', transcript: txData?.transcript || '', mentioned_phone: txData?.mentioned_phone || '', mentions_url: txData?.mentions_url || false, voice_append: false, successful: 0, unsuccessful: 0, total: 0, uniqueNumbers: 0, dayOfWeekCounts: new Uint16Array(7) };
+          messageStats[mId] = { message_id: mId, account_id: aId, message_name: mName, intent: txData?.intent || inferMessageIntent(mName), intent_summary: txData?.intent_summary || '', transcript: txData?.transcript || '', mentioned_phone: txData?.mentioned_phone || '', mentions_url: txData?.mentions_url || false, voice_append: false, successful: 0, unsuccessful: 0, total: 0, uniqueNumbers: 0, dayOfWeekCounts: new Uint16Array(7) };
         }
         if (row.voapps_voice_append) messageStats[mId].voice_append = true;
         messageStats[mId].total++; messageStats[mId].dayOfWeekCounts[row.localDayOfWeek]++;
@@ -2281,6 +2285,16 @@ async function generateTrendAnalysis(
     ];
     msgSheet.getCell(`H${msgRow}`).numFmt = '0.0%';
 
+    // Hyperlink Message ID → VoApps platform message page
+    const msgIdCell = msgSheet.getCell(`A${msgRow}`);
+    if (msg.account_id && msg.account_id !== 'Unknown' && msg.message_id && msg.message_id !== 'Unknown') {
+      msgIdCell.value = {
+        text: String(msg.message_id),
+        hyperlink: `https://directdropvoicemail.voapps.com/accounts/${msg.account_id}/messages/${msg.message_id}`
+      };
+      msgIdCell.font = { color: { argb: 'FF0563C1' }, underline: true };
+    }
+
     if (msg.dayPattern.limited) {
       msgSheet.getCell(`J${msgRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEB9C' } };
     }
@@ -2630,4 +2644,4 @@ Use the curve to set retry limits: when the curve drops below ~15–20%, additio
   };
 }
 
-module.exports = { generateTrendAnalysis };
+module.exports = { generateTrendAnalysis, inferMessageIntent };
