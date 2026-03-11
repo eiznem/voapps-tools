@@ -141,9 +141,27 @@ const esImport = new Function('p', 'return import(p)');
 let _xenovaMod = null;
 
 /**
+ * Return the path that @xenova/transformers uses as its FileCache root.
+ * - Dev:     <project>/node_modules/@xenova/transformers/.cache
+ * - Packaged: resources/app.asar.unpacked/node_modules/@xenova/transformers/.cache
+ *
+ * This function is the single source of truth so both getXenovaMod (which sets
+ * env.cacheDir) and getAiModelStatus (which checks for downloaded model dirs)
+ * always agree on the same location.
+ */
+function xenovaCacheDir() {
+  const pkgDir = xenovaPkgDir();          // resolves to unpacked dir in production
+  return path.join(pkgDir, '.cache') + path.sep;
+}
+
+/**
  * Import @xenova/transformers once, configure ONNX Runtime log severity so the
  * thousands of "Removing initializer" C++ optimizer warnings are suppressed, then
  * cache the module reference for all subsequent calls.
+ *
+ * Also explicitly pins env.cacheDir to the known on-disk path so that the
+ * FileCache lookup always points to the correct location regardless of how
+ * import.meta.url resolves inside a packaged Electron asar.
  */
 async function getXenovaMod(log, fallbackEntryPath = null) {
   if (_xenovaMod) return _xenovaMod;
@@ -155,6 +173,18 @@ async function getXenovaMod(log, fallbackEntryPath = null) {
     // logSeverityLevel: 0=verbose 1=info 2=warning 3=error — set to 3 to show errors only.
     if (mod.env?.onnx !== undefined) mod.env.onnx = { logSeverityLevel: 3 };
     else if (mod.env) mod.env.onnx = { logSeverityLevel: 3 };
+
+    // Explicitly set cacheDir so FileCache always looks at the real on-disk path.
+    // When esImport() bypasses Electron's asar patching, import.meta.url inside
+    // env.js can resolve to an asar-virtual path, making cacheDir point inside
+    // the archive rather than to app.asar.unpacked — causing all ONNX cache lookups
+    // to fail with a "file not found" miss even when files are physically present.
+    if (mod.env) {
+      const cacheDir = xenovaCacheDir();
+      mod.env.cacheDir = cacheDir;
+      if (log) log(`[AI] Cache dir: ${cacheDir}`);
+    }
+
     _xenovaMod = mod;
     return mod;
   } catch (e) {
@@ -166,10 +196,12 @@ async function getXenovaMod(log, fallbackEntryPath = null) {
 const AI_MODEL_STATUS = { stt: { downloaded: false }, intent: { downloaded: false } };
 
 function getAiModelStatus() {
-  // Check filesystem for cached HuggingFace models (downloaded by @xenova/transformers)
-  const cacheRoot = path.join(os.homedir(), '.cache', 'huggingface', 'hub');
-  const sttModelDir  = path.join(cacheRoot, 'models--Xenova--whisper-base');
-  const intentModelDir = path.join(cacheRoot, 'models--Xenova--nli-deberta-v3-small');
+  // Check the @xenova/transformers FileCache directory for downloaded model folders.
+  // The FileCache stores files as: <cacheDir>/Xenova/<model-name>/<files>
+  // (NOT the Python HuggingFace Hub format at ~/.cache/huggingface/hub/models--...)
+  const cacheRoot = xenovaCacheDir();
+  const sttModelDir    = path.join(cacheRoot, 'Xenova', 'whisper-base');
+  const intentModelDir = path.join(cacheRoot, 'Xenova', 'nli-deberta-v3-small');
   AI_MODEL_STATUS.stt.downloaded    = fs.existsSync(sttModelDir);
   AI_MODEL_STATUS.intent.downloaded = fs.existsSync(intentModelDir);
   return AI_MODEL_STATUS;
