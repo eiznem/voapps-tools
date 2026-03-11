@@ -347,7 +347,25 @@ async function downloadAiModelBackground(type, log = (msg, isError = false) => i
     }
     log(`[AI] ✅ ${label} model downloaded and cached`);
   } catch (e) {
-    log(`[AI] ❌ Failed to download ${label} model: ${e.message}`, true);
+    // "Unsupported model type: whisper" is a misleading error that surfaces on
+    // Windows when the real cause is a network failure.  What actually happens:
+    //   1. AutoModelForSpeechSeq2Seq.from_pretrained() fails → network error
+    //   2. Falls through to AutoModelForCTC.from_pretrained()
+    //   3. AutoModelForCTC has no 'whisper' mapping → throws "Unsupported model type"
+    //   4. The last error wins, hiding the real network error
+    // Similarly, "fetch failed" on any model = huggingface.co is unreachable.
+    const isNetworkMasked = e.message?.includes('Unsupported model type');
+    const isFetchFailed   = e.message?.toLowerCase().includes('fetch failed')
+                         || e.message?.toLowerCase().includes('network')
+                         || e.message?.toLowerCase().includes('enotfound')
+                         || e.message?.toLowerCase().includes('econnrefused');
+    if (isNetworkMasked || isFetchFailed) {
+      log(`[AI] ❌ Failed to download ${label} model: could not reach huggingface.co`, true);
+      log(`[AI]    Likely cause: the network is blocking huggingface.co (firewall, proxy, or no internet).`, true);
+      log(`[AI]    Workaround: switch Transcription and Intent modes to "OpenAI" in Settings.`, true);
+    } else {
+      log(`[AI] ❌ Failed to download ${label} model: ${e.message}`, true);
+    }
   }
 }
 
