@@ -4,7 +4,10 @@ package-lock.json
 
 # Build outputs
 dist/
-build/
+build/*
+!build/installer.nsh
+!build/icons
+!build/notarize.js
 out/
 
 # Electron builder

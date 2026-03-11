@@ -96,7 +96,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "VoApps Tools"
+      "shortcutName": "VoApps Tools",
+      "include": "build/installer.nsh"
     }
   },
   "devDependencies": {
