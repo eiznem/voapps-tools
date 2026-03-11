@@ -164,6 +164,44 @@ function inferMessageIntent(messageName) {
 }
 
 /**
+ * Normalize a phone number to its last 10 digits for comparison.
+ */
+function normalizePhone(phone) {
+  if (!phone) return '';
+  const digits = String(phone).replace(/\D/g, '');
+  return digits.slice(-10);
+}
+
+/**
+ * Compare the phone number mentioned in the transcript against the most-used
+ * caller number for that message.
+ * Returns '—' when no phone was mentioned, '✅ Match', or '⚠️ Mismatch …'.
+ */
+function getCallerMatchStatus(mentionedPhone, callerNumbers) {
+  if (!mentionedPhone) return '—';
+  const mentioned = normalizePhone(mentionedPhone);
+  if (!mentioned) return '—';
+
+  // Find the dominant (most-used) caller number for this message
+  let dominantCaller = null;
+  let maxCount = 0;
+  for (const [num, count] of Object.entries(callerNumbers || {})) {
+    if (num !== 'Unknown' && count > maxCount) {
+      maxCount = count;
+      dominantCaller = num;
+    }
+  }
+
+  if (!dominantCaller) return '—';
+  const callerNorm = normalizePhone(dominantCaller);
+  if (!callerNorm) return '—';
+
+  return mentioned === callerNorm
+    ? '✅ Match'
+    : `⚠️ Mismatch (caller: ${dominantCaller}, msg: ${mentionedPhone})`;
+}
+
+/**
  * Calculate TN Health classification
  */
 function classifyTNHealth(successRate, consecutiveFailures, totalAttempts, recentSuccess14Days) {
@@ -824,7 +862,7 @@ async function generateTrendAnalysis(
                 if (!messageStats[mId]) {
                   const txKey = `${aId}:${mId}`;
                   const txData = transcriptMap[txKey] || null;
-                  messageStats[mId] = { message_id: mId, account_id: aId, message_name: mName, intent: txData?.intent || inferMessageIntent(mName), intent_summary: txData?.intent_summary || '', transcript: txData?.transcript || '', mentioned_phone: txData?.mentioned_phone || '', mentions_url: txData?.mentions_url || false, voice_append: false, successful: 0, unsuccessful: 0, total: 0, uniqueNumbers: 0, dayOfWeekCounts: new Uint16Array(7) };
+                  messageStats[mId] = { message_id: mId, account_id: aId, message_name: mName, intent: txData?.intent || inferMessageIntent(mName), intent_summary: txData?.intent_summary || '', transcript: txData?.transcript || '', mentioned_phone: txData?.mentioned_phone || '', mentions_url: txData?.mentions_url || false, voice_append: false, successful: 0, unsuccessful: 0, total: 0, uniqueNumbers: 0, callerNumbers: {}, dayOfWeekCounts: new Uint16Array(7) };
                 }
                 if (row.voapps_voice_append) messageStats[mId].voice_append = true;
                 messageStats[mId].total++; messageStats[mId].dayOfWeekCounts[localDow]++;
@@ -835,6 +873,7 @@ async function generateTrendAnalysis(
                 if (!callerStats[cNum]) callerStats[cNum] = { caller_number: cNum, caller_name: cName, successful: 0, unsuccessful: 0, total: 0, uniqueNumbers: 0, dayOfWeekCounts: new Uint16Array(7) };
                 callerStats[cNum].total++; callerStats[cNum].dayOfWeekCounts[localDow]++;
                 if (isSuccess) callerStats[cNum].successful++; else callerStats[cNum].unsuccessful++;
+                messageStats[mId].callerNumbers[cNum] = (messageStats[mId].callerNumbers[cNum] || 0) + 1;
 
                 globalHourlyStats[localHour].total++;
                 if (isSuccess) globalHourlyStats[localHour].successful++; else globalHourlyStats[localHour].unsuccessful++;
@@ -1078,7 +1117,7 @@ async function generateTrendAnalysis(
         if (!messageStats[mId]) {
           const txKey = `${aId}:${mId}`;
           const txData = transcriptMap[txKey] || null;
-          messageStats[mId] = { message_id: mId, account_id: aId, message_name: mName, intent: txData?.intent || inferMessageIntent(mName), intent_summary: txData?.intent_summary || '', transcript: txData?.transcript || '', mentioned_phone: txData?.mentioned_phone || '', mentions_url: txData?.mentions_url || false, voice_append: false, successful: 0, unsuccessful: 0, total: 0, uniqueNumbers: 0, dayOfWeekCounts: new Uint16Array(7) };
+          messageStats[mId] = { message_id: mId, account_id: aId, message_name: mName, intent: txData?.intent || inferMessageIntent(mName), intent_summary: txData?.intent_summary || '', transcript: txData?.transcript || '', mentioned_phone: txData?.mentioned_phone || '', mentions_url: txData?.mentions_url || false, voice_append: false, successful: 0, unsuccessful: 0, total: 0, uniqueNumbers: 0, callerNumbers: {}, dayOfWeekCounts: new Uint16Array(7) };
         }
         if (row.voapps_voice_append) messageStats[mId].voice_append = true;
         messageStats[mId].total++; messageStats[mId].dayOfWeekCounts[row.localDayOfWeek]++;
@@ -1089,6 +1128,7 @@ async function generateTrendAnalysis(
         if (!callerStats[cNum]) callerStats[cNum] = { caller_number: cNum, caller_name: cName, successful: 0, unsuccessful: 0, total: 0, uniqueNumbers: 0, dayOfWeekCounts: new Uint16Array(7) };
         callerStats[cNum].total++; callerStats[cNum].dayOfWeekCounts[row.localDayOfWeek]++;
         if (row.isSuccess) callerStats[cNum].successful++; else callerStats[cNum].unsuccessful++;
+        messageStats[mId].callerNumbers[cNum] = (messageStats[mId].callerNumbers[cNum] || 0) + 1;
 
         globalHourlyStats[row.localHour].total++;
         if (row.isSuccess) globalHourlyStats[row.localHour].successful++; else globalHourlyStats[row.localHour].unsuccessful++;
@@ -2277,8 +2317,8 @@ async function generateTrendAnalysis(
       // AI columns — blank when AI has not run; populated after transcription
       transcript,
       mentionedPhone,
-      // Caller # Match and Contains URL only mean something when a transcript exists
-      !transcript ? '' : (!mentionedPhone ? '—' : '⚠️ Check caller ID'),
+      // Caller # Match: compare mentioned phone vs dominant caller number used for this message
+      !transcript ? '' : getCallerMatchStatus(mentionedPhone, msg.callerNumbers),
       !transcript ? '' : (msg.mentions_url ? 'Yes' : 'No'),
       // Voice Append: only show 'Yes' when confirmed — blank when not detected (data may not be available)
       msg.voice_append ? 'Yes' : ''
