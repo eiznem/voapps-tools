@@ -2,7 +2,7 @@
 // VoApps Tools Version Management
 //
 // Notes:
-// - Current version reflects the newest release (4.0.9).
+// - Current version reflects the newest release (4.1.0).
 // - Keeps feature flags + author from the original "DuckDB Edition" file.
 // - Changelog is unified so each version can include: changes/features, fixes, and breaking changes.
 
@@ -10,7 +10,7 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '4.0.9',
+  VERSION: '4.1.0',
   VERSION_NAME: 'AI Message Intelligence',
   RELEASE_DATE: '2026-03-11',
   AUTHOR: 'Brett Menzie',
@@ -50,34 +50,31 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
-    '4.0.9': {
+    '4.1.0': {
       date: '2026-03-11',
-      title: 'Simple Model Transfer Path',
-      changes: [],
-      features: [],
+      title: 'Stability & Intelligence Release',
+      changes: [
+        'Message Insights: Caller # Match column now performs a real comparison — the phone number spoken in the message is compared against the most-used caller ID for that message; shows ✅ Match, ⚠️ Mismatch (caller: X, msg: Y), or — when no phone was mentioned in the transcript. Previously showed ⚠️ Check caller ID on every row that had any phone number mentioned, regardless of whether it matched.',
+        'Message Insights: Message ID column is now a clickable hyperlink to the message page on the VoApps platform (https://directdropvoicemail.voapps.com/accounts/{account_id}/messages/{message_id})',
+        'AI transcription now runs for CSV uploads and Database Analysis — previously intent was always name-inferred in those flows even when AI was enabled; now fetches uncached audio from the API, transcribes, and passes results to the analysis worker the same way the Combine flow does',
+        'AI settings (api_key, ai_enabled, ai_transcription_mode, ai_intent_mode) are now included in CSV upload and Database Analysis requests so the server uses the user\'s current configuration'
+      ],
+      features: [
+        'Caller # Match: actual phone number comparison with ✅/⚠️ result per message',
+        'Message ID hyperlinks in Message Insights Excel tab',
+        'AI transcription for CSV upload and database analysis flows'
+      ],
       fixes: [
-        'AI model cache moved to standard user data directory — Windows: %APPDATA%\\VoApps Tools\\models\\  |  macOS: ~/Library/Application Support/VoApps Tools/models/. Previously buried inside app.asar.unpacked, making manual model transfer difficult. Users can now extract the VoApps-Tools-Models.zip directly into this simple, findable location. Development environment continues using the @xenova/transformers package .cache directory unchanged.'
-      ]
-    },
-
-    '4.0.8': {
-      date: '2026-03-11',
-      title: 'OpenAI STT Fix (Packaged App)',
-      changes: [],
-      features: [],
-      fixes: [
-        'Fixed OpenAI STT "spawn npm.cmd ENOENT" (Windows) and "spawn ENOTDIR" (Mac) — form-data package was not declared as a dependency so require("form-data") threw inside the packaged app, falling through to installNpmPackage() which tried to run npm (unavailable in packaged app). Fixed by: (1) adding form-data as a proper dependency so it is always bundled, (2) removing the dead installNpmPackage fallback from transcribeWithOpenAI, (3) fixing installNpmPackage cwd to use xenovaInstallDir() instead of __dirname (which is a virtual asar path in packaged builds, causing ENOTDIR).'
-      ]
-    },
-
-    '4.0.7': {
-      date: '2026-03-11',
-      title: 'AI Model Cache Fix (Windows Manual Transfer)',
-      changes: [],
-      features: [],
-      fixes: [
-        'Fixed AI models not loading from manually-transferred cache files on Windows — esImport() bypasses Electron\'s asar patching so import.meta.url inside @xenova/transformers env.js could resolve to an asar-virtual path, causing env.cacheDir to point inside the archive instead of app.asar.unpacked; ONNX cache lookups always missed even though files were physically present. Fix: explicitly set env.cacheDir via xenovaCacheDir() → xenovaPkgDir() after module import.',
-        'Fixed AI model status (Download/Re-download button) always showing "not downloaded" — was checking Python HuggingFace Hub format at ~/.cache/huggingface/hub/models--Xenova--..., but @xenova/transformers FileCache stores files at <pkg>/.cache/Xenova/<model-name>/. Status now checks the correct FileCache path.'
+        'Fixed AI models not loading from manually-transferred cache on Windows — env.cacheDir was resolving to an asar-virtual path; explicitly set to the correct location after import',
+        'Fixed AI model status button always showing "Download" instead of "Re-download" — was checking the wrong cache path format (Python HuggingFace Hub format instead of @xenova/transformers FileCache path)',
+        'Fixed OpenAI STT "spawn npm.cmd ENOENT" (Windows) and "spawn ENOTDIR" (Mac) in packaged app — form-data is now a declared bundled dependency; removed broken npm fallback',
+        'AI model cache is now stored at a user-accessible path: %APPDATA%\\VoApps Tools\\models\\ on Windows, ~/Library/Application Support/VoApps Tools/models/ on macOS — makes manual model transfer straightforward',
+        'Fixed LCM false positive on loan application follow-up messages — added context-term exclusion (application, funding, financing, approval, etc.), URL exclusion (real LCMs never include links), and 30-second duration gate',
+        'Improved LCM callback phrase detection — now matches "contact/call/reach me or any of my colleagues/associates at [number]" in addition to the existing patterns',
+        'Audio duration now threads through from Whisper transcription to intent classifiers so duration-based LCM gating works correctly',
+        'Fixed Spanish intent misclassification — added category-mismatch guard: when the message name maps to a collections intent but AI returns a marketing intent (common with Spanish transcripts), the name-based hint wins',
+        'Fixed include_detail_tabs not defined ReferenceError in /api/analyze-database handler',
+        'Improved misleading "Unsupported model type: whisper" error message on Windows'
       ]
     },
 
