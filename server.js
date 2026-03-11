@@ -489,6 +489,7 @@ async function transcribeAndAnalyzeMessages(messageInfo, aiSettings, log) {
 
       const t0 = Date.now();
       let transcript = '';
+      let durationSec = null;  // set by local Whisper path; null for OpenAI path
 
       // Skip remaining messages if OpenAI quota was already exceeded
       if (quotaExceeded) {
@@ -511,7 +512,8 @@ async function transcribeAndAnalyzeMessages(messageInfo, aiSettings, log) {
         });
         if (transcript === '__QUOTA_EXCEEDED__') transcript = '';
       } else {
-        transcript = await transcribeWithLocalWhisper(tmpFile, log);
+        // transcribeWithLocalWhisper returns { transcript, durationSec }
+        ({ transcript, durationSec } = await transcribeWithLocalWhisper(tmpFile, log));
       }
 
       // Clean up temp file
@@ -537,12 +539,12 @@ async function transcribeAndAnalyzeMessages(messageInfo, aiSettings, log) {
       if (intentMode === 'openai') {
         if (!openaiApiKey) { log('[AI]   ⚠️  OpenAI API key not set — using name-based intent'); }
         else {
-          const result = await classifyIntentWithOpenAI(transcript, openaiApiKey, log, msgName);
+          const result = await classifyIntentWithOpenAI(transcript, openaiApiKey, log, msgName, durationSec);
           intent = result.intent;
           intentModelLabel = 'openai-gpt4o-mini';
         }
       } else {
-        const result = await classifyIntentLocal(transcript, log, msgName);
+        const result = await classifyIntentLocal(transcript, log, msgName, durationSec);
         intent = result.intent;
         intentModelLabel = 'nli-deberta-v3-local';
       }
@@ -1002,7 +1004,7 @@ async function transcribeWithLocalWhisper(audioPath, log) {
         ({ pipeline: pipelineFn } = await getXenovaMod(log, pathToFileURL(entryPath).href));
       } catch (retryErr) {
         log(`[AI]   ❌ File-URL import also failed: ${retryErr.message}`, true);
-        return '';
+        return { transcript: '', durationSec: null };
       }
     }
 
@@ -1033,7 +1035,7 @@ async function transcribeWithLocalWhisper(audioPath, log) {
 
     if (peakAmp < 0.001) {
       log('[AI]   ⚠️  Audio is silent — no transcription');
-      return '';
+      return { transcript: '', durationSec: audioDurationSec };
     }
     if (peakAmp > 1.0) {
       // Peak-normalize: bring the loudest sample to exactly ±1.0
@@ -1099,16 +1101,16 @@ async function transcribeWithLocalWhisper(audioPath, log) {
     // Discard hallucination-only output (e.g. "[Music] (chiming) [Music]" with no real words)
     if (isWhisperHallucination(cleanText)) {
       log(`[AI]   ⚠️  Whisper produced only non-speech tokens ("${rawText.slice(0, 80).trim()}") — discarding`);
-      return '';
+      return { transcript: '', durationSec: audioDurationSec };
     }
-    return cleanText;
+    return { transcript: cleanText, durationSec: audioDurationSec };
   } catch (e) {
     if (e.code === 'ERR_MODULE_NOT_FOUND' || e.message?.includes('Cannot find')) {
       log('[AI]   ⚠️  @xenova/transformers not installed. Use OpenAI Whisper mode or download the model first.');
     } else {
       log(`[AI]   ⚠️  Local Whisper failed: ${e.message}`);
     }
-    return '';
+    return { transcript: '', durationSec: null };
   }
 }
 
@@ -1117,20 +1119,36 @@ async function transcribeWithLocalWhisper(audioPath, log) {
 // ---------------------------------------------------------------------------
 
 // LCM = Limited Content Message: a message that intentionally avoids identifying
-// the debt — just asks the recipient to call back. No payment/loan/debt terms.
-const LCM_CALLBACK_PATTERN  = /please (return my call|call (?:me|us) back)\b|call (me|us)(?: or \w+)? back at\b|personal business matter/i;
-// Debt collection / financial distress terms — if present, message has substantive
-// content and is NOT an LCM even if it asks for a callback.
+// the debt — just asks the recipient to call back with no substantive context.
+// Typical LCMs are 10–20 seconds and never include a URL.
+const LCM_CALLBACK_PATTERN  = new RegExp(
+  // Classic callback phrases
+  'please (return my call|call (?:me|us) back)\\b' +
+  '|call (me|us)(?: or \\w+)? back at\\b' +
+  '|personal business matter' +
+  // "contact/call me (or any of my colleagues/associates/agents) at [number]"
+  '|(?:please )?(?:contact|call|reach) (?:me|us)(?: or (?:any of )?(?:my|our) (?:colleagues?|associates?|agents?|representatives?|team members?))?(?:[^.!?]{0,40})? at (?:\\d|\\()',
+  'i'
+);
+// Debt collection / financial distress terms — message has substantive content
 const LCM_DEBT_TERMS        = /payment|past due|loan|account balance|debt|owe\b|credit|mortgage|delinquent|overdrawn|amount due/i;
-// Substantive context terms — application follow-ups, lending offers, approvals etc.
-// These messages explain WHY they are calling so they cannot be a Limited Content Message.
+// Substantive context terms — message explains WHY they are calling, not LCM
 const LCM_CONTEXT_TERMS     = /application|funding|financing|approv|qualif|offer|interest rate|program|steps|process|get you|we can help|lender|lending/i;
+// URLs — a real LCM never includes a website link
+const URL_PATTERN           = /https?:\/\/|www\.|\.com\b|\.org\b|\.net\b/i;
 
-function detectLCM(transcript) {
+// LCMs are typically 10–20 seconds. Anything over 30s almost certainly has
+// substantive content (longer explanation) and should not be flagged as LCM.
+const LCM_MAX_DURATION_SEC  = 30;
+
+function detectLCM(transcript, durationSec = null) {
   if (!transcript) return false;
+  // Duration guard: if we know the audio is longer than a typical LCM, skip
+  if (durationSec !== null && durationSec > LCM_MAX_DURATION_SEC) return false;
   return LCM_CALLBACK_PATTERN.test(transcript)
     && !LCM_DEBT_TERMS.test(transcript)
-    && !LCM_CONTEXT_TERMS.test(transcript);
+    && !LCM_CONTEXT_TERMS.test(transcript)
+    && !URL_PATTERN.test(transcript);
 }
 
 // Modified Zortman: message contains formal debt-collection disclosure language.
@@ -1188,10 +1206,10 @@ const MARKETING_INTENTS = new Set([
   'unused rewards notification',
 ]);
 
-async function classifyIntentWithOpenAI(transcript, apiKey, log, messageName = '') {
+async function classifyIntentWithOpenAI(transcript, apiKey, log, messageName = '', durationSec = null) {
   // Pattern-detect before calling the model
-  if (detectLCM(transcript))             return { intent: 'LCM' };
-  if (detectModifiedZortman(transcript)) return { intent: 'Modified Zortman' };
+  if (detectLCM(transcript, durationSec))  return { intent: 'LCM' };
+  if (detectModifiedZortman(transcript))   return { intent: 'Modified Zortman' };
 
   // Use the message name as a classification hint when available.
   // inferMessageIntent maps common naming conventions (e.g. "Negative Shares 45+ DPD"
@@ -1248,10 +1266,10 @@ Respond with only valid JSON, no markdown.`
   }
 }
 
-async function classifyIntentLocal(transcript, log, messageName = '') {
+async function classifyIntentLocal(transcript, log, messageName = '', durationSec = null) {
   // Pattern-detect before running the model (deterministic, no model needed)
-  if (detectLCM(transcript))             return { intent: 'LCM' };
-  if (detectModifiedZortman(transcript)) return { intent: 'Modified Zortman' };
+  if (detectLCM(transcript, durationSec))  return { intent: 'LCM' };
+  if (detectModifiedZortman(transcript))   return { intent: 'Modified Zortman' };
 
   // Pre-compute name-based hint so we can use it as a tiebreaker or fallback.
   const nameHint = messageName ? inferMessageIntent(messageName) : '';
