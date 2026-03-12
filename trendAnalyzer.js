@@ -1800,7 +1800,7 @@ async function generateTrendAnalysis(
     const cadenceRows = [
       ['Single Touch (1 attempt only)',
         `${cadenceSingleTouch.toLocaleString()} (${cadenceTotalNumbers > 0 ? (cadenceSingleTouch / cadenceTotalNumbers * 100).toFixed(1) : '0.0'}%)`,
-        'Numbers contacted exactly once in this dataset — no re-attempt cadence applicable.'],
+        'Numbers reached with a single DDVM during this period. Consumers often need 2–3 touches before taking action — a callback, a payment, or a response rarely happens the first time a message is heard. These numbers represent real follow-up opportunity: adding a second or third DDVM attempt at the right cadence (3–10 days) typically produces meaningful incremental results without diminishing returns.'],
       ['Re-attempted (2+ attempts)',
         `${cadenceMultiTouchCount.toLocaleString()} (${cadenceTotalNumbers > 0 ? (cadenceMultiTouchCount / cadenceTotalNumbers * 100).toFixed(1) : '0.0'}%)`,
         'Numbers with multiple attempts. Cadence breakdown below is based on the median interval between consecutive attempts for each number.'],

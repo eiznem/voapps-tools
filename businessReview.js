@@ -344,6 +344,43 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     '',
     PINK_LIGHT, 18);
 
+  // ── Single-touch opportunity callout strip ────────────────────────────────
+  const cadenceTotalNumbers = (cadence.cadenceSingleTouch || 0) + (cadence.cadenceMultiTouchCount || 0);
+  if (cadenceTotalNumbers > 0) {
+    const stPct = (cadence.cadenceSingleTouch / cadenceTotalNumbers * 100).toFixed(1);
+    const stripY = row2Y + bH + 0.26;
+    const stripH = 0.68;
+    const stripX = c1;
+    const stripW = SLIDE_W - c1 * 2;
+
+    // Cream card with pink left accent bar
+    s2.addShape(RECT, { x: stripX, y: stripY, w: stripW, h: stripH,
+      fill: { color: WHITE }, line: { color: PINK_PALE, pt: 1 } });
+    s2.addShape(RECT, { x: stripX, y: stripY, w: 0.07, h: stripH,
+      fill: { color: PINK }, line: { color: PINK } });
+
+    // Bold stat left
+    s2.addText(
+      `${cadence.cadenceSingleTouch.toLocaleString()} numbers (${stPct}%) received only one DDVM attempt this period.`,
+      {
+        x: stripX + 0.18, y: stripY + 0.04,
+        w: stripW - 0.26, h: 0.28,
+        fontSize: 11, bold: true, color: NAVY,
+        fontFace: 'Aktiv Grotesk VF Medium', valign: 'middle'
+      }
+    );
+    // Supporting text
+    s2.addText(
+      'Consumers often need 2–3 touches before taking action. A follow-up campaign at a 3–10 day interval can produce meaningful incremental results from this same list.',
+      {
+        x: stripX + 0.18, y: stripY + 0.33,
+        w: stripW - 0.26, h: 0.28,
+        fontSize: 9.5, color: TEXT_SOFT, italic: true,
+        fontFace: 'Aktiv Grotesk VF Medium', valign: 'middle'
+      }
+    );
+  }
+
   slideFooter(s2);
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -423,11 +460,14 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   headerBar(pptx, s4, 'Delivery Re-Attempt Cadence', headerLogo);
 
   const totalMulti = cadence.cadenceMultiTouchCount || 1;
+  const s4TotalNumbers = (cadence.cadenceSingleTouch || 0) + (cadence.cadenceMultiTouchCount || 0);
+  const s4SinglePct = s4TotalNumbers > 0 ? (cadence.cadenceSingleTouch / s4TotalNumbers * 100).toFixed(1) : '0.0';
+  const s4MultiPct  = s4TotalNumbers > 0 ? (cadence.cadenceMultiTouchCount / s4TotalNumbers * 100).toFixed(1) : '0.0';
   s4.addText(
-    `${cadence.cadenceMultiTouchCount.toLocaleString()} numbers had 2+ delivery attempts. Breakdown by median interval between consecutive attempts per number:`,
+    `${cadence.cadenceMultiTouchCount.toLocaleString()} numbers (${s4MultiPct}%) had 2+ delivery attempts. ${cadence.cadenceSingleTouch.toLocaleString()} numbers (${s4SinglePct}%) were contacted only once — each a potential opportunity for an additional touch. Breakdown by median interval between consecutive attempts:`,
     {
       x: 0.4, y: CONTENT_Y + 0.08,
-      w: SLIDE_W - 0.8, h: 0.4,
+      w: SLIDE_W - 0.8, h: 0.44,
       fontSize: 9.5, color: TEXT_SOFT, italic: true,
       fontFace: 'Aktiv Grotesk VF Medium'
     }
@@ -473,6 +513,27 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     fontSize: 10.5, rowH: 0.44,
     border: { type: 'solid', color: PINK_PALE, pt: 0.75 }
   });
+
+  // ── Multi-touch value insight strip ─────────────────────────────────────────
+  {
+    const insY = SLIDE_H - 1.62;
+    const insX = 1.8;
+    const insW = SLIDE_W - 3.6;
+    const insH = 0.62;
+    s4.addShape(RECT, { x: insX, y: insY, w: insW, h: insH,
+      fill: { color: NAVY }, line: { color: NAVY } });
+    s4.addShape(RECT, { x: insX, y: insY, w: 0.06, h: insH,
+      fill: { color: PINK }, line: { color: PINK } });
+    s4.addText(
+      'Consumers often respond on the 2nd or 3rd touch — not the first. Campaigns with consistent, well-timed follow-up typically see significantly higher overall engagement than single-touch outreach alone.',
+      {
+        x: insX + 0.18, y: insY + 0.05,
+        w: insW - 0.26, h: insH - 0.1,
+        fontSize: 9.5, color: WHITE, italic: true,
+        fontFace: 'Aktiv Grotesk VF Medium', valign: 'middle'
+      }
+    );
+  }
 
   if (cadence.cadenceOverallMedian != null) {
     const medStr = cadence.cadenceOverallMedian < 1

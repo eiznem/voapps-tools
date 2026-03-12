@@ -2,7 +2,7 @@
 // VoApps Tools Version Management
 //
 // Notes:
-// - Current version reflects the newest release (4.2.0).
+// - Current version reflects the newest release (4.2.1).
 // - Keeps feature flags + author from the original "DuckDB Edition" file.
 // - Changelog is unified so each version can include: changes/features, fixes, and breaking changes.
 
@@ -10,8 +10,8 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '4.2.0',
-  VERSION_NAME: 'Business Review Slides',
+  VERSION: '4.2.1',
+  VERSION_NAME: 'Single-Touch Insights',
   RELEASE_DATE: '2026-03-12',
   AUTHOR: 'Brett Menzie',
 
@@ -50,6 +50,22 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '4.2.1': {
+      date: '2026-03-12',
+      title: 'Single-Touch Insights',
+      changes: [
+        'Single Touch (1 attempt only) row in Delivery Cadence now carries value-focused context: explains consumers often need 2–3 touches before acting and frames these numbers as follow-up opportunity',
+        'Campaign Overview slide (Slide 2): new callout strip below metric cards showing single-touch count and %, with a message about the value of follow-up campaigns',
+        'Delivery Re-Attempt Cadence slide (Slide 4): preamble now shows both re-attempted and single-touch counts with percentages; new navy insight strip highlights that consumers often respond on the 2nd or 3rd touch',
+        'Toast close button and action buttons fixed to stay on-screen — layout now wraps correctly when multiple action buttons are present'
+      ],
+      features: [
+        'Single-touch opportunity callout: surfaces how many numbers received only one attempt and frames it as actionable follow-up potential'
+      ],
+      fixes: [
+        'Toast notification overflowing viewport when two action buttons (Open Delivery Intelligence + Open Business Review) are shown simultaneously'
+      ]
+    },
     '4.2.0': {
       date: '2026-03-12',
       title: 'Business Review Slides',
