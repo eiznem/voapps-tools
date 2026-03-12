@@ -1186,6 +1186,58 @@ async function generateTrendAnalysis(
   }
 
   // ============================================================================
+  // COMPUTE DELIVERY CADENCE (interval between consecutive attempts per number)
+  // ============================================================================
+  log('Computing delivery cadence stats...');
+  let cadenceSingleTouch = 0;
+  let cadenceBucket_sameDay = 0; // < 1 day
+  let cadenceBucket_1to2    = 0; // 1–2 days
+  let cadenceBucket_3to5    = 0; // 3–5 days
+  let cadenceBucket_6to10   = 0; // 6–10 days
+  let cadenceBucket_11to15  = 0; // 11–15 days
+  let cadenceBucket_16to30  = 0; // 16–30 days
+  let cadenceBucket_over30  = 0; // > 30 days
+  const _cadenceMedians = [];
+  for (const num in numberData) {
+    const atts = numberData[num].attempts;
+    if (atts.length === 0) continue;
+    if (atts.length === 1) { cadenceSingleTouch++; continue; }
+    // Ensure time-ordered — streaming path already sorted in place; row-array path may not be
+    if (atts[0].ts > atts[atts.length - 1].ts) atts.sort((a, b) => a.ts - b.ts);
+    const intervals = [];
+    for (let i = 1; i < atts.length; i++) {
+      const diff = (atts[i].ts - atts[i - 1].ts) / 86400000; // ms → days
+      if (diff >= 0) intervals.push(diff);
+    }
+    if (intervals.length === 0) { cadenceSingleTouch++; continue; }
+    intervals.sort((a, b) => a - b);
+    const cMid = Math.floor(intervals.length / 2);
+    const med = intervals.length % 2 === 0
+      ? (intervals[cMid - 1] + intervals[cMid]) / 2
+      : intervals[cMid];
+    _cadenceMedians.push(med);
+    if      (med < 1)   cadenceBucket_sameDay++;
+    else if (med <= 2)  cadenceBucket_1to2++;
+    else if (med <= 5)  cadenceBucket_3to5++;
+    else if (med <= 10) cadenceBucket_6to10++;
+    else if (med <= 15) cadenceBucket_11to15++;
+    else if (med <= 30) cadenceBucket_16to30++;
+    else                cadenceBucket_over30++;
+  }
+  _cadenceMedians.sort((a, b) => a - b);
+  let cadenceOverallMedian = null;
+  if (_cadenceMedians.length > 0) {
+    const cMid = Math.floor(_cadenceMedians.length / 2);
+    cadenceOverallMedian = _cadenceMedians.length % 2 === 0
+      ? (_cadenceMedians[cMid - 1] + _cadenceMedians[cMid]) / 2
+      : _cadenceMedians[cMid];
+  }
+  _cadenceMedians.length = 0; // free
+  const cadenceMultiTouchCount = cadenceBucket_sameDay + cadenceBucket_1to2 +
+    cadenceBucket_3to5 + cadenceBucket_6to10 + cadenceBucket_11to15 +
+    cadenceBucket_16to30 + cadenceBucket_over30;
+
+  // ============================================================================
   // BUILD ACCOUNT AND MESSAGE LEVEL STATS WITH DAY-OF-WEEK ANALYSIS
   // ============================================================================
   // Stats are built inline during row processing above — no separate pass needed.
@@ -1734,6 +1786,67 @@ async function generateTrendAnalysis(
 
   row++; // Blank row
 
+  // Delivery Cadence
+  if (cadenceMultiTouchCount > 0) {
+    execSheet.mergeCells(`A${row}:C${row}`);
+    execSheet.getCell(`A${row}`).value = 'Delivery Cadence';
+    execSheet.getCell(`A${row}`).style = sectionHeaderStyle;
+    row++;
+
+    const cadenceTotalNumbers = cadenceSingleTouch + cadenceMultiTouchCount;
+    const cadenceRows = [
+      ['Single Touch (1 attempt only)',
+        `${cadenceSingleTouch.toLocaleString()} (${cadenceTotalNumbers > 0 ? (cadenceSingleTouch / cadenceTotalNumbers * 100).toFixed(1) : '0.0'}%)`,
+        'Numbers contacted exactly once in this dataset — no re-attempt cadence applicable.'],
+      ['Re-attempted (2+ attempts)',
+        `${cadenceMultiTouchCount.toLocaleString()} (${cadenceTotalNumbers > 0 ? (cadenceMultiTouchCount / cadenceTotalNumbers * 100).toFixed(1) : '0.0'}%)`,
+        'Numbers with multiple attempts. Cadence breakdown below is based on the median interval between consecutive attempts for each number.'],
+      ['  Same-day re-attempt (< 1 day)',
+        `${cadenceBucket_sameDay.toLocaleString()} (${(cadenceBucket_sameDay / cadenceMultiTouchCount * 100).toFixed(1)}% of re-attempted)`,
+        'Numbers typically re-attempted on the same calendar day. Same-day re-attempts are rarely effective and may indicate a campaign configuration issue.'],
+      ['  1–2 days',
+        `${cadenceBucket_1to2.toLocaleString()} (${(cadenceBucket_1to2 / cadenceMultiTouchCount * 100).toFixed(1)}% of re-attempted)`,
+        'Very short interval. Next-day re-attempts do not give consumers adequate time to respond and can accelerate list fatigue.'],
+      ['  3–5 days ✓',
+        `${cadenceBucket_3to5.toLocaleString()} (${(cadenceBucket_3to5 / cadenceMultiTouchCount * 100).toFixed(1)}% of re-attempted)`,
+        'Ideal range. Frequent enough to maintain urgency while giving consumers time to respond.'],
+      ['  6–10 days ✓',
+        `${cadenceBucket_6to10.toLocaleString()} (${(cadenceBucket_6to10 / cadenceMultiTouchCount * 100).toFixed(1)}% of re-attempted)`,
+        'Ideal range. Solid cadence that balances persistence with consumer experience.'],
+      ['  11–15 days',
+        `${cadenceBucket_11to15.toLocaleString()} (${(cadenceBucket_11to15 / cadenceMultiTouchCount * 100).toFixed(1)}% of re-attempted)`,
+        'Slightly above ideal. Acceptable, but tightening to 6–10 days could improve results for time-sensitive campaigns.'],
+      ['  16–30 days',
+        `${cadenceBucket_16to30.toLocaleString()} (${(cadenceBucket_16to30 / cadenceMultiTouchCount * 100).toFixed(1)}% of re-attempted)`,
+        'Below ideal frequency. Monthly cadence may leave recovery opportunities on the table — consider increasing contact frequency where list health allows.'],
+      ['  30+ days',
+        `${cadenceBucket_over30.toLocaleString()} (${(cadenceBucket_over30 / cadenceMultiTouchCount * 100).toFixed(1)}% of re-attempted)`,
+        'Infrequent. Re-attempt intervals this long are likely leaving significant outreach opportunity unrealized for most campaign types.'],
+    ];
+    if (cadenceOverallMedian !== null) {
+      const cadenceMedianStr = cadenceOverallMedian < 1
+        ? `${(cadenceOverallMedian * 24).toFixed(1)} hours`
+        : `${cadenceOverallMedian.toFixed(1)} days`;
+      cadenceRows.push(['Overall Median Re-attempt Interval', cadenceMedianStr,
+        'The median of per-number median intervals across all re-attempted numbers. Half of re-attempted numbers were contacted at this frequency or faster.']);
+    }
+
+    for (const [label, value, desc] of cadenceRows) {
+      execSheet.getCell(`A${row}`).value = label;
+      execSheet.getCell(`A${row}`).font = label.startsWith('  ')
+        ? { size: 10, color: { argb: 'FF333333' } }
+        : { bold: true };
+      execSheet.getCell(`B${row}`).value = value;
+      if (desc) {
+        execSheet.getCell(`C${row}`).value = desc;
+        execSheet.getCell(`C${row}`).font = { italic: true, size: 9, color: { argb: 'FF555555' } };
+        execSheet.getCell(`C${row}`).alignment = { wrapText: true };
+      }
+      row++;
+    }
+    row++; // Blank row
+  }
+
   // Non-Deliverable Records
   const totalNonDeliverable = Object.values(nonDeliverableCounts).reduce((s, v) => s + v, 0);
   if (totalNonDeliverable > 0) {
@@ -1984,6 +2097,16 @@ async function generateTrendAnalysis(
   }
   if (messageDayRecommendations.length > 0) {
     actions.push(`DAY DISTRIBUTION: ${messageDayRecommendations.length} message(s) only used on limited days. See "Global Insights (Days)" for details.`);
+  }
+
+  // Check for aggressive re-attempt cadence
+  if (cadenceMultiTouchCount > 0) {
+    if (cadenceBucket_sameDay > cadenceMultiTouchCount * 0.1) {
+      actions.push(`CADENCE: ${cadenceBucket_sameDay.toLocaleString()} numbers (${(cadenceBucket_sameDay / cadenceMultiTouchCount * 100).toFixed(0)}% of re-attempted) are being contacted multiple times on the same day. Same-day re-attempts are rarely effective and may indicate a campaign configuration issue.`);
+    }
+    if (cadenceBucket_1to2 > cadenceMultiTouchCount * 0.2) {
+      actions.push(`CADENCE: ${cadenceBucket_1to2.toLocaleString()} numbers (${(cadenceBucket_1to2 / cadenceMultiTouchCount * 100).toFixed(0)}% of re-attempted) are being re-attempted within 1–2 days. Next-day re-attempts do not give consumers adequate time to respond and accelerate list fatigue — a minimum 6–10 day interval is recommended.`);
+    }
   }
 
   // Add timezone discrepancy warning
