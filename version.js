@@ -2,7 +2,7 @@
 // VoApps Tools Version Management
 //
 // Notes:
-// - Current version reflects the newest release (4.2.1).
+// - Current version reflects the newest release (4.2.2).
 // - Keeps feature flags + author from the original "DuckDB Edition" file.
 // - Changelog is unified so each version can include: changes/features, fixes, and breaking changes.
 
@@ -10,7 +10,7 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '4.2.1',
+  VERSION: '4.2.2',
   VERSION_NAME: 'Call Center Intelligence',
   RELEASE_DATE: '2026-03-12',
   AUTHOR: 'Brett Menzie',
@@ -50,6 +50,13 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '4.2.2': {
+      date: '2026-03-12',
+      title: 'Call Center Intelligence',
+      fixes: [
+        'Fixed startup crash — SyntaxError: Identifier "dailyStats" has already been declared (duplicate variable name in day-of-week analysis block introduced in 4.2.1)'
+      ]
+    },
     '4.2.1': {
       date: '2026-03-12',
       title: 'Call Center Intelligence',
