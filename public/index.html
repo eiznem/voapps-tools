@@ -316,7 +316,7 @@
     }
 
     .drawer-header {
-      padding: 16px 20px;
+      padding: 10px 16px;
       border-bottom: 1px solid #e0e0e0;
       display: flex;
       align-items: center;
@@ -368,7 +368,7 @@
     .drawer-content {
       flex: 1;
       overflow-y: auto;
-      padding: 16px 20px;
+      padding: 10px 14px;
     }
 
     /* ACTION FOOTER */
@@ -609,11 +609,11 @@
 
     .search-type-dropdown {
       width: 100%;
-      padding: 10px 12px;
-      font-size: 13px;
+      padding: 6px 10px;
+      font-size: 12px;
       font-weight: 600;
       color: #2E2C3E;
-      border: 2px solid #e0e0e0;
+      border: 1.5px solid #e0e0e0;
       border-radius: 6px;
       background: white;
       cursor: pointer;
@@ -628,11 +628,11 @@
     .search-type-description {
       font-size: 11px;
       color: #666;
-      line-height: 1.5;
-      padding: 10px;
+      line-height: 1.4;
+      padding: 6px 8px;
       background: #f9f9f9;
       border-radius: 6px;
-      margin-top: 10px;
+      margin-top: 6px;
     }
 
     .phone-input-container {
@@ -1145,16 +1145,16 @@
     .drawer-tabs {
       display: flex;
       border-bottom: 1.5px solid #e4e4e4;
-      margin: 12px -20px 0;
-      padding: 0 20px;
+      margin: 8px -14px 0;
+      padding: 0 14px;
       gap: 0;
     }
     .drawer-tab {
       background: none;
       border: none;
       border-bottom: 3px solid transparent;
-      padding: 8px 14px 7px;
-      font-size: 13px;
+      padding: 6px 12px 5px;
+      font-size: 12px;
       font-weight: 600;
       color: #999;
       cursor: pointer;
@@ -1167,12 +1167,32 @@
       color: #1a1a1a;
       border-bottom-color: #E91E8C;
     }
-    .drawer-tab-panel { padding-top: 14px; }
+    .drawer-tab-panel { padding-top: 8px; }
 
     .settings-section-subtitle {
       font-size: 11px;
       color: #888;
       margin-bottom: 16px;
+    }
+
+    /* ── Compact drawer overrides ─────────────────────────────────────── */
+    .drawer-panel .settings-section {
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      border-radius: 7px;
+    }
+    .drawer-panel .settings-section-title {
+      font-size: 12px;
+      margin-bottom: 2px;
+    }
+    .drawer-panel .settings-section-subtitle {
+      font-size: 10px;
+      margin-bottom: 8px;
+    }
+    /* drawer-tabs inside a settings-section inside a drawer */
+    .drawer-panel .settings-section .drawer-tabs {
+      margin: 6px -12px 0;
+      padding: 0 12px;
     }
 
     /* Output Mode Layout - vertical buttons + database side by side */
@@ -2412,6 +2432,14 @@
                     Download Whisper Model (~142 MB)
                   </button>
                   <div id="sttModelStatus" style="font-size: 11px; color: #666; margin-top: 4px; text-align: center; min-height: 16px;"></div>
+                  <div id="sttManualInstallHint" style="display:none; margin-top: 8px; padding: 8px 10px; background: #FFF8E1; border: 1px solid #F9A825; border-radius: 6px; font-size: 10px; line-height: 1.6; color: #5D4037;">
+                    <strong>Install manually instead:</strong><br>
+                    1. <a href="#" onclick="if(window.voapps?.openUpdateUrl) window.voapps.openUpdateUrl('https://github.com/eiznem/voapps-tools/releases/latest'); else window.open('https://github.com/eiznem/voapps-tools/releases/latest','_blank'); return false;" style="color:#1565C0;">Download VoApps-Tools-Models.zip</a> from GitHub Releases<br>
+                    2. Extract to:<br>
+                    &nbsp;&nbsp;• <strong>Windows:</strong> <code style="font-size:9px;">%AppData%\VoApps Tools\models\</code><br>
+                    &nbsp;&nbsp;• <strong>macOS:</strong> <code style="font-size:9px;">~/Library/Application Support/VoApps Tools/models/</code><br>
+                    3. Both buttons will update to "Re-download ↺" automatically
+                  </div>
                 </div>
               </div>
 
@@ -2436,6 +2464,14 @@
                     Download Intent Model (~85 MB)
                   </button>
                   <div id="intentModelStatus" style="font-size: 11px; color: #666; margin-top: 4px; text-align: center; min-height: 16px;"></div>
+                  <div id="intentManualInstallHint" style="display:none; margin-top: 8px; padding: 8px 10px; background: #FFF8E1; border: 1px solid #F9A825; border-radius: 6px; font-size: 10px; line-height: 1.6; color: #5D4037;">
+                    <strong>Install manually instead:</strong><br>
+                    1. <a href="#" onclick="if(window.voapps?.openUpdateUrl) window.voapps.openUpdateUrl('https://github.com/eiznem/voapps-tools/releases/latest'); else window.open('https://github.com/eiznem/voapps-tools/releases/latest','_blank'); return false;" style="color:#1565C0;">Download VoApps-Tools-Models.zip</a> from GitHub Releases<br>
+                    2. Extract to:<br>
+                    &nbsp;&nbsp;• <strong>Windows:</strong> <code style="font-size:9px;">%AppData%\VoApps Tools\models\</code><br>
+                    &nbsp;&nbsp;• <strong>macOS:</strong> <code style="font-size:9px;">~/Library/Application Support/VoApps Tools/models/</code><br>
+                    3. Both buttons will update to "Re-download ↺" automatically
+                  </div>
                 </div>
               </div>
 
@@ -2944,88 +2980,19 @@
           <li><code>Logs/</code> — Operation logs and error files</li>
         </ul>
 
-        <h4 style="border-top: 1px solid #e0e0e0; padding-top: 12px; margin-top: 16px;">📝 Release Notes</h4>
-        <p><strong>v4.0.5 - AI Message Intelligence</strong></p>
-        <ul style="margin-left: 16px;">
-          <li>AI Message Analysis — transcribe DDVM recordings via local Whisper or OpenAI, infer intent, detect caller number match, URL mentions, and Voice Append</li>
-          <li>New AI sidebar panel with independent transcription and intent engine selection (local free vs. OpenAI API)</li>
-          <li>DuckDB message_transcriptions cache — each message transcribed once, recalled automatically on re-runs</li>
-          <li>New Excel columns on Global Insights (Msg & Caller): Transcript, Message Summary, Mentioned Phone, Caller # Match, Contains URL, Voice Append</li>
-          <li>New Message Intelligence section in Executive Summary with caller mismatch detection and recommendations</li>
-          <li>Renamed TN Health classification "Toxic" → "Delivery Unlikely" throughout the report</li>
-          <li>Renamed "Consecutive Unsuccessful" tab to "Suppression Candidates" — only shows "Delivery Unlikely" numbers</li>
-          <li>Removed hourly success patterns; renamed tab to "Global Insights (Days)"</li>
-          <li>TN Health, Variability Analysis, and Number Summary tabs are now optional (default: off) — preference remembered</li>
-          <li>Column headers updated: "Unique Caller Numbers", "Top Caller Number %"</li>
-          <li>Improved Retry Decay Curve glossary with numeric example</li>
-          <li>Campaign date filter is now timezone-aware (covers Hawaii through Eastern)</li>
-          <li>Fixed analysis error when optional detail tabs are disabled</li>
-        </ul>
-        <p><strong>v3.4.1 - Memory & Stability Improvements</strong></p>
-        <ul style="margin-left: 16px;">
-          <li>Row caps (100K per detail tab) prevent out-of-memory on large datasets</li>
-          <li>numberSummaryArray freed before workbook creation — releases up to 1 GB before Excel generation</li>
-          <li>campaignTsMap memory reduction — stores first/last row per campaign only</li>
-          <li>Column C descriptions added to Executive Summary for key metrics</li>
-          <li>Fixed Delivered % showing NaN%</li>
-          <li>Fixed Delivery Intelligence Report not running with Database output mode</li>
-          <li>Fixed Analysis button showing stale green state from previous run</li>
-        </ul>
-        <p><strong>v3.4.0 - Executive Summary & DST-Aware Timezone Selection</strong></p>
-        <ul style="margin-left: 16px;">
-          <li>Executive Summary search type - aggregate campaign statistics into deliverability report</li>
-          <li>Added account_name column to all CSV exports (Phone Search, Combine, Executive Summary)</li>
-          <li>Added campaign_url to Executive Summary for direct campaign links</li>
-          <li>User-selectable timezone with DST awareness (ET, CT, MT, PT) plus VoApps Time (constant UTC-7)</li>
-          <li>Phone number input now accepts any format (parentheses, dashes, +1, etc.)</li>
-          <li>Reorganized Report Output settings (combined headers, folder, timezone)</li>
-          <li>Fixed Windows update checker to find .exe instead of .dmg</li>
-          <li>Fixed SSL certificate errors on macOS with VPN</li>
-        </ul>
-        <p><strong>v3.3.1 - Timestamp Normalization</strong></p>
-        <ul style="margin-left: 16px;">
-          <li>All timestamps normalized to user-selected timezone (default: VoApps Time UTC-7)</li>
-        </ul>
-        <p><strong>v3.3.0 - Cross-Platform Release</strong></p>
-        <ul style="margin-left: 16px;">
-          <li>Windows x64 support with native HTTPS fetch</li>
-          <li>Configurable output folder (folder icon in sidebar)</li>
-          <li>Default output location changed to Documents</li>
-          <li>Zoom controls (+/- buttons, Ctrl+Plus/Minus keyboard shortcuts)</li>
-          <li>Fixed success rate calculation — now only counts actual delivery attempts</li>
-          <li>Fixed Quit button hanging issue</li>
-          <li>Streaming database export prevents memory issues on large datasets</li>
-        </ul>
-        <p><strong>v3.2.0 - Delivery Intelligence Platform</strong></p>
-        <ul style="margin-left: 16px;">
-          <li>TN Health Classification (Healthy, Delivery Unlikely)</li>
-          <li>Attempt Index tracking with success probability decay curve</li>
-          <li>Variability Score for message/caller rotation analysis</li>
-          <li>Day-of-week recommendations for accounts and messages</li>
-          <li>Global Insights with timezone detection</li>
-          <li>Glossary sheet with VoApps result definitions</li>
-        </ul>
-        <p><strong>v3.1.0 - Live Logging Edition</strong></p>
-        <ul style="margin-left: 16px;">
-          <li>Live log streaming with real-time progress</li>
-          <li>New sidebar navigation UI</li>
-          <li>Bulk export CSV enrichment (caller_number, message_id)</li>
-          <li>Cancel button for running operations</li>
-          <li>Log filtering with next/previous navigation</li>
-          <li>CSV upload for standalone trend analysis</li>
-        </ul>
-        <p><strong>v3.0.0 - DuckDB Edition</strong></p>
-        <ul style="margin-left: 16px;">
-          <li>Local DuckDB database for fast analysis</li>
-          <li>Three output modes: CSV, Database, Both</li>
-          <li>SQL query interface</li>
-          <li>Smart duplicate handling via MD5 row IDs</li>
-        </ul>
-
-        <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid #e0e0e0; text-align: center;">
-          <a href="#" onclick="if(window.voapps?.openUpdateUrl) window.voapps.openUpdateUrl('https://github.com/eiznem/voapps-tools'); else window.open('https://github.com/eiznem/voapps-tools', '_blank'); return false;" style="color: #FF4B7D; text-decoration: none; font-weight: 600;">
-            🔗 View on GitHub (eiznem/voapps-tools)
-          </a>
+        <div style="margin-top: 16px; padding: 14px 16px; border-top: 1px solid #e0e0e0; border-radius: 0 0 8px 8px; background: #f9f4ff; text-align: center;">
+          <div style="font-size: 13px; font-weight: 600; color: #2E2C3E; margin-bottom: 10px;">📝 Release Notes &amp; Full Documentation</div>
+          <div style="font-size: 11px; color: #666; margin-bottom: 12px;">Release notes are maintained on GitHub so they're always up to date.</div>
+          <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+            <a href="#" onclick="if(window.voapps?.openUpdateUrl) window.voapps.openUpdateUrl('https://github.com/eiznem/voapps-tools/releases'); else window.open('https://github.com/eiznem/voapps-tools/releases','_blank'); return false;"
+               style="display:inline-flex; align-items:center; gap:6px; padding: 8px 16px; background: #FF4B7D; color: white; border-radius: 6px; text-decoration: none; font-size: 12px; font-weight: 600;">
+              📋 View Release Notes
+            </a>
+            <a href="#" onclick="if(window.voapps?.openUpdateUrl) window.voapps.openUpdateUrl('https://github.com/eiznem/voapps-tools'); else window.open('https://github.com/eiznem/voapps-tools','_blank'); return false;"
+               style="display:inline-flex; align-items:center; gap:6px; padding: 8px 16px; background: white; color: #2E2C3E; border: 1px solid #ddd; border-radius: 6px; text-decoration: none; font-size: 12px; font-weight: 600;">
+              🔗 GitHub Repository
+            </a>
+          </div>
         </div>
       </div>
     </div>
@@ -5364,8 +5331,15 @@
     async function downloadAiModel(type) {
       const statusEl = type === 'stt' ? $('sttModelStatus') : $('intentModelStatus');
       const btnEl    = type === 'stt' ? $('downloadSttModelBtn') : $('downloadIntentModelBtn');
+      const hintEl   = type === 'stt' ? $('sttManualInstallHint') : $('intentManualInstallHint');
       if (statusEl) statusEl.textContent = 'Starting download…';
+      if (hintEl) hintEl.style.display = 'none';
       if (btnEl) btnEl.disabled = true;
+
+      const showFailure = (msg) => {
+        if (statusEl) statusEl.textContent = msg || '❌ Download failed — see app log';
+        if (hintEl) hintEl.style.display = 'block';
+      };
 
       let dlEs = null;
       const cleanup = (succeeded) => {
@@ -5383,7 +5357,7 @@
         });
         const data = await r.json();
         if (!data.ok) {
-          if (statusEl) statusEl.textContent = data.error || 'Failed to start download.';
+          showFailure(data.error || '❌ Failed to start download.');
           cleanup(false);
           return;
         }
@@ -5412,7 +5386,7 @@
                 if (btnEl) { btnEl.disabled = false; btnEl.textContent = type === 'stt' ? 'Re-download Whisper Model' : 'Re-download Intent Model'; }
                 cleanup(true);
               } else if (d.status === 'error') {
-                if (statusEl) statusEl.textContent = '❌ Download failed — see app log';
+                showFailure('❌ Download failed — see app log');
                 cleanup(false);
               }
             }
@@ -5420,7 +5394,7 @@
         };
         dlEs.onerror = () => cleanup(false);
       } catch (e) {
-        if (statusEl) statusEl.textContent = 'Download failed. Check app log.';
+        showFailure('❌ Download failed. Check app log.');
         cleanup(false);
       }
     }
