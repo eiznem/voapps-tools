@@ -14,6 +14,9 @@ const BLUE         = '16509B';   // accent3: blue — tertiary
 const CHARCOAL     = '2E2C3E';   // accent4: dark charcoal
 const PINK_PALE    = 'FAD6D7';   // accent5: pale pink
 const PINK_LIGHT   = 'FF93B1';   // accent6: light pink
+const PINK_MED     = 'FF6F97';   // mid pink — card accent variant
+const PURPLE_LIGHT = '6558C6';   // lighter purple — card accent variant
+const BLUE_LIGHT   = '4473AF';   // lighter blue — card accent variant
 const CREAM        = 'FBF7F3';   // lt2: cream — body background
 const WHITE        = 'FFFFFF';
 const TEXT_DARK    = '0D053F';   // navy for headings on light backgrounds
@@ -45,7 +48,7 @@ const RECT = 'rect';
  * @returns {number} Effective header height (use as base for content Y positioning).
  */
 function headerBar(pptx, slide, title, logoPath, subheading) {
-  const subH   = subheading ? 0.3 : 0;
+  const subH   = subheading ? 0.22 : 0;
   const totalH = HEADER_H + subH;
 
   // Full-width navy header (taller when subheading present)
@@ -54,10 +57,10 @@ function headerBar(pptx, slide, title, logoPath, subheading) {
     fill: { color: NAVY }, line: { color: NAVY }
   });
 
-  // Pink icon square on the left (matches the logo background color)
-  const iconBlockW = HEADER_H; // square — always HEADER_H tall
+  // Pink icon square on the left — always original HEADER_H square, never stretched
+  const iconBlockW = HEADER_H;
   slide.addShape(RECT, {
-    x: 0, y: 0, w: iconBlockW, h: totalH,
+    x: 0, y: 0, w: iconBlockW, h: HEADER_H,
     fill: { color: PINK }, line: { color: PINK }
   });
 
@@ -78,17 +81,17 @@ function headerBar(pptx, slide, title, logoPath, subheading) {
   const titleW = SLIDE_W - titleX - 0.3;
 
   if (subheading) {
-    // Title occupies the upper portion; subheading sits below it
+    // Title sits in the original header band; subheading tucked just below it
     slide.addText(title, {
-      x: titleX, y: 0, w: titleW, h: HEADER_H * 0.72,
+      x: titleX, y: 0, w: titleW, h: HEADER_H,
       fontSize: 22, bold: true, color: WHITE,
       fontFace: 'Aktiv Grotesk VF Medium',
-      valign: 'bottom', align: 'left',
+      valign: 'middle', align: 'left',
       charSpacing: 0.5
     });
     slide.addText(subheading, {
-      x: titleX, y: HEADER_H * 0.72, w: titleW, h: HEADER_H * 0.28 + subH,
-      fontSize: 12, bold: false, color: PINK_LIGHT,
+      x: titleX, y: HEADER_H, w: titleW, h: subH,
+      fontSize: 11, bold: false, color: PINK_LIGHT,
       fontFace: 'Aktiv Grotesk VF Medium',
       valign: 'middle', align: 'left'
     });
@@ -137,9 +140,11 @@ function slideFooter(slide, text) {
  * Styled to match VoApps brand card pattern.
  */
 function metricBox(slide, x, y, w, h, label, value, subtext, accentColor, valueFontSize) {
-  const accent    = accentColor  || PINK;
-  const valSize   = valueFontSize || 28;
-  const stripH    = 0.06;
+  const accent   = accentColor  || PINK;
+  const valSize  = valueFontSize || 28;
+  const stripH   = 0.06;
+  // Value box height: shrinks to leave room for subtext when card is short
+  const valBoxH  = subtext ? Math.min(0.68, h - 0.56) : 0.68;
 
   // Card background — cream
   slide.addShape(RECT, {
@@ -167,7 +172,7 @@ function metricBox(slide, x, y, w, h, label, value, subtext, accentColor, valueF
   // Big value
   slide.addText(value, {
     x: x + 0.16, y: y + stripH + 0.38,
-    w: w - 0.32, h: 0.68,
+    w: w - 0.32, h: valBoxH,
     fontSize: valSize, bold: true, color: NAVY,
     fontFace: 'IvyPresto Text',
     align: 'left', valign: 'top',
@@ -175,10 +180,11 @@ function metricBox(slide, x, y, w, h, label, value, subtext, accentColor, valueF
   });
 
   if (subtext) {
+    // Anchored after the value box so it never overlaps the number
     slide.addText(subtext, {
-      x: x + 0.16, y: y + h - 0.35,
+      x: x + 0.16, y: y + stripH + 0.38 + valBoxH + 0.08,
       w: w - 0.32, h: 0.3,
-      fontSize: 7.5, color: TEXT_SOFT,
+      fontSize: 9, color: TEXT_SOFT,
       italic: false, align: 'left',
       fontFace: 'Aktiv Grotesk VF Medium'
     });
@@ -228,7 +234,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   pptx.title   = 'VoApps Delivery Intelligence Report';
 
   const fmtDate = d => d
-    ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase()
     : '';
   const dateRangeStr = (minDate && maxDate)
     ? `${fmtDate(minDate)} – ${fmtDate(maxDate)}`
@@ -239,7 +245,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     : 0;
 
   const acctList = (accountIds && accountIds.length > 0)
-    ? accountIds.slice(0, 3).join(', ') + (accountIds.length > 3 ? ` +${accountIds.length - 3} more` : '')
+    ? accountIds.join(', ')
     : '';
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -302,10 +308,11 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
 
   if (acctList) {
     s1.addText(`Account${accountIds.length > 1 ? 's' : ''}: ${acctList}`, {
-      x: 0.5, y: 4.5, w: SLIDE_W - 1.0, h: 0.4,
+      x: 0.5, y: 4.5, w: SLIDE_W - 1.0, h: 0.5,
       fontSize: 12, color: PINK_PALE,
       fontFace: 'Aktiv Grotesk VF Medium',
-      align: 'center', italic: true
+      align: 'center', italic: true,
+      shrinkText: true
     });
   }
 
@@ -334,11 +341,11 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   const c2 = c1 + bW + bGap;
   const c3 = c2 + bW + bGap;
 
-  const successAccent = overallSuccessRate >= 75 ? GREEN
-    : overallSuccessRate >= 50 ? AMBER
-    : RED;
+  const successAccent = overallSuccessRate >= 75 ? BLUE
+    : overallSuccessRate >= 50 ? PURPLE_LIGHT
+    : CHARCOAL;
   const healthyPct = uniqueNumbers > 0 ? ((healthyCount / uniqueNumbers) * 100) : 0;
-  const healthyAccent = healthyPct >= 80 ? GREEN : healthyPct >= 60 ? BLUE : AMBER;
+  const healthyAccent = healthyPct >= 80 ? BLUE : healthyPct >= 60 ? BLUE_LIGHT : PURPLE_LIGHT;
 
   metricBox(s2, c1, row1Y, bW, bH,
     'UNIQUE PHONE NUMBERS',
@@ -362,7 +369,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     'SUCCESSFUL DELIVERIES',
     totalSuccess.toLocaleString(),
     `${overallSuccessRate.toFixed(1)}% of all attempts — voicemails delivered to consumers`,
-    GREEN);
+    BLUE);
 
   metricBox(s2, c2, row2Y, bW, bH,
     'NUMBERS CONNECTING WELL',
@@ -381,7 +388,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   const cadenceTotalNumbers = (cadence.cadenceSingleTouch || 0) + (cadence.cadenceMultiTouchCount || 0);
   if (cadenceTotalNumbers > 0) {
     const stPct = (cadence.cadenceSingleTouch / cadenceTotalNumbers * 100).toFixed(1);
-    const stripY = row2Y + bH + 0.26;
+    const stripY = row2Y + bH + 0.20;
     const stripH = 0.68;
     const stripX = c1;
     const stripW = SLIDE_W - c1 * 2;
@@ -420,7 +427,11 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   // ── Agent Hours Saved — full-width card below callout strip ─────────────────
   if (agentHoursSaved > 0) {
     const ahCardH = 1.0;
-    const ahY = row2Y + bH + (cadenceTotalNumbers > 0 ? 1.08 : 0.26);
+    // ahY derived from strip bottom so it's always accurate regardless of header height
+    const ahStripBottom = row2Y + bH + 0.20 + 0.68; // stripY + stripH
+    const ahY = cadenceTotalNumbers > 0
+      ? ahStripBottom + 0.10
+      : row2Y + bH + 0.22;
     metricBox(s2, c1, ahY, SLIDE_W - c1 * 2, ahCardH,
       'AGENT HOURS SAVED (EST.)',
       `${agentHoursSaved.toLocaleString()} hrs`,
