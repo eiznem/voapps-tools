@@ -2,7 +2,7 @@
 // VoApps Tools Version Management
 //
 // Notes:
-// - Current version reflects the newest release (4.2.2).
+// - Current version reflects the newest release (4.2.3).
 // - Keeps feature flags + author from the original "DuckDB Edition" file.
 // - Changelog is unified so each version can include: changes/features, fixes, and breaking changes.
 
@@ -10,8 +10,8 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '4.2.2',
-  VERSION_NAME: 'Call Center Intelligence',
+  VERSION: '4.2.3',
+  VERSION_NAME: 'Re-Engagement Intelligence',
   RELEASE_DATE: '2026-03-12',
   AUTHOR: 'Brett Menzie',
 
@@ -50,6 +50,20 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '4.2.3': {
+      date: '2026-03-12',
+      title: 'Re-Engagement Intelligence',
+      changes: [
+        'New "Re-Engagement Opportunity" metric in Excel Key Metrics: counts numbers that previously received a successful delivery but haven\'t been contacted in 30+ days — framed as confirmed-reachable low-hanging fruit, subject to compliance requirements',
+        'Best Next Action logic updated: stale warm numbers (10%+ of list) now surface as the headline recommendation when more impactful than single-touch follow-up',
+        'PPTX Slide 2 callout strip now includes stale warm count alongside single-touch insight when present',
+        'lastAttemptMs added to number summary objects for accurate epoch-based stale detection (avoids string parsing)'
+      ],
+      features: [
+        'Re-Engagement Opportunity: surfaces confirmed-reachable numbers not contacted in 30+ days as low-hanging fruit'
+      ],
+      fixes: []
+    },
     '4.2.2': {
       date: '2026-03-12',
       title: 'Call Center Intelligence',

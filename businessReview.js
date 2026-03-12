@@ -190,6 +190,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     actions,
     bestNextAction,
     agentHoursSaved,
+    staleWarmCount,
     minDate,
     maxDate,
     accountIds
@@ -371,9 +372,12 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
         fontFace: 'Aktiv Grotesk VF Medium', valign: 'middle'
       }
     );
-    // Supporting text
+    // Supporting text — blend single-touch + stale warm into one insight line
+    const staleNote = (staleWarmCount > 0)
+      ? ` Additionally, ${staleWarmCount.toLocaleString()} numbers with prior successful deliveries haven't been contacted in 30+ days — confirmed-reachable low-hanging fruit for re-engagement.`
+      : '';
     s2.addText(
-      'Consumers often need 2–3 touches before taking action. A follow-up campaign at a 3–10 day interval can produce meaningful incremental results from this same list.',
+      `Consumers often need 2–3 touches before taking action. A follow-up campaign at a 3–10 day interval can produce meaningful incremental results from this same list.${staleNote}`,
       {
         x: stripX + 0.18, y: stripY + 0.33,
         w: stripW - 0.26, h: 0.28,

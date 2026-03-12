@@ -1430,6 +1430,7 @@ async function generateTrendAnalysis(
       messageIntent: messageIntent,
       firstAttempt: validFirstAttempt,
       lastAttempt: validLastAttempt,
+      lastAttemptMs: nd._lpMs,
       lastSuccessTimestamp: nd.lastSuccessTimestamp
     });
   }
@@ -1618,6 +1619,9 @@ async function generateTrendAnalysis(
   let _totalAttempts = 0, _totalSuccess = 0, _sumVariability = 0;
   let _backToBackIssueCount = 0, _lowDayVarietyCount = 0, _flaggedCount = 0;
   let _streak2 = 0, _streak3 = 0, _streak4 = 0, _streak5plus = 0;
+  let _staleWarmCount = 0;
+  const _maxMs = maxDate ? maxDate.getTime() : null;
+  const _thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
   for (const ns of numberSummaryArray) {
     _totalAttempts        += ns.totalAttempts;
     _totalSuccess         += ns.successful;   // stored as 'successful' in the push, not 'successCount'
@@ -1632,7 +1636,13 @@ async function generateTrendAnalysis(
     if (ns.maxSameStreak >= 3) _streak3++;
     if (ns.maxSameStreak >= 4) _streak4++;
     if (ns.maxSameStreak >= 5) _streak5plus++;
+    // Stale warm: had at least one successful delivery AND last attempt was 30+ days before maxDate
+    if (ns.successful > 0 && _maxMs && ns.lastAttemptMs &&
+        (_maxMs - ns.lastAttemptMs) >= _thirtyDaysMs) {
+      _staleWarmCount++;
+    }
   }
+  const staleWarmCount = _staleWarmCount;
   const streak2 = _streak2, streak3 = _streak3, streak4 = _streak4, streak5plus = _streak5plus;
   const totalAttempts      = _totalAttempts;
   const avgVariability     = totalUniqueInSummary > 0 ? _sumVariability / totalUniqueInSummary : 0;
@@ -1658,6 +1668,8 @@ async function generateTrendAnalysis(
   let bestNextAction;
   if (_stPctBNA >= 0.4) {
     bestNextAction = `${cadenceSingleTouch.toLocaleString()} numbers (${(_stPctBNA * 100).toFixed(0)}% of the list) received only one DDVM during this period. Scheduling a follow-up campaign at a 3–10 day interval is the single highest-impact next step — consumers who didn't act on the first touch often engage on the second or third. This is existing-list volume with no new sourcing required.`;
+  } else if (staleWarmCount > 0 && staleWarmCount >= uniqueNumbers * 0.1) {
+    bestNextAction = `${staleWarmCount.toLocaleString()} numbers (${(staleWarmCount / Math.max(uniqueNumbers, 1) * 100).toFixed(0)}% of the list) previously received a successful DDVM but haven't been contacted in 30+ days. These are confirmed-reachable numbers — low-hanging fruit for re-engagement. A follow-up campaign here has a strong baseline delivery probability, subject to applicable compliance requirements.`;
   } else if (_stPctBNA >= 0.2) {
     bestNextAction = `${cadenceSingleTouch.toLocaleString()} numbers (${(_stPctBNA * 100).toFixed(0)}%) were contacted only once. Adding a follow-up campaign at a 3–10 day interval would put additional touches on a meaningful portion of the list — typically the easiest place to find incremental results without expanding the contact pool.`;
   } else if (_longCadPct > 0.3) {
@@ -1766,6 +1778,12 @@ async function generateTrendAnalysis(
       'Any number failing at least one threshold — classified Delivery Unlikely by TN Health, OR variability score below 60. A Healthy number with poor call diversity is still flagged. See TN Health and Variability Analysis tabs for the full breakdown (if enabled).'],
     ['Date Range', `${formatDate(minDate)} - ${formatDate(maxDate)}`],
     ['Timezone', detectedTimezone],
+    ['Re-Engagement Opportunity', staleWarmCount > 0
+      ? `${staleWarmCount.toLocaleString()} numbers`
+      : 'None identified',
+      staleWarmCount > 0
+        ? `${staleWarmCount.toLocaleString()} numbers previously received at least one successful delivery but haven't been contacted in 30+ days (relative to the end of this date range). These are low-hanging fruit for re-engagement — the number is confirmed reachable, so a follow-up campaign has a strong baseline probability of delivery. Subject to any applicable compliance or opt-out requirements.`
+        : 'All numbers with prior successful deliveries have been contacted within the last 30 days.'],
     ['Agent Hours Saved (est.)', `${agentHoursSaved.toLocaleString()} hrs`,
       `Estimated agent capacity freed by DDVM. Based on ${_totalSuccess.toLocaleString()} successful deliveries × 3 min avg manual voicemail handle time (dial + wait + message). Use the ROI Calculator (coming soon) to customize this assumption.`]
   ];
@@ -3020,6 +3038,7 @@ Use the data to set retry limits: when success probability drops below ~15–20%
         actions,
         bestNextAction,
         agentHoursSaved,
+        staleWarmCount,
         minDate,
         maxDate,
         accountIds: slideAccountIds
