@@ -1,0 +1,562 @@
+'use strict';
+
+// businessReview.js — VoApps Delivery Intelligence business review slide generator
+// Generates a branded .pptx alongside the Excel Delivery Intelligence Report
+
+const pptxgen = require('pptxgenjs');
+const path    = require('path');
+
+// ─── Brand palette (from 2026 VoApps master deck theme) ───────────────────────
+const NAVY         = '0D053F';   // dk2: deep navy — primary dark
+const PINK         = 'FF4B7D';   // accent1: hot pink — primary accent
+const PURPLE       = '3F2FB8';   // accent2: purple — secondary accent
+const BLUE         = '16509B';   // accent3: blue — tertiary
+const CHARCOAL     = '2E2C3E';   // accent4: dark charcoal
+const PINK_PALE    = 'FAD6D7';   // accent5: pale pink
+const PINK_LIGHT   = 'FF93B1';   // accent6: light pink
+const CREAM        = 'FBF7F3';   // lt2: cream — body background
+const WHITE        = 'FFFFFF';
+const TEXT_DARK    = '0D053F';   // navy for headings on light backgrounds
+const TEXT_MID     = '2E2C3E';   // charcoal for body text
+const TEXT_SOFT    = '6B6478';   // muted for supporting text
+
+// Semantic colors (kept for data traffic-light logic)
+const GREEN        = '1E7E34';
+const GREEN_PALE   = 'D4EDDA';
+const AMBER        = '856404';
+const AMBER_PALE   = 'FFF3CD';
+const RED          = 'C0392B';
+const RED_PALE     = 'FDECEA';
+
+const SLIDE_W   = 13.33;
+const SLIDE_H   = 7.5;
+const HEADER_H  = 1.0;
+const CONTENT_Y = HEADER_H + 0.18;
+
+// ─── Shape type constant (instance-level in pptxgenjs 4.x) ────────────────────
+const RECT = 'rect';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Header bar: deep navy left-to-right bar with pink logo area on the left.
+ * Matches the VoApps brand — navy background, white title text, pink icon block.
+ */
+function headerBar(pptx, slide, title, logoPath) {
+  // Full-width navy header
+  slide.addShape(RECT, {
+    x: 0, y: 0, w: SLIDE_W, h: HEADER_H,
+    fill: { color: NAVY }, line: { color: NAVY }
+  });
+
+  // Pink icon square on the left (matches the logo background color)
+  const iconBlockW = HEADER_H; // square
+  slide.addShape(RECT, {
+    x: 0, y: 0, w: iconBlockW, h: HEADER_H,
+    fill: { color: PINK }, line: { color: PINK }
+  });
+
+  if (logoPath) {
+    // Logo sits inside the pink block with a small inset
+    const inset = 0.1;
+    slide.addImage({
+      path: logoPath,
+      x: inset,
+      y: inset,
+      w: iconBlockW - inset * 2,
+      h: HEADER_H - inset * 2
+    });
+  }
+
+  // Title text sits to the right of the icon block
+  const titleX = iconBlockW + 0.22;
+  const titleW = SLIDE_W - titleX - 0.3;
+  slide.addText(title, {
+    x: titleX, y: 0, w: titleW, h: HEADER_H,
+    fontSize: 22, bold: true, color: WHITE,
+    fontFace: 'Aktiv Grotesk VF Medium',
+    valign: 'middle', align: 'left',
+    charSpacing: 0.5
+  });
+
+  // Thin pink bottom accent line on the header
+  slide.addShape(RECT, {
+    x: 0, y: HEADER_H - 0.04, w: SLIDE_W, h: 0.04,
+    fill: { color: PINK }, line: { color: PINK }
+  });
+}
+
+/**
+ * Footer bar: cream strip with centered muted text and a thin pink top rule.
+ */
+function slideFooter(slide, text) {
+  const footerH = 0.3;
+  const footerY = SLIDE_H - footerH;
+
+  slide.addShape(RECT, {
+    x: 0, y: footerY - 0.03, w: SLIDE_W, h: 0.03,
+    fill: { color: PINK_PALE }, line: { color: PINK_PALE }
+  });
+
+  slide.addText(text || 'VoApps Delivery Intelligence Report', {
+    x: 0, y: footerY,
+    w: SLIDE_W, h: footerH,
+    fontSize: 8, color: TEXT_SOFT, align: 'center',
+    fontFace: 'Aktiv Grotesk VF Medium',
+    italic: true
+  });
+}
+
+/**
+ * Metric card — cream background, colored top strip, label, large value, subtext.
+ * Styled to match VoApps brand card pattern.
+ */
+function metricBox(slide, x, y, w, h, label, value, subtext, accentColor, valueFontSize) {
+  const accent    = accentColor  || PINK;
+  const valSize   = valueFontSize || 28;
+  const stripH    = 0.06;
+
+  // Card background — cream
+  slide.addShape(RECT, {
+    x, y, w, h,
+    fill: { color: CREAM },
+    line: { color: PINK_PALE, pt: 1 }
+  });
+
+  // Colored top strip
+  slide.addShape(RECT, {
+    x, y, w, h: stripH,
+    fill: { color: accent }, line: { color: accent }
+  });
+
+  // Label (small caps style — uppercase, spaced)
+  slide.addText(label, {
+    x: x + 0.16, y: y + stripH + 0.1,
+    w: w - 0.32, h: 0.3,
+    fontSize: 7.5, color: TEXT_SOFT,
+    bold: false, align: 'left',
+    fontFace: 'Aktiv Grotesk VF Medium',
+    charSpacing: 1.5
+  });
+
+  // Big value
+  slide.addText(value, {
+    x: x + 0.16, y: y + stripH + 0.38,
+    w: w - 0.32, h: 0.68,
+    fontSize: valSize, bold: true, color: NAVY,
+    fontFace: 'IvyPresto Text',
+    align: 'left', valign: 'top',
+    shrinkText: true
+  });
+
+  if (subtext) {
+    slide.addText(subtext, {
+      x: x + 0.16, y: y + h - 0.35,
+      w: w - 0.32, h: 0.3,
+      fontSize: 7.5, color: TEXT_SOFT,
+      italic: false, align: 'left',
+      fontFace: 'Aktiv Grotesk VF Medium'
+    });
+  }
+}
+
+// ─── Main export ──────────────────────────────────────────────────────────────
+
+/**
+ * Generate a branded business review .pptx alongside the Excel report.
+ *
+ * @param {Object} stats      - Aggregated stats from generateTrendAnalysis
+ * @param {string} outputPath - Destination file path (should end in .pptx)
+ * @param {string} logoPath   - Absolute path to the VoApps icon PNG
+ */
+async function generateBusinessReviewSlides(stats, outputPath, logoPath) {
+  const {
+    uniqueNumbers,
+    totalAttempts,
+    totalSuccess,
+    overallSuccessRate,
+    listGrade,
+    healthyCount,
+    toxicCount,
+    neverDeliveredCount,
+    avgVariability,
+    decayCurve,
+    cadence,
+    actions,
+    minDate,
+    maxDate,
+    accountIds
+  } = stats;
+
+  const pptx = new pptxgen();
+  pptx.layout  = 'LAYOUT_WIDE';
+  pptx.author  = 'VoApps Tools';
+  pptx.subject = 'Delivery Intelligence Report';
+  pptx.title   = 'VoApps Delivery Intelligence Report';
+
+  const fmtDate = d => d
+    ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : '';
+  const dateRangeStr = (minDate && maxDate)
+    ? `${fmtDate(minDate)} – ${fmtDate(maxDate)}`
+    : 'Date range not available';
+
+  const acctList = (accountIds && accountIds.length > 0)
+    ? accountIds.slice(0, 3).join(', ') + (accountIds.length > 3 ? ` +${accountIds.length - 3} more` : '')
+    : '';
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // SLIDE 1 — Title
+  // Full dark navy background with centered content, pink accent bar, logo
+  // ────────────────────────────────────────────────────────────────────────────
+  const s1 = pptx.addSlide();
+
+  // Full navy background
+  s1.addShape(RECT, {
+    x: 0, y: 0, w: SLIDE_W, h: SLIDE_H,
+    fill: { color: NAVY }, line: { color: NAVY }
+  });
+
+  // Decorative pink horizontal bar near top-third
+  s1.addShape(RECT, {
+    x: 0, y: 2.7, w: SLIDE_W, h: 0.05,
+    fill: { color: PINK }, line: { color: PINK }
+  });
+
+  // Lighter charcoal lower band for contrast
+  s1.addShape(RECT, {
+    x: 0, y: SLIDE_H - 1.4, w: SLIDE_W, h: 1.4,
+    fill: { color: CHARCOAL }, line: { color: CHARCOAL }
+  });
+
+  // Pink accent bottom strip
+  s1.addShape(RECT, {
+    x: 0, y: SLIDE_H - 0.06, w: SLIDE_W, h: 0.06,
+    fill: { color: PINK }, line: { color: PINK }
+  });
+
+  // Logo centered
+  if (logoPath) {
+    const logoSize = 1.6;
+    s1.addImage({
+      path: logoPath,
+      x: SLIDE_W / 2 - logoSize / 2,
+      y: 0.7,
+      w: logoSize,
+      h: logoSize
+    });
+  }
+
+  // Main title
+  s1.addText('Delivery Intelligence Report', {
+    x: 0.5, y: 2.85, w: SLIDE_W - 1.0, h: 1.0,
+    fontSize: 40, bold: true, color: WHITE,
+    fontFace: 'IvyPresto Text',
+    align: 'center', valign: 'middle'
+  });
+
+  // Subtitle / date range
+  s1.addText(dateRangeStr, {
+    x: 0.5, y: 3.92, w: SLIDE_W - 1.0, h: 0.52,
+    fontSize: 17, color: PINK_LIGHT,
+    fontFace: 'Aktiv Grotesk VF Medium',
+    align: 'center'
+  });
+
+  if (acctList) {
+    s1.addText(`Account${accountIds.length > 1 ? 's' : ''}: ${acctList}`, {
+      x: 0.5, y: 4.5, w: SLIDE_W - 1.0, h: 0.4,
+      fontSize: 12, color: PINK_PALE,
+      fontFace: 'Aktiv Grotesk VF Medium',
+      align: 'center', italic: true
+    });
+  }
+
+  s1.addText('Generated by VoApps Tools', {
+    x: 0, y: SLIDE_H - 0.95, w: SLIDE_W, h: 0.38,
+    fontSize: 10, color: PINK_PALE,
+    fontFace: 'Aktiv Grotesk VF Medium',
+    align: 'center', italic: true
+  });
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // SLIDE 2 — Campaign Overview
+  // 2-row × 3-col metric cards on cream background
+  // ────────────────────────────────────────────────────────────────────────────
+  const s2 = pptx.addSlide();
+  s2.background = { color: CREAM };
+  headerBar(pptx, s2, 'Campaign Overview', logoPath);
+
+  const bW   = 4.0;
+  const bH   = 1.62;
+  const bGap = 0.16;
+  const row1Y = CONTENT_Y + 0.1;
+  const row2Y = row1Y + bH + bGap;
+  const c1 = 0.32;
+  const c2 = c1 + bW + bGap;
+  const c3 = c2 + bW + bGap;
+
+  const successAccent = overallSuccessRate >= 75 ? GREEN
+    : overallSuccessRate >= 50 ? AMBER
+    : RED;
+  const healthyPct = uniqueNumbers > 0 ? ((healthyCount / uniqueNumbers) * 100) : 0;
+  const healthyAccent = healthyPct >= 80 ? GREEN : healthyPct >= 60 ? BLUE : AMBER;
+
+  metricBox(s2, c1, row1Y, bW, bH,
+    'UNIQUE PHONE NUMBERS',
+    uniqueNumbers.toLocaleString(),
+    'Phone numbers analyzed in this report',
+    PINK);
+
+  metricBox(s2, c2, row1Y, bW, bH,
+    'TOTAL DDVM ATTEMPTS',
+    totalAttempts.toLocaleString(),
+    'Delivery attempts recorded across all campaigns',
+    NAVY);
+
+  metricBox(s2, c3, row1Y, bW, bH,
+    'OVERALL SUCCESS RATE',
+    `${overallSuccessRate.toFixed(1)}%`,
+    `${totalSuccess.toLocaleString()} voicemails successfully delivered`,
+    successAccent);
+
+  metricBox(s2, c1, row2Y, bW, bH,
+    'SUCCESSFUL DELIVERIES',
+    totalSuccess.toLocaleString(),
+    `${overallSuccessRate.toFixed(1)}% of all attempts — voicemails delivered to consumers`,
+    GREEN);
+
+  metricBox(s2, c2, row2Y, bW, bH,
+    'NUMBERS CONNECTING WELL',
+    healthyCount.toLocaleString(),
+    `${healthyPct.toFixed(0)}% of the list maintaining good delivery performance`,
+    healthyAccent);
+
+  // Date range — smaller value font so the string fits comfortably
+  metricBox(s2, c3, row2Y, bW, bH,
+    'DATE RANGE',
+    dateRangeStr,
+    '',
+    PINK_LIGHT, 18);
+
+  slideFooter(s2);
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // SLIDE 3 — Success Probability by Attempt
+  // ────────────────────────────────────────────────────────────────────────────
+  const s3 = pptx.addSlide();
+  s3.background = { color: CREAM };
+  headerBar(pptx, s3, 'Success Probability by Attempt', logoPath);
+
+  s3.addText(
+    'Each row represents all numbers at that attempt count. As attempt index rises, the pool shifts toward harder-to-reach numbers — success probability naturally declines.',
+    {
+      x: 0.4, y: CONTENT_Y + 0.08,
+      w: SLIDE_W - 0.8, h: 0.4,
+      fontSize: 9.5, color: TEXT_SOFT, italic: true,
+      fontFace: 'Aktiv Grotesk VF Medium'
+    }
+  );
+
+  const headerCellOpts = { bold: true, color: WHITE, fill: NAVY, align: 'center', fontFace: 'Aktiv Grotesk VF Medium', fontSize: 10.5 };
+
+  const tblRows = [
+    [
+      { text: 'Attempt',        options: { ...headerCellOpts, align: 'center' } },
+      { text: 'Success Rate',   options: { ...headerCellOpts } },
+      { text: 'Successful',     options: { ...headerCellOpts } },
+      { text: 'Total Attempts', options: { ...headerCellOpts } },
+      { text: 'Insight',        options: { ...headerCellOpts } }
+    ],
+    ...decayCurve.slice(0, 8).map((dc, idx) => {
+      const pct = dc.probability * 100;
+      const isEven   = idx % 2 === 0;
+      const rowBg    = isEven ? WHITE : 'F5F2EF';
+      const rowFill  = pct >= 50 ? 'EBF7EE' : pct >= 25 ? 'FFF8E1' : pct >= 15 ? AMBER_PALE : RED_PALE;
+      const txtColor = pct >= 50 ? GREEN    : pct >= 25 ? AMBER    : pct >= 15 ? AMBER      : RED;
+      const insight  = pct >= 50 ? 'Good — Continue'
+        : pct >= 25 ? 'Declining — Monitor'
+        : pct >= 15 ? 'Low — Review'
+        : 'Very Low — Suppress';
+
+      const cell = (txt, fill, opts) => ({ text: txt, options: { color: TEXT_MID, fill: fill || rowBg, align: 'center', fontFace: 'Aktiv Grotesk VF Medium', fontSize: 10.5, ...opts } });
+
+      return [
+        cell(String(dc.attemptIndex)),
+        { text: `${pct.toFixed(1)}%`, options: { bold: true, color: txtColor, fill: rowFill, align: 'center', fontFace: 'Aktiv Grotesk VF Medium', fontSize: 10.5 } },
+        cell(dc.successful.toLocaleString()),
+        cell(dc.total.toLocaleString()),
+        { text: insight, options: { color: txtColor, fill: rowFill, align: 'center', fontFace: 'Aktiv Grotesk VF Medium', fontSize: 10.5 } }
+      ];
+    })
+  ];
+
+  s3.addTable(tblRows, {
+    x: 1.4, y: CONTENT_Y + 0.58,
+    w: SLIDE_W - 2.8,
+    fontSize: 10.5,
+    rowH: 0.43,
+    border: { type: 'solid', color: PINK_PALE, pt: 0.75 }
+  });
+
+  s3.addText(
+    'Numbers with 4–6+ consecutive failures and low success rates are listed in the Suppression Candidates tab of the report.',
+    {
+      x: 0.4, y: SLIDE_H - 0.78,
+      w: SLIDE_W - 0.8, h: 0.36,
+      fontSize: 8.5, color: TEXT_SOFT, italic: true, align: 'center',
+      fontFace: 'Aktiv Grotesk VF Medium'
+    }
+  );
+  slideFooter(s3);
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // SLIDE 4 — Delivery Re-Attempt Cadence
+  // ────────────────────────────────────────────────────────────────────────────
+  const s4 = pptx.addSlide();
+  s4.background = { color: CREAM };
+  headerBar(pptx, s4, 'Delivery Re-Attempt Cadence', logoPath);
+
+  const totalMulti = cadence.cadenceMultiTouchCount || 1;
+  s4.addText(
+    `${cadence.cadenceMultiTouchCount.toLocaleString()} numbers had 2+ delivery attempts. Breakdown by median interval between consecutive attempts per number:`,
+    {
+      x: 0.4, y: CONTENT_Y + 0.08,
+      w: SLIDE_W - 0.8, h: 0.4,
+      fontSize: 9.5, color: TEXT_SOFT, italic: true,
+      fontFace: 'Aktiv Grotesk VF Medium'
+    }
+  );
+
+  const cadenceRows = [
+    { label: 'Same-day re-attempt  (< 1 day)', count: cadence.cadenceBucket_sameDay,  ideal: false, warn: true  },
+    { label: '1–2 days',                       count: cadence.cadenceBucket_1to2,      ideal: false, warn: true  },
+    { label: '3–5 days',                       count: cadence.cadenceBucket_3to5,      ideal: true,  warn: false },
+    { label: '6–10 days',                      count: cadence.cadenceBucket_6to10,     ideal: true,  warn: false },
+    { label: '11–15 days',                     count: cadence.cadenceBucket_11to15,    ideal: false, warn: false },
+    { label: '16–30 days',                     count: cadence.cadenceBucket_16to30,    ideal: false, warn: false },
+    { label: '30+ days',                       count: cadence.cadenceBucket_over30,    ideal: false, warn: false }
+  ];
+
+  const cadHdrOpts = { bold: true, color: WHITE, fill: NAVY, fontFace: 'Aktiv Grotesk VF Medium', fontSize: 10.5 };
+
+  const cTbl = [
+    [
+      { text: 'Re-Attempt Interval',  options: { ...cadHdrOpts, align: 'left' } },
+      { text: 'Numbers',              options: { ...cadHdrOpts, align: 'center' } },
+      { text: '% of Re-Attempted',    options: { ...cadHdrOpts, align: 'center' } },
+      { text: '',                     options: { ...cadHdrOpts, align: 'center' } }
+    ],
+    ...cadenceRows.filter(r => r.count > 0 || r.ideal).map((r, idx) => {
+      const rowBg = idx % 2 === 0 ? WHITE : 'F5F2EF';
+      const fill  = r.ideal ? GREEN_PALE : r.warn ? RED_PALE : rowBg;
+      const color = r.ideal ? GREEN      : r.warn ? RED      : TEXT_MID;
+      const badge = r.ideal ? '✓ Ideal' : r.warn ? '⚠ Too soon' : '';
+      const badgeColor = r.ideal ? GREEN : RED;
+      return [
+        { text: r.label,                                         options: { color, fill, bold: r.ideal, align: 'left',  fontFace: 'Aktiv Grotesk VF Medium', fontSize: 10.5 } },
+        { text: r.count.toLocaleString(),                        options: { color, fill, bold: r.ideal, align: 'center', fontFace: 'Aktiv Grotesk VF Medium', fontSize: 10.5 } },
+        { text: `${(r.count / totalMulti * 100).toFixed(1)}%`,  options: { color, fill, bold: r.ideal, align: 'center', fontFace: 'Aktiv Grotesk VF Medium', fontSize: 10.5 } },
+        { text: badge,                                            options: { color: badgeColor, fill, bold: r.ideal || r.warn, align: 'center', fontFace: 'Aktiv Grotesk VF Medium', fontSize: 10.5 } }
+      ];
+    })
+  ];
+
+  s4.addTable(cTbl, {
+    x: 1.8, y: CONTENT_Y + 0.58,
+    w: SLIDE_W - 3.6,
+    fontSize: 10.5, rowH: 0.44,
+    border: { type: 'solid', color: PINK_PALE, pt: 0.75 }
+  });
+
+  if (cadence.cadenceOverallMedian != null) {
+    const medStr = cadence.cadenceOverallMedian < 1
+      ? `${(cadence.cadenceOverallMedian * 24).toFixed(1)} hours`
+      : `${cadence.cadenceOverallMedian.toFixed(1)} days`;
+    s4.addText(`Overall Median Re-Attempt Interval: ${medStr}  ·  Ideal range: 3–10 days`, {
+      x: 0.4, y: SLIDE_H - 0.78,
+      w: SLIDE_W - 0.8, h: 0.38,
+      fontSize: 10, color: NAVY, bold: true, align: 'center',
+      fontFace: 'Aktiv Grotesk VF Medium'
+    });
+  }
+  slideFooter(s4);
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // SLIDE 5 — Recommended Actions
+  // Cards with navy left accent bar (matches VoApps brand purple/pink motif)
+  // ────────────────────────────────────────────────────────────────────────────
+  const s5 = pptx.addSlide();
+  s5.background = { color: CREAM };
+  headerBar(pptx, s5, 'Opportunities to Maximize Performance', logoPath);
+
+  const noIssues = actions.length === 0
+    || (actions.length === 1 && actions[0].includes('performance looks strong'));
+
+  if (noIssues) {
+    s5.addText('Campaign performance is strong across all key dimensions.\nDelivery rates, list health, and rotation patterns are all within recommended ranges.', {
+      x: 0.5, y: 2.6, w: SLIDE_W - 1, h: 1.6,
+      fontSize: 20, color: NAVY, bold: true, align: 'center', valign: 'middle',
+      fontFace: 'IvyPresto Text'
+    });
+  } else {
+    const maxItems = Math.min(actions.length, 6);
+    const availH   = SLIDE_H - HEADER_H - 1.05;
+    const itemH    = Math.min(0.82, availH / maxItems);
+    let ay = CONTENT_Y + 0.14;
+
+    for (let i = 0; i < maxItems; i++) {
+      const raw      = actions[i];
+      const colonIdx = raw.indexOf(':');
+      const prefix   = colonIdx > -1 ? raw.substring(0, colonIdx + 1) : '';
+      const body     = colonIdx > -1 ? raw.substring(colonIdx + 1).trim() : raw;
+
+      const cardH = itemH - 0.08;
+
+      // Card background — white with pink border
+      s5.addShape(RECT, {
+        x: 0.3, y: ay, w: SLIDE_W - 0.6, h: cardH,
+        fill: { color: WHITE },
+        line: { color: PINK_PALE, pt: 0.75 }
+      });
+
+      // Left accent bar — navy (matches brand motif from master deck)
+      s5.addShape(RECT, {
+        x: 0.3, y: ay, w: 0.08, h: cardH,
+        fill: { color: PINK }, line: { color: PINK }
+      });
+
+      // Category label (bold navy) + body text
+      const parts = prefix
+        ? [
+            { text: prefix + '  ', options: { bold: true, color: NAVY, fontFace: 'Aktiv Grotesk VF Medium' } },
+            { text: body,           options: { color: TEXT_MID,  fontFace: 'Aktiv Grotesk VF Medium' } }
+          ]
+        : [{ text: body, options: { color: TEXT_MID, fontFace: 'Aktiv Grotesk VF Medium' } }];
+
+      s5.addText(parts, {
+        x: 0.52, y: ay + 0.06,
+        w: SLIDE_W - 1.02, h: cardH - 0.15,
+        fontSize: 9.5, valign: 'middle', wrap: true,
+        fontFace: 'Aktiv Grotesk VF Medium'
+      });
+
+      ay += itemH;
+    }
+
+    if (actions.length > maxItems) {
+      s5.addText(`+ ${actions.length - maxItems} more — see the Recommended Actions section in the Executive Summary tab.`, {
+        x: 0.4, y: SLIDE_H - 0.6,
+        w: SLIDE_W - 0.8, h: 0.35,
+        fontSize: 9, color: TEXT_SOFT, italic: true, align: 'center',
+        fontFace: 'Aktiv Grotesk VF Medium'
+      });
+    }
+  }
+  slideFooter(s5);
+
+  // ────────────────────────────────────────────────────────────────────────────
+  await pptx.writeFile({ fileName: outputPath });
+}
+
+module.exports = { generateBusinessReviewSlides };

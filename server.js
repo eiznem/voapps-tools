@@ -145,7 +145,7 @@ let _xenovaMod = null;
  *
  * In the packaged app we use the Electron userData directory so users can
  * easily find and populate it — the path is simple and well-known:
- *   Windows: %APPDATA%\VoApps Tools\models\
+ *   Windows: %APPDATA%\voapps-tools\models\
  *   macOS:   ~/Library/Application Support/VoApps Tools/models/
  *
  * In development (npm start) we fall back to the @xenova/transformers
@@ -409,7 +409,13 @@ async function downloadAiModelBackground(type, log = (msg, isError = false) => i
     if (isNetworkMasked || isFetchFailed) {
       log(`[AI] ❌ Failed to download ${label} model: could not reach huggingface.co`, true);
       log(`[AI]    Likely cause: the network is blocking huggingface.co (firewall, proxy, or no internet).`, true);
-      log(`[AI]    Workaround: switch Transcription and Intent modes to "OpenAI" in Settings.`, true);
+      log(`[AI]    Option 1: switch Transcription and Intent modes to "OpenAI" in Settings.`, true);
+      log(`[AI]    Option 2: download VoApps-Tools-Models.zip from GitHub Releases and extract to:`, true);
+      if (process.platform === 'win32') {
+        log(`[AI]       %APPDATA%\\voapps-tools\\models\\`, true);
+      } else {
+        log(`[AI]       ~/Library/Application Support/VoApps Tools/models/`, true);
+      }
     } else {
       log(`[AI] ❌ Failed to download ${label} model: ${e.message}`, true);
     }

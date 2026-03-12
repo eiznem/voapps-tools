@@ -1,6 +1,6 @@
 {
   "name": "voapps-tools",
-  "version": "4.1.0",
+  "version": "4.2.0",
   "description": "VoApps DDVM Campaign Analysis Tool - Delivery Intelligence Platform",
   "main": "main.js",
   "author": "Brett Menzie",
@@ -35,11 +35,13 @@
       "preload.js",
       "server.js",
       "trendAnalyzer.js",
+      "businessReview.js",
       "analysisWorker.js",
       "dbExportWorker.js",
       "version.js",
       "scripts/**/*",
       "public/**/*",
+      "assets/**/*",
       "node_modules/**/*",
       "package.json",
       "FIRST_TIME_SETUP.html"
@@ -113,6 +115,7 @@
     "form-data": "^4.0.0",
     "mac-ca": "^3.1.0",
     "mpg123-decoder": "^0.3.18",
-    "papaparse": "^5.5.3"
+    "papaparse": "^5.5.3",
+    "pptxgenjs": "^4.0.1"
   }
 }
