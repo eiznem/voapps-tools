@@ -319,7 +319,13 @@ function parseTimestampLocal(timestamp) {
   const localDate = new Date(utcMs + offsetMinutes * 60 * 1000);
   const localDayOfWeek = localDate.getUTCDay();  // 0=Sun … 6=Sat in local time
 
-  return { utcDate, localHour, localDayOfWeek };
+  // Local date string YYYY-MM-DD (used for daily/weekly trend tracking)
+  const lY = localDate.getUTCFullYear();
+  const lM = String(localDate.getUTCMonth() + 1).padStart(2, '0');
+  const lD = String(localDate.getUTCDate()).padStart(2, '0');
+  const localDateStr = `${lY}-${lM}-${lD}`;
+
+  return { utcDate, localHour, localDayOfWeek, localDateStr };
 }
 
 /**
@@ -660,6 +666,7 @@ async function generateTrendAnalysis(
   for (let h = 0; h < 24; h++) globalHourlyStats[h] = { successful: 0, unsuccessful: 0, total: 0 };
   const globalDayStats = {};
   for (let d = 0; d < 7; d++) globalDayStats[d] = { successful: 0, unsuccessful: 0, total: 0 };
+  const dailyStats = {}; // 'YYYY-MM-DD' → { attempts, successes }
 
   // Normalise single-file string to one-element array so we always use the file-path path
   if (typeof csvInput === 'string') csvInput = [csvInput];
@@ -882,6 +889,14 @@ async function generateTrendAnalysis(
                 if (isSuccess) globalHourlyStats[localHour].successful++; else globalHourlyStats[localHour].unsuccessful++;
                 globalDayStats[localDow].total++;
                 if (isSuccess) globalDayStats[localDow].successful++; else globalDayStats[localDow].unsuccessful++;
+
+                // Daily trend tracking
+                const dateKey = parsed ? parsed.localDateStr : (pdOk ? parsedDate.toISOString().slice(0, 10) : null);
+                if (dateKey) {
+                  const ds = dailyStats[dateKey] || (dailyStats[dateKey] = { attempts: 0, successes: 0 });
+                  ds.attempts++;
+                  if (isSuccess) ds.successes++;
+                }
               }
 
               totalValidRows++;
@@ -1013,6 +1028,7 @@ async function generateTrendAnalysis(
       row.parsedMs      = _ok ? _pd.getTime() : null; // epoch number — no long-lived Date on row
       row.localHour     = parsed ? parsed.localHour      : (_ok ? _pd.getHours() : 0);
       row.localDayOfWeek = parsed ? parsed.localDayOfWeek : (_ok ? _pd.getDay()   : 0);
+      row.localDateStr  = parsed ? parsed.localDateStr   : (_ok ? _pd.toISOString().slice(0, 10) : null);
       row.voapps_result_normalized = String(row.voapps_result || '').trim().toLowerCase();
       row.isSuccess        = row.voapps_result_normalized === 'successfully delivered';
       // Only count as a delivery attempt if the row had a real original timestamp.
@@ -1137,6 +1153,13 @@ async function generateTrendAnalysis(
         if (row.isSuccess) globalHourlyStats[row.localHour].successful++; else globalHourlyStats[row.localHour].unsuccessful++;
         globalDayStats[row.localDayOfWeek].total++;
         if (row.isSuccess) globalDayStats[row.localDayOfWeek].successful++; else globalDayStats[row.localDayOfWeek].unsuccessful++;
+
+        // Daily trend tracking
+        if (row.localDateStr) {
+          const ds = dailyStats[row.localDateStr] || (dailyStats[row.localDateStr] = { attempts: 0, successes: 0 });
+          ds.attempts++;
+          if (row.isSuccess) ds.successes++;
+        }
       }
 
       totalValidRows++;
@@ -1625,6 +1648,27 @@ async function generateTrendAnalysis(
   numberSummaryArray.length = 0;
   log(`  Released ${(totalUniqueInSummary - flaggedCount).toLocaleString()} unflagged number entries from memory`);
 
+  // ── Pre-computed summary values used in both Excel and PPTX ─────────────────
+  const agentHoursSaved = Math.round(_totalSuccess * 3 / 60);
+
+  // Best Next Action — single highest-impact recommendation
+  const _cadTotalBNA = cadenceSingleTouch + cadenceMultiTouchCount;
+  const _stPctBNA    = _cadTotalBNA > 0 ? cadenceSingleTouch / _cadTotalBNA : 0;
+  const _longCadPct  = cadenceMultiTouchCount > 0 ? (cadenceBucket_over30 + cadenceBucket_16to30) / cadenceMultiTouchCount : 0;
+  let bestNextAction;
+  if (_stPctBNA >= 0.4) {
+    bestNextAction = `${cadenceSingleTouch.toLocaleString()} numbers (${(_stPctBNA * 100).toFixed(0)}% of the list) received only one DDVM during this period. Scheduling a follow-up campaign at a 3–10 day interval is the single highest-impact next step — consumers who didn't act on the first touch often engage on the second or third. This is existing-list volume with no new sourcing required.`;
+  } else if (_stPctBNA >= 0.2) {
+    bestNextAction = `${cadenceSingleTouch.toLocaleString()} numbers (${(_stPctBNA * 100).toFixed(0)}%) were contacted only once. Adding a follow-up campaign at a 3–10 day interval would put additional touches on a meaningful portion of the list — typically the easiest place to find incremental results without expanding the contact pool.`;
+  } else if (_longCadPct > 0.3) {
+    const _longCount = cadenceBucket_over30 + cadenceBucket_16to30;
+    bestNextAction = `${_longCount.toLocaleString()} re-attempted numbers are on a 16+ day cadence. Tightening to the 3–10 day ideal keeps outreach timely and relevant — consumers are more likely to respond when the next touch arrives before their situation changes.`;
+  } else if (overallSuccessRate >= 70) {
+    bestNextAction = `Campaign is delivering at ${overallSuccessRate.toFixed(1)}% — well above the industry midpoint. This is a strong foundation for expanding outreach: adding more numbers or increasing frequency on the existing list should yield proportional returns with low risk.`;
+  } else {
+    bestNextAction = `Focus next on the ${healthyCount.toLocaleString()} numbers (${(healthyCount / Math.max(uniqueNumbers, 1) * 100).toFixed(0)}%) currently connecting well. Concentrating volume on this reachable segment while monitoring the rest will improve overall campaign efficiency and ROI.`;
+  }
+
   // ============================================================================
   // CREATE WORKBOOK
   // ============================================================================
@@ -1721,7 +1765,9 @@ async function generateTrendAnalysis(
     ['Numbers Flagged in Detail Tabs', `${flaggedCount.toLocaleString()} of ${totalUniqueInSummary.toLocaleString()} (${flaggedPct.toFixed(1)}%) — Delivery Unlikely or variability < 60`,
       'Any number failing at least one threshold — classified Delivery Unlikely by TN Health, OR variability score below 60. A Healthy number with poor call diversity is still flagged. See TN Health and Variability Analysis tabs for the full breakdown (if enabled).'],
     ['Date Range', `${formatDate(minDate)} - ${formatDate(maxDate)}`],
-    ['Timezone', detectedTimezone]
+    ['Timezone', detectedTimezone],
+    ['Agent Hours Saved (est.)', `${agentHoursSaved.toLocaleString()} hrs`,
+      `Estimated agent capacity freed by DDVM. Based on ${_totalSuccess.toLocaleString()} successful deliveries × 3 min avg manual voicemail handle time (dial + wait + message). Use the ROI Calculator (coming soon) to customize this assumption.`]
   ];
 
   for (const [label, value, desc] of keyMetrics) {
@@ -2149,6 +2195,27 @@ async function generateTrendAnalysis(
   }
 
   row++; // Blank row
+
+  // ── Best Next Action ──────────────────────────────────────────────────────
+  {
+    execSheet.mergeCells(`A${row}:C${row}`);
+    execSheet.getCell(`A${row}`).value = 'Best Next Action';
+    execSheet.getCell(`A${row}`).style = {
+      ...sectionHeaderStyle,
+      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF3F2FB8' } }
+    };
+    row++;
+    execSheet.mergeCells(`A${row}:C${row}`);
+    execSheet.getCell(`A${row}`).value = bestNextAction;
+    execSheet.getCell(`A${row}`).style = {
+      ...contentStyle,
+      font: { size: 11, bold: true, color: { argb: 'FF0D053F' } },
+      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8E4FF' } }
+    };
+    execSheet.getRow(row).height = 55;
+    row++;
+    row++; // spacer
+  }
 
   // Client Rationale
   execSheet.mergeCells(`A${row}:C${row}`);
@@ -2598,7 +2665,163 @@ async function generateTrendAnalysis(
   autoFitColumns(consecSheet, 12, 50);
 
   // ========================================
-  // TAB 10: GLOSSARY
+  // TAB 10: DELIVERY TREND
+  // ========================================
+
+  log('Creating Delivery Trend tab...');
+  {
+    const trendSheet = workbook.addWorksheet('Delivery Trend', {
+      properties: { tabColor: { argb: 'FF16509B' } }
+    });
+
+    // ── Build sorted date list ──────────────────────────────────────────────
+    const sortedDates = Object.keys(dailyStats).sort();
+    const useWeekly   = sortedDates.length > 60; // collapse to weeks if wide range
+
+    // Aggregate into buckets (daily or ISO-week Mon–Sun)
+    const buckets = new Map(); // key → { label, attempts, successes, weekStart }
+    for (const d of sortedDates) {
+      let key, label;
+      if (useWeekly) {
+        // ISO week: find Monday of the week containing this date
+        const dt   = new Date(d + 'T00:00:00Z');
+        const dow  = (dt.getUTCDay() + 6) % 7; // Mon=0
+        const mon  = new Date(dt.getTime() - dow * 86400000);
+        const mon2 = new Date(mon.getTime() + 6 * 86400000);
+        const fmt  = (d2) => {
+          const mo = String(d2.getUTCMonth() + 1).padStart(2, '0');
+          const dy = String(d2.getUTCDate()).padStart(2, '0');
+          return `${d2.getUTCFullYear()}-${mo}-${dy}`;
+        };
+        key   = fmt(mon);
+        label = `${fmt(mon)} – ${fmt(mon2)}`;
+      } else {
+        key = label = d;
+      }
+      const existing = buckets.get(key) || { label, attempts: 0, successes: 0 };
+      existing.attempts  += dailyStats[d].attempts;
+      existing.successes += dailyStats[d].successes;
+      buckets.set(key, existing);
+    }
+    const bucketList = Array.from(buckets.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+
+    // ── Styles ──────────────────────────────────────────────────────────────
+    const trHeaderStyle = {
+      font: { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 },
+      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0D053F' } },
+      alignment: { horizontal: 'center', vertical: 'middle' },
+      border: { bottom: { style: 'thin', color: { argb: 'FFFF4B7D' } } }
+    };
+    const trEvenStyle = { fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFBF7F3' } } };
+    const trOddStyle  = { fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } } };
+    const trNumStyle  = { alignment: { horizontal: 'right' }, numFmt: '#,##0' };
+    const trPctStyle  = { alignment: { horizontal: 'right' }, numFmt: '0.0%' };
+
+    // ── Title ───────────────────────────────────────────────────────────────
+    trendSheet.mergeCells('A1:F1');
+    trendSheet.getCell('A1').value = `Delivery Trend — ${useWeekly ? 'Weekly' : 'Daily'} Breakdown`;
+    trendSheet.getCell('A1').style = {
+      font: { bold: true, size: 14, color: { argb: 'FF0D053F' } },
+      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFBF7F3' } },
+      alignment: { horizontal: 'left', vertical: 'middle' }
+    };
+    trendSheet.getRow(1).height = 30;
+
+    // ── Column headers ───────────────────────────────────────────────────────
+    const trHeaders = [
+      useWeekly ? 'Week' : 'Date',
+      'Attempts',
+      'Successful',
+      'Success Rate',
+      'WoW Attempts',
+      'WoW Successful'
+    ];
+    trendSheet.addRow([]); // row 2 blank
+    const hdrRow = trendSheet.getRow(3);
+    trHeaders.forEach((h, i) => {
+      hdrRow.getCell(i + 1).value = h;
+      hdrRow.getCell(i + 1).style = trHeaderStyle;
+    });
+    hdrRow.height = 24;
+
+    // ── Data rows ────────────────────────────────────────────────────────────
+    let dataStartRow = 4;
+    bucketList.forEach(([, bkt], idx) => {
+      const rowNum = dataStartRow + idx;
+      const prev   = idx > 0 ? bucketList[idx - 1][1] : null;
+      const wowAtt = prev ? bkt.attempts  - prev.attempts  : null;
+      const wowSuc = prev ? bkt.successes - prev.successes : null;
+      const rate   = bkt.attempts > 0 ? bkt.successes / bkt.attempts : 0;
+      const baseStyle = idx % 2 === 0 ? trEvenStyle : trOddStyle;
+
+      trendSheet.getRow(rowNum).height = 18;
+      trendSheet.getCell(`A${rowNum}`).value = bkt.label;
+      trendSheet.getCell(`A${rowNum}`).style = { ...baseStyle, font: { size: 10 }, alignment: { horizontal: 'left' } };
+      trendSheet.getCell(`B${rowNum}`).value = bkt.attempts;
+      trendSheet.getCell(`B${rowNum}`).style = { ...baseStyle, ...trNumStyle, font: { size: 10 } };
+      trendSheet.getCell(`C${rowNum}`).value = bkt.successes;
+      trendSheet.getCell(`C${rowNum}`).style = { ...baseStyle, ...trNumStyle, font: { size: 10 } };
+      trendSheet.getCell(`D${rowNum}`).value = rate;
+      trendSheet.getCell(`D${rowNum}`).style = { ...baseStyle, ...trPctStyle, font: { size: 10 } };
+      if (wowAtt !== null) {
+        trendSheet.getCell(`E${rowNum}`).value = wowAtt;
+        trendSheet.getCell(`E${rowNum}`).style = {
+          ...baseStyle, ...trNumStyle, font: { size: 10, color: { argb: wowAtt >= 0 ? 'FF1E7E34' : 'FFC0392B' } }
+        };
+        trendSheet.getCell(`F${rowNum}`).value = wowSuc;
+        trendSheet.getCell(`F${rowNum}`).style = {
+          ...baseStyle, ...trNumStyle, font: { size: 10, color: { argb: wowSuc >= 0 ? 'FF1E7E34' : 'FFC0392B' } }
+        };
+      }
+    });
+
+    // ── Data bars on Attempts (col B) and Successful (col C) ────────────────
+    if (bucketList.length > 0) {
+      const lastDataRow = dataStartRow + bucketList.length - 1;
+      const attRange = `B${dataStartRow}:B${lastDataRow}`;
+      const sucRange = `C${dataStartRow}:C${lastDataRow}`;
+      trendSheet.addConditionalFormatting({
+        ref: attRange,
+        rules: [{ type: 'dataBar', priority: 1, minLength: 0, maxLength: 100,
+          cfvo: [{ type: 'min' }, { type: 'max' }],
+          color: { argb: 'FF0D053F' }  // navy
+        }]
+      });
+      trendSheet.addConditionalFormatting({
+        ref: sucRange,
+        rules: [{ type: 'dataBar', priority: 1, minLength: 0, maxLength: 100,
+          cfvo: [{ type: 'min' }, { type: 'max' }],
+          color: { argb: 'FF1E7E34' }  // green
+        }]
+      });
+    }
+
+    // ── Totals row ───────────────────────────────────────────────────────────
+    if (bucketList.length > 0) {
+      const totRow = dataStartRow + bucketList.length + 1;
+      trendSheet.getCell(`A${totRow}`).value = 'TOTAL';
+      trendSheet.getCell(`A${totRow}`).style = { font: { bold: true, size: 10, color: { argb: 'FF0D053F' } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFAD6D7' } } };
+      trendSheet.getCell(`B${totRow}`).value = totalAttempts;
+      trendSheet.getCell(`B${totRow}`).style = { font: { bold: true, size: 10 }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFAD6D7' } }, ...trNumStyle };
+      trendSheet.getCell(`C${totRow}`).value = _totalSuccess;
+      trendSheet.getCell(`C${totRow}`).style = { font: { bold: true, size: 10 }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFAD6D7' } }, ...trNumStyle };
+      const totRate = totalAttempts > 0 ? _totalSuccess / totalAttempts : 0;
+      trendSheet.getCell(`D${totRow}`).value = totRate;
+      trendSheet.getCell(`D${totRow}`).style = { font: { bold: true, size: 10 }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFAD6D7' } }, ...trPctStyle };
+    }
+
+    trendSheet.getColumn('A').width = useWeekly ? 26 : 14;
+    trendSheet.getColumn('B').width = 16;
+    trendSheet.getColumn('C').width = 16;
+    trendSheet.getColumn('D').width = 14;
+    trendSheet.getColumn('E').width = 16;
+    trendSheet.getColumn('F').width = 16;
+
+    log(`  Delivery Trend: ${bucketList.length} ${useWeekly ? 'week' : 'day'} buckets`);
+  }
+
+  // ========================================
+  // TAB 11: GLOSSARY
   // ========================================
 
   log('Creating Glossary tab...');
@@ -2795,6 +3018,8 @@ Use the data to set retry limits: when success probability drops below ~15–20%
           cadenceOverallMedian
         },
         actions,
+        bestNextAction,
+        agentHoursSaved,
         minDate,
         maxDate,
         accountIds: slideAccountIds

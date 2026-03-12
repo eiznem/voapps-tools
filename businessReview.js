@@ -188,6 +188,8 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     decayCurve,
     cadence,
     actions,
+    bestNextAction,
+    agentHoursSaved,
     minDate,
     maxDate,
     accountIds
@@ -381,6 +383,16 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     );
   }
 
+  // ── Agent Hours Saved — full-width card below callout strip ─────────────────
+  if (agentHoursSaved > 0) {
+    const ahY = row2Y + bH + (cadenceTotalNumbers > 0 ? 1.08 : 0.26);
+    metricBox(s2, c1, ahY, SLIDE_W - c1 * 2, 0.72,
+      'AGENT HOURS SAVED (EST.)',
+      `${agentHoursSaved.toLocaleString()} hrs`,
+      `Based on ${totalSuccess.toLocaleString()} successful deliveries × 3 min avg manual voicemail handle time — capacity your agents didn't need to spend on outreach`,
+      PURPLE, 28);
+  }
+
   slideFooter(s2);
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -566,10 +578,28 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
       fontFace: 'IvyPresto Text'
     });
   } else {
-    const maxItems = Math.min(actions.length, 6);
-    const availH   = SLIDE_H - HEADER_H - 1.05;
-    const itemH    = Math.min(0.82, availH / maxItems);
-    let ay = CONTENT_Y + 0.14;
+    // ── Best Next Action banner ─────────────────────────────────────────────
+    const bnaH = 0.78;
+    const bnaY = CONTENT_Y + 0.1;
+    s5.addShape(RECT, { x: 0.3, y: bnaY, w: SLIDE_W - 0.6, h: bnaH,
+      fill: { color: NAVY }, line: { color: NAVY } });
+    s5.addShape(RECT, { x: 0.3, y: bnaY, w: 0.08, h: bnaH,
+      fill: { color: PINK }, line: { color: PINK } });
+    s5.addText('BEST NEXT ACTION', {
+      x: 0.5, y: bnaY + 0.04, w: SLIDE_W - 0.8, h: 0.22,
+      fontSize: 8.5, bold: true, color: PINK_LIGHT,
+      fontFace: 'Aktiv Grotesk VF Medium', charSpacing: 1
+    });
+    s5.addText(bestNextAction || '', {
+      x: 0.5, y: bnaY + 0.25, w: SLIDE_W - 0.8, h: bnaH - 0.3,
+      fontSize: 10, color: WHITE, italic: false,
+      fontFace: 'Aktiv Grotesk VF Medium', valign: 'top'
+    });
+
+    const maxItems = Math.min(actions.length, 5); // one fewer since BNA takes space
+    const availH   = SLIDE_H - HEADER_H - bnaH - 1.2;
+    const itemH    = Math.min(0.82, availH / Math.max(maxItems, 1));
+    let ay = bnaY + bnaH + 0.12;
 
     for (let i = 0; i < maxItems; i++) {
       const raw      = actions[i];

@@ -2,7 +2,7 @@
 // VoApps Tools Version Management
 //
 // Notes:
-// - Current version reflects the newest release (4.2.1).
+// - Current version reflects the newest release (4.2.2).
 // - Keeps feature flags + author from the original "DuckDB Edition" file.
 // - Changelog is unified so each version can include: changes/features, fixes, and breaking changes.
 
@@ -10,8 +10,8 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '4.2.1',
-  VERSION_NAME: 'Single-Touch Insights',
+  VERSION: '4.2.2',
+  VERSION_NAME: 'Call Center Intelligence',
   RELEASE_DATE: '2026-03-12',
   AUTHOR: 'Brett Menzie',
 
@@ -50,6 +50,23 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '4.2.2': {
+      date: '2026-03-12',
+      title: 'Call Center Intelligence',
+      changes: [
+        'New "Delivery Trend" Excel tab: daily or weekly delivery breakdown with navy/green data bars, week-over-week change columns (green/red), and a totals row — auto-switches to weekly view when date range exceeds 60 days',
+        'Best Next Action: synthesized single-sentence recommendation surfaced prominently in both the Excel executive summary (purple section header) and as a top banner on the Opportunities slide in the PPTX deck',
+        'Agent Hours Saved: estimated agent capacity freed by DDVM (successful deliveries × 3 min avg manual handle time) — shown in Excel Key Metrics and as a full-width metric card on the PPTX Campaign Overview slide',
+        'PPTX Slide 5 now shows Best Next Action as a navy banner at the top before the detailed action cards, giving client-facing reviews a clear headline takeaway',
+        'Future: ROI Calculator assumptions pop-out (optional, checkbox-gated, all fields required) planned for a future release to generate cost/ROI summary in both report and slides'
+      ],
+      features: [
+        'Delivery Trend tab: momentum view of attempts and successful deliveries over time',
+        'Best Next Action: one synthesized headline recommendation per report',
+        'Agent Hours Saved: concrete capacity metric framing DDVM ROI for call center managers'
+      ],
+      fixes: []
+    },
     '4.2.1': {
       date: '2026-03-12',
       title: 'Single-Touch Insights',
