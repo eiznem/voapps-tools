@@ -41,18 +41,23 @@ const RECT = 'rect';
 /**
  * Header bar: deep navy left-to-right bar with pink logo area on the left.
  * Matches the VoApps brand — navy background, white title text, pink icon block.
+ * @param {string} [subheading] - Optional date range shown in PINK_LIGHT below the title.
+ * @returns {number} Effective header height (use as base for content Y positioning).
  */
-function headerBar(pptx, slide, title, logoPath) {
-  // Full-width navy header
+function headerBar(pptx, slide, title, logoPath, subheading) {
+  const subH   = subheading ? 0.3 : 0;
+  const totalH = HEADER_H + subH;
+
+  // Full-width navy header (taller when subheading present)
   slide.addShape(RECT, {
-    x: 0, y: 0, w: SLIDE_W, h: HEADER_H,
+    x: 0, y: 0, w: SLIDE_W, h: totalH,
     fill: { color: NAVY }, line: { color: NAVY }
   });
 
   // Pink icon square on the left (matches the logo background color)
-  const iconBlockW = HEADER_H; // square
+  const iconBlockW = HEADER_H; // square — always HEADER_H tall
   slide.addShape(RECT, {
-    x: 0, y: 0, w: iconBlockW, h: HEADER_H,
+    x: 0, y: 0, w: iconBlockW, h: totalH,
     fill: { color: PINK }, line: { color: PINK }
   });
 
@@ -71,19 +76,39 @@ function headerBar(pptx, slide, title, logoPath) {
   // Title text sits to the right of the icon block
   const titleX = iconBlockW + 0.22;
   const titleW = SLIDE_W - titleX - 0.3;
-  slide.addText(title, {
-    x: titleX, y: 0, w: titleW, h: HEADER_H,
-    fontSize: 22, bold: true, color: WHITE,
-    fontFace: 'Aktiv Grotesk VF Medium',
-    valign: 'middle', align: 'left',
-    charSpacing: 0.5
-  });
+
+  if (subheading) {
+    // Title occupies the upper portion; subheading sits below it
+    slide.addText(title, {
+      x: titleX, y: 0, w: titleW, h: HEADER_H * 0.72,
+      fontSize: 22, bold: true, color: WHITE,
+      fontFace: 'Aktiv Grotesk VF Medium',
+      valign: 'bottom', align: 'left',
+      charSpacing: 0.5
+    });
+    slide.addText(subheading, {
+      x: titleX, y: HEADER_H * 0.72, w: titleW, h: HEADER_H * 0.28 + subH,
+      fontSize: 12, bold: false, color: PINK_LIGHT,
+      fontFace: 'Aktiv Grotesk VF Medium',
+      valign: 'middle', align: 'left'
+    });
+  } else {
+    slide.addText(title, {
+      x: titleX, y: 0, w: titleW, h: HEADER_H,
+      fontSize: 22, bold: true, color: WHITE,
+      fontFace: 'Aktiv Grotesk VF Medium',
+      valign: 'middle', align: 'left',
+      charSpacing: 0.5
+    });
+  }
 
   // Thin pink bottom accent line on the header
   slide.addShape(RECT, {
-    x: 0, y: HEADER_H - 0.04, w: SLIDE_W, h: 0.04,
+    x: 0, y: totalH - 0.04, w: SLIDE_W, h: 0.04,
     fill: { color: PINK }, line: { color: PINK }
   });
+
+  return totalH;
 }
 
 /**
@@ -209,6 +234,10 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     ? `${fmtDate(minDate)} – ${fmtDate(maxDate)}`
     : 'Date range not available';
 
+  const daySpan = (minDate && maxDate)
+    ? Math.round((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24))
+    : 0;
+
   const acctList = (accountIds && accountIds.length > 0)
     ? accountIds.slice(0, 3).join(', ') + (accountIds.length > 3 ? ` +${accountIds.length - 3} more` : '')
     : '';
@@ -293,12 +322,13 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   // ────────────────────────────────────────────────────────────────────────────
   const s2 = pptx.addSlide();
   s2.background = { color: CREAM };
-  headerBar(pptx, s2, 'Campaign Overview', headerLogo);
+  const s2HdrH = headerBar(pptx, s2, 'Campaign Overview', headerLogo, dateRangeStr);
+  const s2CY   = s2HdrH + 0.18;
 
   const bW   = 4.0;
   const bH   = 1.62;
   const bGap = 0.16;
-  const row1Y = CONTENT_Y + 0.1;
+  const row1Y = s2CY + 0.1;
   const row2Y = row1Y + bH + bGap;
   const c1 = 0.32;
   const c2 = c1 + bW + bGap;
@@ -340,12 +370,12 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     `${healthyPct.toFixed(0)}% of the list maintaining good delivery performance`,
     healthyAccent);
 
-  // Date range — smaller value font so the string fits comfortably
+  // Date span — big day count, date range as subtext
   metricBox(s2, c3, row2Y, bW, bH,
-    'DATE RANGE',
-    dateRangeStr,
-    '',
-    PINK_LIGHT, 18);
+    'DATE SPAN',
+    daySpan > 0 ? `${daySpan} Days` : dateRangeStr,
+    daySpan > 0 ? dateRangeStr : '',
+    PINK_LIGHT, 32);
 
   // ── Single-touch opportunity callout strip ────────────────────────────────
   const cadenceTotalNumbers = (cadence.cadenceSingleTouch || 0) + (cadence.cadenceMultiTouchCount || 0);
@@ -389,8 +419,9 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
 
   // ── Agent Hours Saved — full-width card below callout strip ─────────────────
   if (agentHoursSaved > 0) {
+    const ahCardH = 1.0;
     const ahY = row2Y + bH + (cadenceTotalNumbers > 0 ? 1.08 : 0.26);
-    metricBox(s2, c1, ahY, SLIDE_W - c1 * 2, 0.72,
+    metricBox(s2, c1, ahY, SLIDE_W - c1 * 2, ahCardH,
       'AGENT HOURS SAVED (EST.)',
       `${agentHoursSaved.toLocaleString()} hrs`,
       `Based on ${totalSuccess.toLocaleString()} successful deliveries × 3 min avg manual voicemail handle time — capacity your agents didn't need to spend on outreach`,
@@ -404,12 +435,13 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   // ────────────────────────────────────────────────────────────────────────────
   const s3 = pptx.addSlide();
   s3.background = { color: CREAM };
-  headerBar(pptx, s3, 'Success Probability by Attempt', headerLogo);
+  const s3HdrH = headerBar(pptx, s3, 'Success Probability by Attempt', headerLogo, dateRangeStr);
+  const s3CY   = s3HdrH + 0.18;
 
   s3.addText(
     'Each row represents all numbers at that attempt count. As attempt index rises, the pool shifts toward harder-to-reach numbers — success probability naturally declines.',
     {
-      x: 0.4, y: CONTENT_Y + 0.08,
+      x: 0.4, y: s3CY + 0.08,
       w: SLIDE_W - 0.8, h: 0.4,
       fontSize: 9.5, color: TEXT_SOFT, italic: true,
       fontFace: 'Aktiv Grotesk VF Medium'
@@ -435,7 +467,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
       const insight  = pct >= 50 ? 'Good — Continue'
         : pct >= 25 ? 'Declining — Monitor'
         : pct >= 15 ? 'Low — Review'
-        : 'Very Low — Suppress';
+        : '';
 
       const cell = (txt, fill, opts) => ({ text: txt, options: { color: TEXT_MID, fill: fill || rowBg, align: 'center', fontFace: 'Aktiv Grotesk VF Medium', fontSize: 10.5, ...opts } });
 
@@ -450,7 +482,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   ];
 
   s3.addTable(tblRows, {
-    x: 1.4, y: CONTENT_Y + 0.58,
+    x: 1.4, y: s3CY + 0.58,
     w: SLIDE_W - 2.8,
     fontSize: 10.5,
     rowH: 0.43,
@@ -473,7 +505,8 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   // ────────────────────────────────────────────────────────────────────────────
   const s4 = pptx.addSlide();
   s4.background = { color: CREAM };
-  headerBar(pptx, s4, 'Delivery Re-Attempt Cadence', headerLogo);
+  const s4HdrH = headerBar(pptx, s4, 'Delivery Re-Attempt Cadence', headerLogo, dateRangeStr);
+  const s4CY   = s4HdrH + 0.18;
 
   const totalMulti = cadence.cadenceMultiTouchCount || 1;
   const s4TotalNumbers = (cadence.cadenceSingleTouch || 0) + (cadence.cadenceMultiTouchCount || 0);
@@ -482,7 +515,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   s4.addText(
     `${cadence.cadenceMultiTouchCount.toLocaleString()} numbers (${s4MultiPct}%) had 2+ delivery attempts. ${cadence.cadenceSingleTouch.toLocaleString()} numbers (${s4SinglePct}%) were contacted only once — each a potential opportunity for an additional touch. Breakdown by median interval between consecutive attempts:`,
     {
-      x: 0.4, y: CONTENT_Y + 0.08,
+      x: 0.4, y: s4CY + 0.08,
       w: SLIDE_W - 0.8, h: 0.44,
       fontSize: 9.5, color: TEXT_SOFT, italic: true,
       fontFace: 'Aktiv Grotesk VF Medium'
@@ -524,7 +557,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   ];
 
   s4.addTable(cTbl, {
-    x: 1.8, y: CONTENT_Y + 0.58,
+    x: 1.8, y: s4CY + 0.58,
     w: SLIDE_W - 3.6,
     fontSize: 10.5, rowH: 0.44,
     border: { type: 'solid', color: PINK_PALE, pt: 0.75 }
@@ -570,7 +603,8 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   // ────────────────────────────────────────────────────────────────────────────
   const s5 = pptx.addSlide();
   s5.background = { color: CREAM };
-  headerBar(pptx, s5, 'Opportunities to Maximize Performance', headerLogo);
+  const s5HdrH = headerBar(pptx, s5, 'Opportunities to Maximize Performance', headerLogo, dateRangeStr);
+  const s5CY   = s5HdrH + 0.18;
 
   const noIssues = actions.length === 0
     || (actions.length === 1 && actions[0].includes('performance looks strong'));
@@ -584,7 +618,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   } else {
     // ── Best Next Action banner ─────────────────────────────────────────────
     const bnaH = 0.78;
-    const bnaY = CONTENT_Y + 0.1;
+    const bnaY = s5CY + 0.1;
     s5.addShape(RECT, { x: 0.3, y: bnaY, w: SLIDE_W - 0.6, h: bnaH,
       fill: { color: NAVY }, line: { color: NAVY } });
     s5.addShape(RECT, { x: 0.3, y: bnaY, w: 0.08, h: bnaH,
@@ -601,7 +635,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     });
 
     const maxItems = Math.min(actions.length, 5); // one fewer since BNA takes space
-    const availH   = SLIDE_H - HEADER_H - bnaH - 1.2;
+    const availH   = SLIDE_H - s5HdrH - bnaH - 1.2;
     const itemH    = Math.min(0.82, availH / Math.max(maxItems, 1));
     let ay = bnaY + bnaH + 0.12;
 
