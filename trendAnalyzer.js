@@ -2767,7 +2767,7 @@ Use the data to set retry limits: when success probability drops below ~15–20%
   // ── Business Review Slides ───────────────────────────────────────────────────
   try {
     const pptxPath = outputPath.replace(/\.xlsx$/i, '_Business_Review.pptx');
-    const logoPath = path.join(__dirname, 'assets', 'icon_256x256.png');
+    const logoPath = path.join(__dirname, 'assets', 'logo_pptx.png');
     const slideAccountIds = Object.keys(accountStats).slice(0, 6);
     await generateBusinessReviewSlides(
       {

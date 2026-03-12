@@ -2090,6 +2090,10 @@
                         <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg>
                         Open Delivery Intelligence
                       </button>
+                      <button id="openSlidesBtn" class="btn-status btn-status-green" disabled style="display:none;">
+                        <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3l5 4-5 4V6zm-6 0h3v12H6V6z"/></svg>
+                        Open Business Review
+                      </button>
                     </div>
                   </div>
                   <div class="artifact-row">
@@ -2099,6 +2103,10 @@
                   <div class="artifact-row" id="analysisPathRow" style="display:none;">
                     <strong>Analysis:</strong>
                     <code id="analysisPath">—</code>
+                  </div>
+                  <div class="artifact-row" id="pptxPathRow" style="display:none;">
+                    <strong>Slides:</strong>
+                    <code id="pptxPath">—</code>
                   </div>
                   <div class="artifact-row">
                     <strong>Log:</strong>
@@ -3429,7 +3437,7 @@
     }
 
     // Persistent toast with optional "Open" action button — stays until dismissed
-    function showActionToast(message, type = 'success', actionLabel = null, onAction = null) {
+    function showActionToast(message, type = 'success', actionLabel = null, onAction = null, action2Label = null, onAction2 = null) {
       const container = $('toastContainer');
       if (!container) return;
 
@@ -3441,14 +3449,15 @@
         <span class="toast-icon">${icons[type] || 'ℹ'}</span>
         <span class="toast-message">${message}</span>
         ${actionLabel ? `<button class="toast-action">${actionLabel}</button>` : ''}
+        ${action2Label ? `<button class="toast-action">${action2Label}</button>` : ''}
         <span class="toast-close" onclick="_dismissToast(this.parentElement)">×</span>
       `;
 
       container.appendChild(toast);
 
-      if (actionLabel && onAction) {
-        toast.querySelector('.toast-action').onclick = onAction;
-      }
+      const actionBtns = toast.querySelectorAll('.toast-action');
+      if (actionLabel && onAction && actionBtns[0]) actionBtns[0].onclick = onAction;
+      if (action2Label && onAction2 && actionBtns[1]) actionBtns[1].onclick = onAction2;
     }
 
     // ============================================================================
@@ -4078,11 +4087,18 @@
         if (window.voapps) await refreshArtifacts();
 
         const analysisPathResult = data.artifacts?.analysisPath;
+        const pptxPathResult = data.artifacts?.pptxPath;
         showActionToast('Analysis complete!', 'success',
           analysisPathResult ? 'Open Delivery Intelligence' : null,
           analysisPathResult ? async () => {
             clearAllToasts();
             const res = await window.voapps.openPath(analysisPathResult);
+            if (!res.ok) log(`Failed to open: ${res.error}`);
+          } : null,
+          pptxPathResult ? 'Open Business Review' : null,
+          pptxPathResult ? async () => {
+            clearAllToasts();
+            const res = await window.voapps.openPath(pptxPathResult);
             if (!res.ok) log(`Failed to open: ${res.error}`);
           } : null
         );
@@ -4182,11 +4198,18 @@
         if (window.voapps) await refreshArtifacts();
 
         const dbAnalysisPath = data.artifacts?.analysisPath;
+        const dbPptxPath = data.artifacts?.pptxPath;
         showActionToast('Database analysis complete!', 'success',
           dbAnalysisPath ? 'Open Delivery Intelligence' : null,
           dbAnalysisPath ? async () => {
             clearAllToasts();
             const res = await window.voapps.openPath(dbAnalysisPath);
+            if (!res.ok) log(`Failed to open: ${res.error}`);
+          } : null,
+          dbPptxPath ? 'Open Business Review' : null,
+          dbPptxPath ? async () => {
+            clearAllToasts();
+            const res = await window.voapps.openPath(dbPptxPath);
             if (!res.ok) log(`Failed to open: ${res.error}`);
           } : null
         );
@@ -4789,7 +4812,7 @@
         const r = await window.voapps.getLastArtifacts();
         if (!r.ok) return;
 
-        const { csvPath, logPath, errorPath, analysisPath } = r.artifacts || {};
+        const { csvPath, logPath, errorPath, analysisPath, pptxPath } = r.artifacts || {};
 
         if (csvPath) {
           $('csvPath').textContent = csvPath;
@@ -4822,6 +4845,19 @@
           $('openAnalysisBtn').onclick = async () => {
             clearAllToasts();
             const res = await window.voapps.openPath(analysisPath);
+            if (!res.ok) log(`Failed: ${res.error}`);
+          };
+        }
+
+        if (pptxPath) {
+          $('pptxPath').textContent = pptxPath;
+          makePathClickable($('pptxPath'), pptxPath);
+          $('pptxPathRow').style.display = 'flex';
+          $('openSlidesBtn').style.display = 'inline-flex';
+          $('openSlidesBtn').disabled = false;
+          $('openSlidesBtn').onclick = async () => {
+            clearAllToasts();
+            const res = await window.voapps.openPath(pptxPath);
             if (!res.ok) log(`Failed: ${res.error}`);
           };
         }

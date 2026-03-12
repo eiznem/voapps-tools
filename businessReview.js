@@ -429,13 +429,13 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath) {
   );
 
   const cadenceRows = [
-    { label: 'Same-day re-attempt  (< 1 day)', count: cadence.cadenceBucket_sameDay,  ideal: false, warn: true  },
-    { label: '1–2 days',                       count: cadence.cadenceBucket_1to2,      ideal: false, warn: true  },
-    { label: '3–5 days',                       count: cadence.cadenceBucket_3to5,      ideal: true,  warn: false },
-    { label: '6–10 days',                      count: cadence.cadenceBucket_6to10,     ideal: true,  warn: false },
-    { label: '11–15 days',                     count: cadence.cadenceBucket_11to15,    ideal: false, warn: false },
-    { label: '16–30 days',                     count: cadence.cadenceBucket_16to30,    ideal: false, warn: false },
-    { label: '30+ days',                       count: cadence.cadenceBucket_over30,    ideal: false, warn: false }
+    { label: 'Same-day re-attempt  (< 1 day)', count: cadence.cadenceBucket_sameDay,  ideal: false, warn: true,  note: false, long: false },
+    { label: '1–2 days',                       count: cadence.cadenceBucket_1to2,      ideal: false, warn: true,  note: false, long: false },
+    { label: '3–5 days',                       count: cadence.cadenceBucket_3to5,      ideal: true,  warn: false, note: false, long: false },
+    { label: '6–10 days',                      count: cadence.cadenceBucket_6to10,     ideal: true,  warn: false, note: false, long: false },
+    { label: '11–15 days',                     count: cadence.cadenceBucket_11to15,    ideal: false, warn: false, note: true,  long: false },
+    { label: '16–30 days',                     count: cadence.cadenceBucket_16to30,    ideal: false, warn: false, note: false, long: true  },
+    { label: '30+ days',                       count: cadence.cadenceBucket_over30,    ideal: false, warn: false, note: false, long: true  }
   ];
 
   const cadHdrOpts = { bold: true, color: WHITE, fill: NAVY, fontFace: 'Aktiv Grotesk VF Medium', fontSize: 10.5 };
@@ -449,10 +449,10 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath) {
     ],
     ...cadenceRows.filter(r => r.count > 0 || r.ideal).map((r, idx) => {
       const rowBg = idx % 2 === 0 ? WHITE : 'F5F2EF';
-      const fill  = r.ideal ? GREEN_PALE : r.warn ? RED_PALE : rowBg;
-      const color = r.ideal ? GREEN      : r.warn ? RED      : TEXT_MID;
-      const badge = r.ideal ? '✓ Ideal' : r.warn ? '⚠ Too soon' : '';
-      const badgeColor = r.ideal ? GREEN : RED;
+      const fill  = r.ideal ? GREEN_PALE : r.warn ? RED_PALE : r.note ? AMBER_PALE : r.long ? RED_PALE : rowBg;
+      const color = r.ideal ? GREEN      : r.warn ? RED      : r.note ? AMBER      : r.long ? RED      : TEXT_MID;
+      const badge = r.ideal ? '✓ Ideal' : r.warn ? '⚠ Too soon' : r.note ? '↑ Longer than ideal' : r.long ? '↑ Consider shorter' : '';
+      const badgeColor = r.ideal ? GREEN : r.warn ? RED : r.note ? AMBER : r.long ? RED : TEXT_MID;
       return [
         { text: r.label,                                         options: { color, fill, bold: r.ideal, align: 'left',  fontFace: 'Aktiv Grotesk VF Medium', fontSize: 10.5 } },
         { text: r.count.toLocaleString(),                        options: { color, fill, bold: r.ideal, align: 'center', fontFace: 'Aktiv Grotesk VF Medium', fontSize: 10.5 } },
