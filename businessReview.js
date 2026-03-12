@@ -167,9 +167,14 @@ function metricBox(slide, x, y, w, h, label, value, subtext, accentColor, valueF
  *
  * @param {Object} stats      - Aggregated stats from generateTrendAnalysis
  * @param {string} outputPath - Destination file path (should end in .pptx)
- * @param {string} logoPath   - Absolute path to the VoApps icon PNG
+ * @param {string} logoPath   - Legacy single-logo path (used as fallback for both)
+ * @param {string} squareLogo - Square logo for slide headers (pink square icon)
+ * @param {string} circleLogo - Circle logo for the title slide
  */
-async function generateBusinessReviewSlides(stats, outputPath, logoPath) {
+async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareLogo, circleLogo) {
+  // Resolve which logo to use for each context
+  const headerLogo = squareLogo || logoPath;
+  const titleLogo  = circleLogo || logoPath;
   const {
     uniqueNumbers,
     totalAttempts,
@@ -235,11 +240,11 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath) {
     fill: { color: PINK }, line: { color: PINK }
   });
 
-  // Logo centered
-  if (logoPath) {
+  // Logo centered (circle logo on dark navy background)
+  if (titleLogo) {
     const logoSize = 1.6;
     s1.addImage({
-      path: logoPath,
+      path: titleLogo,
       x: SLIDE_W / 2 - logoSize / 2,
       y: 0.7,
       w: logoSize,
@@ -285,7 +290,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath) {
   // ────────────────────────────────────────────────────────────────────────────
   const s2 = pptx.addSlide();
   s2.background = { color: CREAM };
-  headerBar(pptx, s2, 'Campaign Overview', logoPath);
+  headerBar(pptx, s2, 'Campaign Overview', headerLogo);
 
   const bW   = 4.0;
   const bH   = 1.62;
@@ -346,7 +351,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath) {
   // ────────────────────────────────────────────────────────────────────────────
   const s3 = pptx.addSlide();
   s3.background = { color: CREAM };
-  headerBar(pptx, s3, 'Success Probability by Attempt', logoPath);
+  headerBar(pptx, s3, 'Success Probability by Attempt', headerLogo);
 
   s3.addText(
     'Each row represents all numbers at that attempt count. As attempt index rises, the pool shifts toward harder-to-reach numbers — success probability naturally declines.',
@@ -415,7 +420,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath) {
   // ────────────────────────────────────────────────────────────────────────────
   const s4 = pptx.addSlide();
   s4.background = { color: CREAM };
-  headerBar(pptx, s4, 'Delivery Re-Attempt Cadence', logoPath);
+  headerBar(pptx, s4, 'Delivery Re-Attempt Cadence', headerLogo);
 
   const totalMulti = cadence.cadenceMultiTouchCount || 1;
   s4.addText(
@@ -488,7 +493,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath) {
   // ────────────────────────────────────────────────────────────────────────────
   const s5 = pptx.addSlide();
   s5.background = { color: CREAM };
-  headerBar(pptx, s5, 'Opportunities to Maximize Performance', logoPath);
+  headerBar(pptx, s5, 'Opportunities to Maximize Performance', headerLogo);
 
   const noIssues = actions.length === 0
     || (actions.length === 1 && actions[0].includes('performance looks strong'));

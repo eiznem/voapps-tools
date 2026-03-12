@@ -1730,7 +1730,8 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
-      max-width: 350px;
+      max-width: 360px;
+      width: 360px;
     }
 
     .toast {
@@ -1739,8 +1740,8 @@
       padding: 10px 14px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.15);
       display: flex;
-      align-items: center;
-      gap: 8px;
+      flex-direction: column;
+      gap: 0;
       animation: slideInRight 0.3s ease;
       border-left: 4px solid;
     }
@@ -1749,20 +1750,36 @@
     .toast.error { border-left-color: #dc2626; }
     .toast.info { border-left-color: #3b82f6; }
 
-    .toast-icon { font-size: 16px; }
-    .toast-message { flex: 1; font-size: 12px; }
-    .toast-close { cursor: pointer; opacity: 0.5; font-size: 14px; }
+    .toast-top-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .toast-icon { font-size: 16px; flex-shrink: 0; }
+    .toast-message { flex: 1; font-size: 12px; min-width: 0; }
+    .toast-close { cursor: pointer; opacity: 0.5; font-size: 14px; flex-shrink: 0; }
     .toast-close:hover { opacity: 1; }
+
+    .toast-buttons {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+
     .toast-action {
       font-size: 11px;
       font-weight: 600;
-      padding: 3px 8px;
+      padding: 3px 10px;
       border-radius: 4px;
       border: 1px solid currentColor;
       background: transparent;
       cursor: pointer;
       opacity: 0.75;
       white-space: nowrap;
+      flex: 1;
+      text-align: center;
     }
     .toast-action:hover { opacity: 1; background: rgba(0,0,0,0.05); }
     .toast.persistent { box-shadow: 0 4px 16px rgba(0,0,0,0.2); }
@@ -3424,9 +3441,11 @@
       const icons = { success: '✓', error: '⚠', info: 'ℹ' };
 
       toast.innerHTML = `
-        <span class="toast-icon">${icons[type] || 'ℹ'}</span>
-        <span class="toast-message">${message}</span>
-        <span class="toast-close" onclick="_dismissToast(this.parentElement)">×</span>
+        <div class="toast-top-row">
+          <span class="toast-icon">${icons[type] || 'ℹ'}</span>
+          <span class="toast-message">${message}</span>
+          <span class="toast-close" onclick="_dismissToast(this.parentElement)">×</span>
+        </div>
       `;
 
       container.appendChild(toast);
@@ -3436,7 +3455,7 @@
       }
     }
 
-    // Persistent toast with optional "Open" action button — stays until dismissed
+    // Persistent toast with optional action button(s) — stays until dismissed
     function showActionToast(message, type = 'success', actionLabel = null, onAction = null, action2Label = null, onAction2 = null) {
       const container = $('toastContainer');
       if (!container) return;
@@ -3444,13 +3463,18 @@
       const toast = document.createElement('div');
       toast.className = `toast ${type} persistent`;
       const icons = { success: '✓', error: '⚠', info: 'ℹ' };
+      const hasButtons = actionLabel || action2Label;
 
       toast.innerHTML = `
-        <span class="toast-icon">${icons[type] || 'ℹ'}</span>
-        <span class="toast-message">${message}</span>
-        ${actionLabel ? `<button class="toast-action">${actionLabel}</button>` : ''}
-        ${action2Label ? `<button class="toast-action">${action2Label}</button>` : ''}
-        <span class="toast-close" onclick="_dismissToast(this.parentElement)">×</span>
+        <div class="toast-top-row">
+          <span class="toast-icon">${icons[type] || 'ℹ'}</span>
+          <span class="toast-message">${message}</span>
+          <span class="toast-close" onclick="_dismissToast(this.parentElement)">×</span>
+        </div>
+        ${hasButtons ? `<div class="toast-buttons">
+          ${actionLabel ? `<button class="toast-action">${actionLabel}</button>` : ''}
+          ${action2Label ? `<button class="toast-action">${action2Label}</button>` : ''}
+        </div>` : ''}
       `;
 
       container.appendChild(toast);

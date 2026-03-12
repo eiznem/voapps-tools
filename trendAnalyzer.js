@@ -2766,8 +2766,9 @@ Use the data to set retry limits: when success probability drops below ~15–20%
 
   // ── Business Review Slides ───────────────────────────────────────────────────
   try {
-    const pptxPath = outputPath.replace(/\.xlsx$/i, '_Business_Review.pptx');
-    const logoPath = path.join(__dirname, 'assets', 'logo_pptx.png');
+    const pptxPath    = outputPath.replace(/\.xlsx$/i, '_Business_Review.pptx');
+    const squareLogo  = path.join(__dirname, 'assets', 'logo_square.png');
+    const circleLogo  = path.join(__dirname, 'assets', 'logo_circle.png');
     const slideAccountIds = Object.keys(accountStats).slice(0, 6);
     await generateBusinessReviewSlides(
       {
@@ -2799,7 +2800,9 @@ Use the data to set retry limits: when success probability drops below ~15–20%
         accountIds: slideAccountIds
       },
       pptxPath,
-      fs.existsSync(logoPath) ? logoPath : null
+      null,
+      fs.existsSync(squareLogo) ? squareLogo : null,
+      fs.existsSync(circleLogo) ? circleLogo : null
     );
     log(`Business review slides saved: ${path.basename(pptxPath)}`);
   } catch (slideErr) {
