@@ -2,7 +2,7 @@
 // VoApps Tools Version Management
 //
 // Notes:
-// - Current version reflects the newest release (4.2.3).
+// - Current version reflects the newest release (4.2.1).
 // - Keeps feature flags + author from the original "DuckDB Edition" file.
 // - Changelog is unified so each version can include: changes/features, fixes, and breaking changes.
 
@@ -10,8 +10,8 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '4.2.3',
-  VERSION_NAME: 'Re-Engagement Intelligence',
+  VERSION: '4.2.1',
+  VERSION_NAME: 'Call Center Intelligence',
   RELEASE_DATE: '2026-03-12',
   AUTHOR: 'Brett Menzie',
 
@@ -50,51 +50,27 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
-    '4.2.3': {
-      date: '2026-03-12',
-      title: 'Re-Engagement Intelligence',
-      changes: [
-        'New "Re-Engagement Opportunity" metric in Excel Key Metrics: counts numbers that previously received a successful delivery but haven\'t been contacted in 30+ days — framed as confirmed-reachable low-hanging fruit, subject to compliance requirements',
-        'Best Next Action logic updated: stale warm numbers (10%+ of list) now surface as the headline recommendation when more impactful than single-touch follow-up',
-        'PPTX Slide 2 callout strip now includes stale warm count alongside single-touch insight when present',
-        'lastAttemptMs added to number summary objects for accurate epoch-based stale detection (avoids string parsing)'
-      ],
-      features: [
-        'Re-Engagement Opportunity: surfaces confirmed-reachable numbers not contacted in 30+ days as low-hanging fruit'
-      ],
-      fixes: []
-    },
-    '4.2.2': {
+    '4.2.1': {
       date: '2026-03-12',
       title: 'Call Center Intelligence',
       changes: [
-        'New "Delivery Trend" Excel tab: daily or weekly delivery breakdown with navy/green data bars, week-over-week change columns (green/red), and a totals row — auto-switches to weekly view when date range exceeds 60 days',
-        'Best Next Action: synthesized single-sentence recommendation surfaced prominently in both the Excel executive summary (purple section header) and as a top banner on the Opportunities slide in the PPTX deck',
-        'Agent Hours Saved: estimated agent capacity freed by DDVM (successful deliveries × 3 min avg manual handle time) — shown in Excel Key Metrics and as a full-width metric card on the PPTX Campaign Overview slide',
-        'PPTX Slide 5 now shows Best Next Action as a navy banner at the top before the detailed action cards, giving client-facing reviews a clear headline takeaway',
-        'Future: ROI Calculator assumptions pop-out (optional, checkbox-gated, all fields required) planned for a future release to generate cost/ROI summary in both report and slides'
+        'New "Delivery Trend" Excel tab: daily or weekly breakdown of attempts and successful deliveries with navy/green data bars, week-over-week change columns (green/red), and a totals row — auto-switches to weekly view when date range exceeds 60 days',
+        'Best Next Action: synthesized single headline recommendation surfaced in the Excel executive summary (purple section) and as a navy top banner on the PPTX Opportunities slide — prioritizes single-touch follow-up, stale re-engagement, or cadence tightening based on the data',
+        'Agent Hours Saved: successful deliveries × 3 min avg manual handle time — shown in Excel Key Metrics and as a full-width metric card on the PPTX Campaign Overview slide',
+        'Re-Engagement Opportunity: counts numbers with prior successful delivery not contacted in 30+ days — confirmed-reachable low-hanging fruit for re-engagement, subject to compliance requirements — in Excel Key Metrics and PPTX Slide 2 callout',
+        'Single-touch insight on PPTX Slide 2: callout strip shows how many numbers received only one attempt and frames them as follow-up opportunity; includes stale warm number count when present',
+        'PPTX Slide 4 (Cadence): preamble now shows both re-attempted and single-touch counts; navy insight strip added encouraging multi-touch outreach',
+        'Delivery Cadence executive summary: Single Touch row rewritten with value/opportunity framing — explains consumers often need 2–3 touches before acting',
+        'Toast action buttons now stack vertically — close × always visible even with two action buttons (Open Delivery Intelligence + Open Business Review)'
       ],
       features: [
-        'Delivery Trend tab: momentum view of attempts and successful deliveries over time',
+        'Delivery Trend tab: momentum view with data bars and week-over-week change',
         'Best Next Action: one synthesized headline recommendation per report',
-        'Agent Hours Saved: concrete capacity metric framing DDVM ROI for call center managers'
-      ],
-      fixes: []
-    },
-    '4.2.1': {
-      date: '2026-03-12',
-      title: 'Single-Touch Insights',
-      changes: [
-        'Single Touch (1 attempt only) row in Delivery Cadence now carries value-focused context: explains consumers often need 2–3 touches before acting and frames these numbers as follow-up opportunity',
-        'Campaign Overview slide (Slide 2): new callout strip below metric cards showing single-touch count and %, with a message about the value of follow-up campaigns',
-        'Delivery Re-Attempt Cadence slide (Slide 4): preamble now shows both re-attempted and single-touch counts with percentages; new navy insight strip highlights that consumers often respond on the 2nd or 3rd touch',
-        'Toast close button and action buttons fixed to stay on-screen — layout now wraps correctly when multiple action buttons are present'
-      ],
-      features: [
-        'Single-touch opportunity callout: surfaces how many numbers received only one attempt and frames it as actionable follow-up potential'
+        'Agent Hours Saved: capacity metric framing DDVM ROI for call center managers',
+        'Re-Engagement Opportunity: low-hanging fruit — confirmed-reachable numbers not contacted in 30+ days'
       ],
       fixes: [
-        'Toast notification overflowing viewport when two action buttons (Open Delivery Intelligence + Open Business Review) are shown simultaneously'
+        'Toast notification overflowing viewport when two action buttons are shown simultaneously'
       ]
     },
     '4.2.0': {
