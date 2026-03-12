@@ -4851,7 +4851,11 @@
       if (modal) modal.classList.remove('visible');
     };
 
-    window.toggleHelp = () => showInfoModal('help');
+    window.toggleHelp = () => {
+      const url = 'https://github.com/eiznem/voapps-tools';
+      if (window.voapps?.openUpdateUrl) window.voapps.openUpdateUrl(url);
+      else window.open(url, '_blank');
+    };
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
