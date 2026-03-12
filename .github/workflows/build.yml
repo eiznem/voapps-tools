@@ -75,43 +75,7 @@ jobs:
       # Generate release notes from version.js changelog
       - name: Generate release notes
         id: notes
-        shell: bash
-        run: |
-          node -e "
-          const v = require('./version.js');
-          const ver = v.VERSION;
-          const c = v.CHANGELOG[ver] || {};
-          const title = c.title || '';
-          const lines = [];
-          lines.push('## What\'s New in ' + ver + (title ? ' — ' + title : ''));
-          lines.push('');
-          if (c.features && c.features.length) {
-            lines.push('### ✨ New Features');
-            c.features.forEach(f => lines.push('- ' + f));
-            lines.push('');
-          }
-          if (c.changes && c.changes.length) {
-            lines.push('### 📊 Improvements');
-            c.changes.forEach(ch => lines.push('- ' + ch));
-            lines.push('');
-          }
-          if (c.fixes && c.fixes.length) {
-            lines.push('### 🐛 Fixes');
-            c.fixes.forEach(f => lines.push('- ' + f));
-            lines.push('');
-          }
-          lines.push('---');
-          lines.push('');
-          lines.push('## 🤖 AI Models (Optional)');
-          lines.push('To use local AI transcription and intent classification without downloading from Hugging Face, download **VoApps-Tools-Models.zip** (under Assets below) and extract the \`Xenova\` folder to:');
-          lines.push('- **Windows:** \`%APPDATA%\\\\voapps-tools\\\\models\\\\\`');
-          lines.push('- **macOS:** \`~/Library/Application Support/VoApps Tools/models/\`');
-          lines.push('');
-          lines.push('---');
-          lines.push('**Full Changelog**: https://github.com/eiznem/voapps-tools/releases');
-          process.stdout.write(lines.join('\n'));
-          " > release_notes.md
-          echo "Generated release notes for v$(node -e \"process.stdout.write(require('./version.js').VERSION)\")"
+        run: node scripts/generate-release-notes.js
 
       # Create the release if it does not already exist (no-op if it does)
       - name: Ensure release exists
