@@ -2583,7 +2583,7 @@ async function generateTrendAnalysis(
   timeSheet.mergeCells('A1:E1');
 
   // Daily Success Patterns
-  const dailyStats = globalDayStats;
+  const dowStats = globalDayStats;
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
   const dayHeaderRow = 3;
@@ -2594,7 +2594,7 @@ async function generateTrendAnalysis(
 
   let dayRow = dayHeaderRow + 1;
   for (let d = 0; d < 7; d++) {
-    const stats = dailyStats[d];
+    const stats = dowStats[d];
     const successRate = stats.total > 0 ? stats.successful / stats.total : 0;
     timeSheet.getRow(dayRow).values = [dayNames[d], stats.total, stats.successful, stats.unsuccessful, successRate];
     timeSheet.getCell(`E${dayRow}`).numFmt = '0.0%';
