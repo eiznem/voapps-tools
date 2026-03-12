@@ -62,7 +62,8 @@ module.exports = {
       features: [
         'Caller # Match: actual phone number comparison with ✅/⚠️ result per message',
         'Message ID hyperlinks in Message Insights Excel tab',
-        'AI transcription for CSV upload and database analysis flows'
+        'AI transcription for CSV upload and database analysis flows',
+        'Delivery Cadence section on Executive Summary — per-number median re-attempt intervals bucketed into 7 ranges (same-day through 30+ days); 3–10 day ideal range highlighted; cadence warnings in Recommended Actions for same-day and next-day re-attempts'
       ],
       fixes: [
         'Fixed AI models not loading from manually-transferred cache on Windows — env.cacheDir was resolving to an asar-virtual path; explicitly set to the correct location after import',
