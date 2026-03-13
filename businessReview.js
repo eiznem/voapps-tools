@@ -48,16 +48,16 @@ const RECT = 'rect';
  * @returns {number} Effective header height (use as base for content Y positioning).
  */
 function headerBar(pptx, slide, title, logoPath, subheading) {
-  const subH   = subheading ? 0.22 : 0;
-  const totalH = HEADER_H + subH;
+  // Header is always HEADER_H — subheading overlays inside (no vertical expansion)
+  const totalH = HEADER_H;
 
-  // Full-width navy header (taller when subheading present)
+  // Full-width navy header
   slide.addShape(RECT, {
     x: 0, y: 0, w: SLIDE_W, h: totalH,
     fill: { color: NAVY }, line: { color: NAVY }
   });
 
-  // Pink icon square on the left — always original HEADER_H square, never stretched
+  // Pink icon square on the left — always a perfect square
   const iconBlockW = HEADER_H;
   slide.addShape(RECT, {
     x: 0, y: 0, w: iconBlockW, h: HEADER_H,
@@ -65,7 +65,6 @@ function headerBar(pptx, slide, title, logoPath, subheading) {
   });
 
   if (logoPath) {
-    // Logo sits inside the pink block with a small inset
     const inset = 0.1;
     slide.addImage({
       path: logoPath,
@@ -80,32 +79,26 @@ function headerBar(pptx, slide, title, logoPath, subheading) {
   const titleX = iconBlockW + 0.22;
   const titleW = SLIDE_W - titleX - 0.3;
 
+  // Title covers the full header height, vertically centered
+  slide.addText(title, {
+    x: titleX, y: 0, w: titleW, h: HEADER_H,
+    fontSize: 22, bold: true, color: WHITE,
+    fontFace: 'Aktiv Grotesk VF Medium',
+    valign: 'middle', align: 'left',
+    charSpacing: 0.5
+  });
+
   if (subheading) {
-    // Title sits in the original header band; subheading tucked just below it
-    slide.addText(title, {
-      x: titleX, y: 0, w: titleW, h: HEADER_H,
-      fontSize: 22, bold: true, color: WHITE,
-      fontFace: 'Aktiv Grotesk VF Medium',
-      valign: 'middle', align: 'left',
-      charSpacing: 0.5
-    });
+    // Date subtitle overlaid inside the header, close to the title baseline
     slide.addText(subheading, {
-      x: titleX, y: HEADER_H, w: titleW, h: subH,
+      x: titleX, y: 0.66, w: titleW, h: 0.22,
       fontSize: 11, bold: false, color: PINK_LIGHT,
       fontFace: 'Aktiv Grotesk VF Medium',
       valign: 'middle', align: 'left'
     });
-  } else {
-    slide.addText(title, {
-      x: titleX, y: 0, w: titleW, h: HEADER_H,
-      fontSize: 22, bold: true, color: WHITE,
-      fontFace: 'Aktiv Grotesk VF Medium',
-      valign: 'middle', align: 'left',
-      charSpacing: 0.5
-    });
   }
 
-  // Thin pink bottom accent line on the header
+  // Thin pink bottom accent line
   slide.addShape(RECT, {
     x: 0, y: totalH - 0.04, w: SLIDE_W, h: 0.04,
     fill: { color: PINK }, line: { color: PINK }
@@ -141,7 +134,7 @@ function slideFooter(slide, text) {
  */
 function metricBox(slide, x, y, w, h, label, value, subtext, accentColor, valueFontSize) {
   const accent   = accentColor  || PINK;
-  const valSize  = valueFontSize || 28;
+  const valSize  = valueFontSize || 32;
   const stripH   = 0.06;
   // Value box height: shrinks to leave room for subtext when card is short
   const valBoxH  = subtext ? Math.min(0.68, h - 0.56) : 0.68;
@@ -159,11 +152,11 @@ function metricBox(slide, x, y, w, h, label, value, subtext, accentColor, valueF
     fill: { color: accent }, line: { color: accent }
   });
 
-  // Label (small caps style — uppercase, spaced)
+  // Label
   slide.addText(label, {
     x: x + 0.16, y: y + stripH + 0.1,
     w: w - 0.32, h: 0.3,
-    fontSize: 7.5, color: TEXT_SOFT,
+    fontSize: 11, color: TEXT_SOFT,
     bold: false, align: 'left',
     fontFace: 'Aktiv Grotesk VF Medium',
     charSpacing: 1.5
@@ -184,7 +177,7 @@ function metricBox(slide, x, y, w, h, label, value, subtext, accentColor, valueF
     slide.addText(subtext, {
       x: x + 0.16, y: y + stripH + 0.38 + valBoxH + 0.08,
       w: w - 0.32, h: 0.3,
-      fontSize: 9, color: TEXT_SOFT,
+      fontSize: 10, color: TEXT_SOFT,
       italic: false, align: 'left',
       fontFace: 'Aktiv Grotesk VF Medium'
     });
@@ -330,12 +323,11 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   const s2 = pptx.addSlide();
   s2.background = { color: CREAM };
   const s2HdrH = headerBar(pptx, s2, 'Campaign Overview', headerLogo, dateRangeStr);
-  const s2CY   = s2HdrH + 0.18;
 
   const bW   = 4.0;
   const bH   = 1.62;
   const bGap = 0.16;
-  const row1Y = s2CY + 0.1;
+  const row1Y = s2HdrH + 0.5;   // 1.5 — matches user-edited layout
   const row2Y = row1Y + bH + bGap;
   const c1 = 0.32;
   const c2 = c1 + bW + bGap;
@@ -403,9 +395,9 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     s2.addText(
       `${cadence.cadenceSingleTouch.toLocaleString()} numbers (${stPct}%) received only one DDVM attempt this period.`,
       {
-        x: stripX + 0.18, y: stripY + 0.04,
+        x: stripX + 0.18, y: stripY + 0.10,
         w: stripW - 0.26, h: 0.28,
-        fontSize: 11, bold: true, color: NAVY,
+        fontSize: 12, bold: true, color: NAVY,
         fontFace: 'Aktiv Grotesk VF Medium', valign: 'middle'
       }
     );
@@ -414,29 +406,65 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
       ? ` Additionally, ${staleWarmCount.toLocaleString()} numbers with prior successful deliveries haven't been contacted in 30+ days — confirmed-reachable low-hanging fruit for re-engagement.`
       : '';
     s2.addText(
-      `Consumers often need 2–3 touches before taking action. A follow-up campaign at a 3–10 day interval can produce meaningful incremental results from this same list.${staleNote}`,
+      `Consumers often need 2\u20133 touches before taking action. A follow-up campaign at a 3\u201310 day interval can produce meaningful incremental results from this same list.${staleNote}`,
       {
-        x: stripX + 0.18, y: stripY + 0.33,
+        x: stripX + 0.18, y: stripY + 0.29,
         w: stripW - 0.26, h: 0.28,
-        fontSize: 9.5, color: TEXT_SOFT, italic: true,
+        fontSize: 10, color: TEXT_SOFT, italic: true,
         fontFace: 'Aktiv Grotesk VF Medium', valign: 'middle'
       }
     );
   }
 
-  // ── Agent Hours Saved — full-width card below callout strip ─────────────────
+  // ── Agent Hours Saved — full-width purple card below callout strip ──────────
   if (agentHoursSaved > 0) {
-    const ahCardH = 1.0;
-    // ahY derived from strip bottom so it's always accurate regardless of header height
+    const ahCardH  = 1.14;
+    const ahCardW  = 3 * bW + 2 * bGap; // 12.32 — aligns with card grid right edge
     const ahStripBottom = row2Y + bH + 0.20 + 0.68; // stripY + stripH
     const ahY = cadenceTotalNumbers > 0
       ? ahStripBottom + 0.10
       : row2Y + bH + 0.22;
-    metricBox(s2, c1, ahY, SLIDE_W - c1 * 2, ahCardH,
-      'AGENT HOURS SAVED (EST.)',
-      `${agentHoursSaved.toLocaleString()} hrs`,
-      `Based on ${totalSuccess.toLocaleString()} successful deliveries × 3 min avg manual voicemail handle time — capacity your agents didn't need to spend on outreach`,
-      PURPLE, 28);
+
+    const PURPLE_BG    = '5148C8'; // lighter purple — card background
+    const PURPLE_STRIP = '3F2FB8'; // darker purple — accent strip
+
+    // Purple card background
+    s2.addShape(RECT, {
+      x: c1, y: ahY, w: ahCardW, h: ahCardH,
+      fill: { color: PURPLE_BG }, line: { color: PURPLE_BG }
+    });
+    // Dark purple top accent strip
+    s2.addShape(RECT, {
+      x: c1, y: ahY, w: ahCardW, h: 0.05,
+      fill: { color: PURPLE_STRIP }, line: { color: PURPLE_STRIP }
+    });
+    // Label
+    s2.addText('AGENT HOURS SAVED (EST.)', {
+      x: c1 + 0.16, y: ahY + 0.127,
+      w: ahCardW - 0.32, h: 0.28,
+      fontSize: 11, color: TEXT_SOFT, bold: false,
+      fontFace: 'Aktiv Grotesk VF Medium',
+      align: 'left', charSpacing: 1.5
+    });
+    // Big value
+    s2.addText(`${agentHoursSaved.toLocaleString()} hrs`, {
+      x: c1 + 0.16, y: ahY + 0.308,
+      w: ahCardW - 0.32, h: 0.44,
+      fontSize: 32, bold: true, color: NAVY,
+      fontFace: 'IvyPresto Text',
+      align: 'left', valign: 'top',
+      shrinkText: true
+    });
+    // Sub-label
+    s2.addText(
+      `Based on ${totalSuccess.toLocaleString()} successful deliveries \u00d7 3 min avg manual voicemail handle time \u2014 capacity your agents didn\u2019t need to spend on outreach`,
+      {
+        x: c1 + 0.16, y: ahY + 0.784,
+        w: ahCardW - 0.32, h: 0.3,
+        fontSize: 10, color: TEXT_SOFT, italic: false,
+        fontFace: 'Aktiv Grotesk VF Medium', align: 'left'
+      }
+    );
   }
 
   slideFooter(s2);
@@ -447,7 +475,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   const s3 = pptx.addSlide();
   s3.background = { color: CREAM };
   const s3HdrH = headerBar(pptx, s3, 'Success Probability by Attempt', headerLogo, dateRangeStr);
-  const s3CY   = s3HdrH + 0.18;
+  const s3CY   = s3HdrH + 0.40;
 
   s3.addText(
     'Each row represents all numbers at that attempt count. As attempt index rises, the pool shifts toward harder-to-reach numbers — success probability naturally declines.',
@@ -517,7 +545,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   const s4 = pptx.addSlide();
   s4.background = { color: CREAM };
   const s4HdrH = headerBar(pptx, s4, 'Delivery Re-Attempt Cadence', headerLogo, dateRangeStr);
-  const s4CY   = s4HdrH + 0.18;
+  const s4CY   = s4HdrH + 0.40;
 
   const totalMulti = cadence.cadenceMultiTouchCount || 1;
   const s4TotalNumbers = (cadence.cadenceSingleTouch || 0) + (cadence.cadenceMultiTouchCount || 0);
@@ -615,7 +643,6 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   const s5 = pptx.addSlide();
   s5.background = { color: CREAM };
   const s5HdrH = headerBar(pptx, s5, 'Opportunities to Maximize Performance', headerLogo, dateRangeStr);
-  const s5CY   = s5HdrH + 0.18;
 
   const noIssues = actions.length === 0
     || (actions.length === 1 && actions[0].includes('performance looks strong'));
@@ -628,19 +655,19 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     });
   } else {
     // ── Best Next Action banner ─────────────────────────────────────────────
-    const bnaH = 0.78;
-    const bnaY = s5CY + 0.1;
+    const bnaH = 0.98;
+    const bnaY = s5HdrH + 0.30;  // 1.30 — tighter to header, more room for action rows
     s5.addShape(RECT, { x: 0.3, y: bnaY, w: SLIDE_W - 0.6, h: bnaH,
       fill: { color: NAVY }, line: { color: NAVY } });
     s5.addShape(RECT, { x: 0.3, y: bnaY, w: 0.08, h: bnaH,
       fill: { color: PINK }, line: { color: PINK } });
     s5.addText('BEST NEXT ACTION', {
-      x: 0.5, y: bnaY + 0.04, w: SLIDE_W - 0.8, h: 0.22,
-      fontSize: 8.5, bold: true, color: PINK_LIGHT,
+      x: 0.5, y: bnaY + 0.17, w: SLIDE_W - 0.8, h: 0.22,
+      fontSize: 10, bold: true, color: PINK_LIGHT,
       fontFace: 'Aktiv Grotesk VF Medium', charSpacing: 1
     });
     s5.addText(bestNextAction || '', {
-      x: 0.5, y: bnaY + 0.25, w: SLIDE_W - 0.8, h: bnaH - 0.3,
+      x: 0.5, y: bnaY + 0.38, w: SLIDE_W - 0.8, h: bnaH - 0.42,
       fontSize: 10, color: WHITE, italic: false,
       fontFace: 'Aktiv Grotesk VF Medium', valign: 'top'
     });

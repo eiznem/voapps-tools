@@ -2,7 +2,7 @@
 // VoApps Tools Version Management
 //
 // Notes:
-// - Current version reflects the newest release (4.2.2).
+// - Current version reflects the newest release (4.2.3).
 // - Keeps feature flags + author from the original "DuckDB Edition" file.
 // - Changelog is unified so each version can include: changes/features, fixes, and breaking changes.
 
@@ -10,9 +10,9 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '4.2.2',
+  VERSION: '4.2.3',
   VERSION_NAME: 'Call Center Intelligence',
-  RELEASE_DATE: '2026-03-12',
+  RELEASE_DATE: '2026-03-13',
   AUTHOR: 'Brett Menzie',
 
   // -----------------------------
@@ -50,6 +50,21 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '4.2.3': {
+      date: '2026-03-13',
+      title: 'Call Center Intelligence',
+      fixes: [
+        'PPTX header: date subheading now overlays inside the header band (no vertical stretch of the pink icon block)',
+        'PPTX metric card values: font size increased to 32pt (IvyPresto Text) across all campaign overview cards for improved readability',
+        'PPTX metric card labels: font size increased to 11pt for improved readability',
+        'PPTX metric card subtext: font size increased to 10pt',
+        'PPTX slide layout: content area shifted down to match refined spacing (row1Y=1.50, table y=1.98 on slides 3–4)',
+        'PPTX Agent Hours card: redesigned as full purple card with precise interior layout — value at correct position, subtext no longer overlaps the number',
+        'PPTX Agent Hours card: width aligned to card grid right edge (12.32 in)',
+        'PPTX single-touch strip: headline 12pt, body 10pt, tightened vertical positions',
+        'PPTX Best Next Action banner: height increased to 0.98 in, eyebrow label 10pt, moved closer to header'
+      ]
+    },
     '4.2.2': {
       date: '2026-03-12',
       title: 'Call Center Intelligence',
