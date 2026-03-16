@@ -427,7 +427,7 @@ async function downloadAiModelBackground(type, log = (msg, isError = false) => i
  * Results are cached in message_transcriptions DuckDB table.
  * Returns transcriptMap: { "accountId:messageId" -> {transcript, intent, intent_summary, mentioned_phone, mentions_url} }
  */
-async function transcribeAndAnalyzeMessages(messageInfo, aiSettings, log) {
+async function transcribeAndAnalyzeMessages(messageInfo, aiSettings, log, onProgress = null) {
   const transcriptMap = {};
   if (!dbReady) log('[AI] Note: Database not ready — transcripts will run but will not be cached this session');
 
@@ -452,7 +452,10 @@ async function transcribeAndAnalyzeMessages(messageInfo, aiSettings, log) {
   const intentLabel = intentMode === 'openai' ? 'GPT-4o-mini' : 'local nli-deberta';
   log(`[AI] Analyzing ${uniqueMessages.size} unique message(s) — STT: ${sttLabel}, intent: ${intentLabel}`);
 
+  let _aiProcessed = 0;
   for (const [key, { messageId, accountId, file_url }] of uniqueMessages) {
+    _aiProcessed++;
+    if (onProgress) onProgress(_aiProcessed, uniqueMessages.size, messageInfo[key]?.name || messageId);
     try {
       // Check cache (skip when DB not available — e.g. Windows)
       let cached = null;
@@ -1412,14 +1415,18 @@ function detectUrlMention(transcript) {
 /**
  * Run generateTrendAnalysis in a worker thread so the main/UI thread stays responsive.
  */
-function runAnalysisInWorker(inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel, includeDetailTabs = true, transcriptMap = {}, includeReAttemptTabs = false, pptxOptions = {}, includeSuppressionCandidates = true) {
+function runAnalysisInWorker(inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel, includeDetailTabs = true, transcriptMap = {}, includeReAttemptTabs = false, pptxOptions = {}, includeSuppressionCandidates = true, jobId = null) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(path.join(__dirname, 'analysisWorker.js'), {
-      workerData: { inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel, includeDetailTabs, transcriptMap, includeReAttemptTabs, pptxOptions, includeSuppressionCandidates },
+      workerData: { inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel, includeDetailTabs, transcriptMap, includeReAttemptTabs, pptxOptions, includeSuppressionCandidates, jobId },
       // Allow up to 6GB heap for large dataset analysis
       resourceLimits: { maxOldGenerationSizeMb: 6144 }
     });
     worker.on('message', (msg) => {
+      if (msg.type === 'progress') {
+        if (jobId) sendProgress(jobId, { current: -1, total: 0, message: msg.message });
+        return;
+      }
       if (msg.ok) resolve();
       else reject(new Error(msg.error || 'Worker analysis failed'));
     });
@@ -3366,6 +3373,7 @@ async function runNumberSearch(config) {
     // Save to database if requested
     if (output_mode === "database" || output_mode === "both") {
       log(`\n💾 Saving to database...`);
+      if (job_id) sendProgress(job_id, { current: -1, total: 0, message: `Saving ${allMatches.length.toLocaleString()} records to database...` });
       const dbResult = await insertRows(allMatches, log);
       log(`   ✅ Database: ${dbResult.inserted} inserted, ${dbResult.updated} updated`);
     }
@@ -3947,6 +3955,7 @@ async function runCombineCampaigns(config) {
     // Save to database if requested
     if (output_mode === "database" || output_mode === "both") {
       log(`\n💾 Saving to database...`);
+      if (job_id) sendProgress(job_id, { current: -1, total: 0, message: `Saving ${allRows.length.toLocaleString()} records to database...` });
       const dbResult = await insertRows(allRows, log);
       log(`   ✅ Database: ${dbResult.inserted} inserted, ${dbResult.updated} updated`);
     }
@@ -4089,7 +4098,9 @@ async function runCombineCampaigns(config) {
             log(`[AI] Scoped to ${usedCount} message(s) used in this dataset (${totalCount - usedCount} available but unused — skipped)`);
           }
           if (usedCount > 0) {
-            transcriptMap = await transcribeAndAnalyzeMessages(filteredAiMessageInfo, aiSettings, log);
+            if (job_id) sendProgress(job_id, { current: 0, total: usedCount, message: `Analyzing message audio with AI (0 / ${usedCount})...` });
+            transcriptMap = await transcribeAndAnalyzeMessages(filteredAiMessageInfo, aiSettings, log,
+              job_id ? (cur, tot, name) => sendProgress(job_id, { current: cur, total: tot, message: `Analyzing audio: "${name}" (${cur} / ${tot})` }) : null);
           } else {
             log('[AI] No messages from this dataset have audio URLs — skipping transcription');
           }
@@ -4107,6 +4118,7 @@ async function runCombineCampaigns(config) {
           ? pptx_overview_cards.filter(k => VALID_CARD_KEYS.has(k)).slice(0, 6)
           : null,
       };
+      if (job_id) sendProgress(job_id, { current: -1, total: 0, message: 'Generating Delivery Intelligence Report...' });
       await runAnalysisInWorker(
         allCsvFiles,
         analysisPath,
@@ -4121,7 +4133,8 @@ async function runCombineCampaigns(config) {
         transcriptMap,
         include_re_attempt_tabs,
         pptxOptions,
-        include_suppression_candidates
+        include_suppression_candidates,
+        job_id || null
       );
 
       lastArtifacts.analysisPath = analysisPath;

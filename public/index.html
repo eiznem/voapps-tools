@@ -4704,7 +4704,7 @@
             $('logContent').appendChild(entry);
             $('logContent').scrollTop = $('logContent').scrollHeight;
           } else if (data.type === 'progress') {
-            updateProgress(data.current, data.total, data.text);
+            updateProgress(data.current, data.total, data.message || data.text);
           } else if (data.type === 'notify') {
             showActionToast(data.message, 'error', data.actionLabel || 'Learn More', () => {
               window.open(data.url, '_blank');

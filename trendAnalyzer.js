@@ -627,7 +627,8 @@ async function generateTrendAnalysis(
   transcriptMap = {},
   includeReAttemptTabs = false,
   includeSuppressionCandidates = true,
-  pptxOptions = {}
+  pptxOptions = {},
+  progressCallback = null
 ) {
   log(`Starting Delivery Intelligence Analysis (v${VERSION})`);
 
@@ -722,6 +723,7 @@ async function generateTrendAnalysis(
     }
 
     // ── Phase 2: stream directly into numberData — no csvRows accumulation ────
+    if (progressCallback) progressCallback('Processing delivery records...');
     log('  Phase 2/2: Processing rows...');
     let rowIdx = 0;
     for (const csvFile of files) {
@@ -1182,6 +1184,7 @@ async function generateTrendAnalysis(
   const hasConfigErrors = Object.values(configErrors).some(e => e.total > 0);
   const uniqueNumbers = Object.keys(numberData).length;
   log(`Analyzed ${uniqueNumbers.toLocaleString()} unique numbers`);
+  if (progressCallback) progressCallback('Computing delivery statistics...');
 
   // ============================================================================
   // CALCULATE SUCCESS PROBABILITY BY ATTEMPT INDEX
@@ -1883,6 +1886,7 @@ async function generateTrendAnalysis(
   // TAB 1: EXECUTIVE SUMMARY
   // ========================================
 
+  if (progressCallback) progressCallback('Writing Excel report...');
   log('Creating Executive Summary tab...');
 
   const execSheet = workbook.addWorksheet('Executive Summary');
@@ -3063,13 +3067,19 @@ async function generateTrendAnalysis(
 
     raSum.mergeCells('A2:D2');
     raSum.getCell('A2').value =
-      'Analyzes what happened across multiple delivery attempts to the same phone number. ' +
+      'Analyzes the return-on-investment of re-attempting delivery to the same phone number across multiple touches. ' +
+      'Understanding re-attempt effectiveness helps optimize campaign capacity: numbers worth retrying stay active, ' +
+      'while those that aren\'t become suppression candidates. ' +
+      'Example: if 45% of numbers initially returning 407 (VM Full) eventually delivered on a later attempt, ' +
+      'that code has strong re-attempt value and should remain in active rotation. ' +
+      'Conversely, if 90% of 405 (Not in Service) numbers never delivered regardless of attempt count, ' +
+      'further attempts on those waste campaign capacity and suppress overall delivery rates. ' +
       'All numbers with 2+ attempts in this dataset are included. ' +
-      'Result codes used: 200 = successfully delivered, 400 = unsuccessful, ' +
+      'Result codes: 200 = successfully delivered, 400 = unsuccessful, ' +
       '405 = not in service, 406 = voicemail not setup, 407 = voicemail full.';
     raSum.getCell('A2').font = { italic: true, size: 10, color: { argb: '555555' } };
     raSum.getCell('A2').alignment = { wrapText: true, vertical: 'top' };
-    raSum.getRow(2).height = 50;
+    raSum.getRow(2).height = 90;
 
     let raRow = 4;
 
@@ -3170,12 +3180,15 @@ async function generateTrendAnalysis(
 
     matSheet.mergeCells(`A2:${String.fromCharCode(65 + RA_CODES.length + 1)}2`);
     matSheet.getCell('A2').value =
-      'Each cell shows count and % of row total. ' +
-      'Read: "Of all attempts where the previous result was [row], [X]% transitioned to [column] on their next attempt." ' +
-      'Excludes 401 (not wireless — never a delivery attempt).';
+      'Each cell shows count and % of row total — the most actionable re-attempt intelligence in this report. ' +
+      'Read each row as: "Of all attempts where the previous result was [row code], [X]% became [column code] on the very next attempt." ' +
+      'Example: if the 407 → 200 cell reads "1,240 (38%)", that means 38% of VM Full numbers successfully delivered next time — ' +
+      'a strong signal to keep 407 numbers in active rotation with a 4–7 day re-attempt interval. ' +
+      'If 406 → 406 reads "820 (91%)", those numbers have a persistent voicemail-not-setup condition that rarely self-corrects. ' +
+      'Excludes 401 (not a wireless number — these numbers are never attempted for DDVM delivery).';
     matSheet.getCell('A2').font = { italic: true, size: 10, color: { argb: '555555' } };
     matSheet.getCell('A2').alignment = { wrapText: true };
-    matSheet.getRow(2).height = 36;
+    matSheet.getRow(2).height = 72;
 
     // Header row (row 4 — row 3 is blank)
     const matHdrRow = matSheet.getRow(4);
@@ -3226,12 +3239,15 @@ async function generateTrendAnalysis(
     matRow++;
     matSheet.mergeCells(`A${matRow}:${String.fromCharCode(65 + RA_CODES.length + 1)}${matRow}`);
     matSheet.getCell(`A${matRow}`).value =
-      'Interpretation: A high % on the diagonal (e.g., VM Full → VM Full) suggests a structural issue — ' +
-      'the mailbox is consistently full and may not clear between attempts. A high % transitioning to Delivered (200) ' +
-      'confirms that code is worth retrying. A high % on Not in Service (405) is a strong suppression signal.';
+      'How to interpret: A high % on the diagonal (same code → same code, e.g., 407 → 407 at 70%+) signals a persistent structural condition ' +
+      'that is not resolving between your re-attempt intervals — consider longer hold times or suppression for those numbers. ' +
+      'A high % in the → Delivered (200) column confirms a code is worth retrying aggressively: the condition was temporary. ' +
+      'A dominant 405 diagonal (90%+) is a strong suppression signal — those lines are very likely disconnected. ' +
+      'Watch for cross-code transitions too: 407 → 406 may indicate subscribers changed voicemail settings, ' +
+      'while 406 → 200 shows some VM-not-setup numbers do eventually configure their mailbox and become deliverable.';
     matSheet.getCell(`A${matRow}`).font = { italic: true, size: 10, color: { argb: '555555' } };
     matSheet.getCell(`A${matRow}`).alignment = { wrapText: true };
-    matSheet.getRow(matRow).height = 42;
+    matSheet.getRow(matRow).height = 72;
 
     // ── Tab 3: Attempt Funnel by Code ────────────────────────────────────────
     log('Creating Attempt Funnel by Code tab...');
@@ -3248,13 +3264,18 @@ async function generateTrendAnalysis(
 
     funnelSheet.mergeCells('A2:G2');
     funnelSheet.getCell('A2').value =
-      'Numbers are grouped by their very first delivery attempt result code. ' +
-      '"Delivered @ Attempt N" = the Nth attempt was the first successful delivery for that number. ' +
+      'Numbers are grouped by their very first delivery attempt result code, then tracked through subsequent attempts to reveal ' +
+      'at which point (if ever) first successful delivery occurred. This funnel exposes diminishing returns by code type: ' +
+      'if 70% of a cohort delivers on attempt 1 but only 3% more by attempt 3, attempts 4+ have very low ROI for that code. ' +
+      'Example: initial-406 (VM Not Setup) numbers showing 85%+ "Never Delivered" likely have a permanent configuration issue — ' +
+      'their voicemail was never activated and that condition rarely self-corrects without subscriber action. ' +
+      'By contrast, a 407 (VM Full) cohort with 25% delivered by attempt 3 confirms the box clears over time and re-attempts pay off. ' +
+      '"Delivered @ Attempt N" = the Nth attempt was the FIRST successful delivery for that number. ' +
       '"Never Delivered (in range)" = no successful delivery found within this dataset\'s date range. ' +
-      'Only numbers with 2+ attempts are included.';
+      'Only numbers with 2+ total attempts are included; single-touch numbers are excluded from this analysis.';
     funnelSheet.getCell('A2').font = { italic: true, size: 10, color: { argb: '555555' } };
     funnelSheet.getCell('A2').alignment = { wrapText: true };
-    funnelSheet.getRow(2).height = 42;
+    funnelSheet.getRow(2).height = 90;
 
     const funnelHeaders = [
       'Initial Result Code', 'Multi-Touch Total',
@@ -3333,12 +3354,16 @@ async function generateTrendAnalysis(
 
     timingSheet.mergeCells('A2:E2');
     timingSheet.getCell('A2').value =
-      'For each "From" result code and time gap between consecutive attempts, shows how often the next attempt succeeded. ' +
-      'The 3–7 day window typically yields the best marginal success rate. ' +
-      'Same-day and next-day re-attempts to numbers with 200 on the prior attempt are rarely productive.';
+      'Correlates the time gap between consecutive delivery attempts with next-attempt success rate, segmented by prior result code. ' +
+      'This reveals the optimal re-attempt window for each failure type — critical intelligence for scheduling strategy. ' +
+      'Example: VM Full (407) numbers re-attempted the same day rarely succeed because the mailbox hasn\'t cleared yet, ' +
+      'but those retried after 4–7 days often see significantly higher success rates as subscribers delete messages and free space. ' +
+      'Not in Service (405) numbers typically show low success rates regardless of timing — ' +
+      'suggesting suppression is more effective than waiting for a re-attempt window. ' +
+      'Use these patterns to tune your campaign re-attempt intervals by result code type and maximize delivery ROI.';
     timingSheet.getCell('A2').font = { italic: true, size: 10, color: { argb: '555555' } };
     timingSheet.getCell('A2').alignment = { wrapText: true };
-    timingSheet.getRow(2).height = 42;
+    timingSheet.getRow(2).height = 72;
 
     timingSheet.getRow(4).values = ['From Result Code', 'Time Gap', 'Attempt Pairs', 'Next Attempt Successful', '% Success'];
     timingSheet.getRow(4).eachCell((c, col) => { if (col <= 5) c.style = tableHeaderStyle; });
@@ -3559,6 +3584,7 @@ Use the data to set retry limits: when success probability drops below ~15–20%
     const squareLogo  = path.join(__dirname, 'assets', 'logo_square.png');
     const circleLogo  = path.join(__dirname, 'assets', 'logo_circle.png');
     const slideAccountIds = Object.keys(accountStats).slice(0, 6);
+    if (progressCallback) progressCallback('Generating Business Review slides...');
     await generateBusinessReviewSlides(
       {
         uniqueNumbers,
