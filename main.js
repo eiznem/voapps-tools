@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { startServer, stopServer, getLastArtifacts, getDatabaseStats } = require('./server');
 const { VERSION } = require('./version');
 const https = require('https');
@@ -47,12 +48,34 @@ function createWindow() {
   });
 }
 
+/**
+ * Show the First Time Setup guide on the very first launch (Windows only —
+ * macOS users see FIRST_TIME_SETUP.html directly in the DMG window).
+ * Uses a compact BrowserWindow so the guide renders with full styling.
+ */
+function showFirstRunSetupIfNeeded() {
+  if (process.platform !== 'win32') return;
+  const flagPath = path.join(app.getPath('userData'), '.setup_v4_shown');
+  if (fs.existsSync(flagPath)) return;
+  try { fs.writeFileSync(flagPath, ''); } catch (_) { /* ignore */ }
+
+  const setupWin = new BrowserWindow({
+    width: 760,
+    height: 860,
+    title: 'VoApps Tools — First Time Setup',
+    autoHideMenuBar: true,
+    webPreferences: { nodeIntegration: false, contextIsolation: true }
+  });
+  setupWin.loadFile(path.join(__dirname, 'FIRST_TIME_SETUP.html'));
+}
+
 app.whenReady().then(async () => {
   try {
     const result = await startServer();
     serverUrl = result.url;
     console.log(`Server started at ${serverUrl}`);
     createWindow();
+    showFirstRunSetupIfNeeded();
   } catch (error) {
     console.error('Failed to start server:', error);
     app.quit();

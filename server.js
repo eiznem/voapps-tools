@@ -145,7 +145,7 @@ let _xenovaMod = null;
  *
  * In the packaged app we use the Electron userData directory so users can
  * easily find and populate it — the path is simple and well-known:
- *   Windows: %APPDATA%\VoApps Tools\models\
+ *   Windows: %APPDATA%\voapps-tools\models\
  *   macOS:   ~/Library/Application Support/VoApps Tools/models/
  *
  * In development (npm start) we fall back to the @xenova/transformers
@@ -409,7 +409,13 @@ async function downloadAiModelBackground(type, log = (msg, isError = false) => i
     if (isNetworkMasked || isFetchFailed) {
       log(`[AI] ❌ Failed to download ${label} model: could not reach huggingface.co`, true);
       log(`[AI]    Likely cause: the network is blocking huggingface.co (firewall, proxy, or no internet).`, true);
-      log(`[AI]    Workaround: switch Transcription and Intent modes to "OpenAI" in Settings.`, true);
+      log(`[AI]    Option 1: switch Transcription and Intent modes to "OpenAI" in Settings.`, true);
+      log(`[AI]    Option 2: download VoApps-Tools-Models.zip from GitHub Releases and extract to:`, true);
+      if (process.platform === 'win32') {
+        log(`[AI]       %APPDATA%\\voapps-tools\\models\\`, true);
+      } else {
+        log(`[AI]       ~/Library/Application Support/VoApps Tools/models/`, true);
+      }
     } else {
       log(`[AI] ❌ Failed to download ${label} model: ${e.message}`, true);
     }
@@ -1542,7 +1548,7 @@ let dbReady = false;
 let serverInstance = null;
 let serverUrl = null;
 
-const lastArtifacts = { csvPath: null, logPath: null, errorPath: null, analysisPath: null };
+const lastArtifacts = { csvPath: null, logPath: null, errorPath: null, analysisPath: null, pptxPath: null };
 function getLastArtifacts() { return { ...lastArtifacts }; }
 
 const jobs = new Map();
@@ -4101,6 +4107,7 @@ async function runCombineCampaigns(config) {
       );
 
       lastArtifacts.analysisPath = analysisPath;
+      lastArtifacts.pptxPath = analysisPath.replace(/\.xlsx$/i, '_Business_Review.pptx');
       log(`✅ Analysis generated: ${analysisFilename}`);
 
       // Remove temp CSVs that were created only to feed the analysis worker
@@ -4130,6 +4137,7 @@ async function runCombineCampaigns(config) {
       allCsvFiles,
       logPath,
       analysisPath,
+      pptxPath: analysisPath ? analysisPath.replace(/\.xlsx$/i, '_Business_Review.pptx') : null,
       totalRows,
       wasSplit,
       fileCount
@@ -5001,12 +5009,13 @@ function createHttpServer() {
           ai_intent_mode: body.ai_intent_mode || 'local'
         });
 
-        const artifacts = { 
+        const artifacts = {
           csvPath: out.csvPath,
           allCsvFiles: out.allCsvFiles,
-          logPath: out.logPath 
+          logPath: out.logPath
         };
         if (out.analysisPath) artifacts.analysisPath = out.analysisPath;
+        if (out.pptxPath) artifacts.pptxPath = out.pptxPath;
 
         return sendJson(res, 200, {
           ok: true,
@@ -5234,24 +5243,28 @@ function createHttpServer() {
           await runAnalysisInWorker(csvResult.files, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel, false, csvTranscriptMap);
 
           lastArtifacts.analysisPath = analysisPath;
+          const pptxPath1 = analysisPath.replace(/\.xlsx$/i, '_Business_Review.pptx');
+          lastArtifacts.pptxPath = pptxPath1;
 
           const fileWord = csvTexts.length > 1 ? `${csvTexts.length} files` : '1 file';
           return sendJson(res, 200, {
             ok: true,
             message: `Analysis complete (${allRows.length.toLocaleString()} rows from ${fileWord})`,
-            artifacts: { analysisPath }
+            artifacts: { analysisPath, pptxPath: pptxPath1 }
           });
         }
 
         await runAnalysisInWorker(allRows, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel, false, csvTranscriptMap);
 
         lastArtifacts.analysisPath = analysisPath;
+        const pptxPath2 = analysisPath.replace(/\.xlsx$/i, '_Business_Review.pptx');
+        lastArtifacts.pptxPath = pptxPath2;
 
         const fileWord = csvTexts.length > 1 ? `${csvTexts.length} files` : '1 file';
         return sendJson(res, 200, {
           ok: true,
           message: `Analysis complete (${allRows.length.toLocaleString()} rows from ${fileWord})`,
-          artifacts: { analysisPath }
+          artifacts: { analysisPath, pptxPath: pptxPath2 }
         });
       } catch (e) {
         console.error('[API Error - /api/analyze-csv]', e.message, e.stack);
@@ -5498,6 +5511,8 @@ function createHttpServer() {
 
         lastArtifacts.analysisPath = analysisPath;
         lastArtifacts.logPath = logPath;
+        const dbPptxPath = analysisPath.replace(/\.xlsx$/i, '_Business_Review.pptx');
+        lastArtifacts.pptxPath = dbPptxPath;
 
         log(`\n✅ Complete! ${totalRows.toLocaleString()} rows analyzed.`);
         close();
@@ -5506,7 +5521,7 @@ function createHttpServer() {
           ok: true,
           message: `Database analysis complete (${totalRows.toLocaleString()} rows)`,
           rowCount: totalRows,
-          artifacts: { analysisPath, logPath }
+          artifacts: { analysisPath, pptxPath: dbPptxPath, logPath }
         });
       } catch (e) {
         console.error('[API Error - /api/analyze-database]', e.message, e.stack);

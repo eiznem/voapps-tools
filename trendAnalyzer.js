@@ -23,6 +23,7 @@ const ExcelJS = require('exceljs');
 const Papa = require('papaparse');
 const fs = require('fs');
 const path = require('path');
+const { generateBusinessReviewSlides } = require('./businessReview');
 
 // Import VERSION from central source of truth
 const { VERSION } = require('./version');
@@ -318,7 +319,13 @@ function parseTimestampLocal(timestamp) {
   const localDate = new Date(utcMs + offsetMinutes * 60 * 1000);
   const localDayOfWeek = localDate.getUTCDay();  // 0=Sun … 6=Sat in local time
 
-  return { utcDate, localHour, localDayOfWeek };
+  // Local date string YYYY-MM-DD (used for daily/weekly trend tracking)
+  const lY = localDate.getUTCFullYear();
+  const lM = String(localDate.getUTCMonth() + 1).padStart(2, '0');
+  const lD = String(localDate.getUTCDate()).padStart(2, '0');
+  const localDateStr = `${lY}-${lM}-${lD}`;
+
+  return { utcDate, localHour, localDayOfWeek, localDateStr };
 }
 
 /**
@@ -551,10 +558,12 @@ function detectTimezoneDiscrepancies(accountTimezones, accountResultTimezones) {
  * @param {number} minWidth - Minimum column width (default 8)
  * @param {number} maxWidth - Maximum column width (default 60)
  */
-function autoFitColumns(sheet, minWidth = 8, maxWidth = 60) {
+function autoFitColumns(sheet, minWidth = 8, maxWidth = 60, skipCols = []) {
+  const skipSet = new Set(skipCols);
   const colWidths = {};
   sheet.eachRow({ includeEmpty: false }, (row) => {
     row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+      if (skipSet.has(colNumber)) return;
       let len = 0;
       const v = cell.value;
       if (v == null) {
@@ -657,6 +666,7 @@ async function generateTrendAnalysis(
   for (let h = 0; h < 24; h++) globalHourlyStats[h] = { successful: 0, unsuccessful: 0, total: 0 };
   const globalDayStats = {};
   for (let d = 0; d < 7; d++) globalDayStats[d] = { successful: 0, unsuccessful: 0, total: 0 };
+  const dailyStats = {}; // 'YYYY-MM-DD' → { attempts, successes }
 
   // Normalise single-file string to one-element array so we always use the file-path path
   if (typeof csvInput === 'string') csvInput = [csvInput];
@@ -879,6 +889,14 @@ async function generateTrendAnalysis(
                 if (isSuccess) globalHourlyStats[localHour].successful++; else globalHourlyStats[localHour].unsuccessful++;
                 globalDayStats[localDow].total++;
                 if (isSuccess) globalDayStats[localDow].successful++; else globalDayStats[localDow].unsuccessful++;
+
+                // Daily trend tracking
+                const dateKey = parsed ? parsed.localDateStr : (pdOk ? parsedDate.toISOString().slice(0, 10) : null);
+                if (dateKey) {
+                  const ds = dailyStats[dateKey] || (dailyStats[dateKey] = { attempts: 0, successes: 0 });
+                  ds.attempts++;
+                  if (isSuccess) ds.successes++;
+                }
               }
 
               totalValidRows++;
@@ -1010,6 +1028,7 @@ async function generateTrendAnalysis(
       row.parsedMs      = _ok ? _pd.getTime() : null; // epoch number — no long-lived Date on row
       row.localHour     = parsed ? parsed.localHour      : (_ok ? _pd.getHours() : 0);
       row.localDayOfWeek = parsed ? parsed.localDayOfWeek : (_ok ? _pd.getDay()   : 0);
+      row.localDateStr  = parsed ? parsed.localDateStr   : (_ok ? _pd.toISOString().slice(0, 10) : null);
       row.voapps_result_normalized = String(row.voapps_result || '').trim().toLowerCase();
       row.isSuccess        = row.voapps_result_normalized === 'successfully delivered';
       // Only count as a delivery attempt if the row had a real original timestamp.
@@ -1134,6 +1153,13 @@ async function generateTrendAnalysis(
         if (row.isSuccess) globalHourlyStats[row.localHour].successful++; else globalHourlyStats[row.localHour].unsuccessful++;
         globalDayStats[row.localDayOfWeek].total++;
         if (row.isSuccess) globalDayStats[row.localDayOfWeek].successful++; else globalDayStats[row.localDayOfWeek].unsuccessful++;
+
+        // Daily trend tracking
+        if (row.localDateStr) {
+          const ds = dailyStats[row.localDateStr] || (dailyStats[row.localDateStr] = { attempts: 0, successes: 0 });
+          ds.attempts++;
+          if (row.isSuccess) ds.successes++;
+        }
       }
 
       totalValidRows++;
@@ -1404,6 +1430,7 @@ async function generateTrendAnalysis(
       messageIntent: messageIntent,
       firstAttempt: validFirstAttempt,
       lastAttempt: validLastAttempt,
+      lastAttemptMs: nd._lpMs,
       lastSuccessTimestamp: nd.lastSuccessTimestamp
     });
   }
@@ -1592,6 +1619,9 @@ async function generateTrendAnalysis(
   let _totalAttempts = 0, _totalSuccess = 0, _sumVariability = 0;
   let _backToBackIssueCount = 0, _lowDayVarietyCount = 0, _flaggedCount = 0;
   let _streak2 = 0, _streak3 = 0, _streak4 = 0, _streak5plus = 0;
+  let _staleWarmCount = 0;
+  const _maxMs = maxDate ? maxDate.getTime() : null;
+  const _thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
   for (const ns of numberSummaryArray) {
     _totalAttempts        += ns.totalAttempts;
     _totalSuccess         += ns.successful;   // stored as 'successful' in the push, not 'successCount'
@@ -1606,7 +1636,13 @@ async function generateTrendAnalysis(
     if (ns.maxSameStreak >= 3) _streak3++;
     if (ns.maxSameStreak >= 4) _streak4++;
     if (ns.maxSameStreak >= 5) _streak5plus++;
+    // Stale warm: had at least one successful delivery AND last attempt was 30+ days before maxDate
+    if (ns.successful > 0 && _maxMs && ns.lastAttemptMs &&
+        (_maxMs - ns.lastAttemptMs) >= _thirtyDaysMs) {
+      _staleWarmCount++;
+    }
   }
+  const staleWarmCount = _staleWarmCount;
   const streak2 = _streak2, streak3 = _streak3, streak4 = _streak4, streak5plus = _streak5plus;
   const totalAttempts      = _totalAttempts;
   const avgVariability     = totalUniqueInSummary > 0 ? _sumVariability / totalUniqueInSummary : 0;
@@ -1621,6 +1657,29 @@ async function generateTrendAnalysis(
   numSummaryMap.clear();
   numberSummaryArray.length = 0;
   log(`  Released ${(totalUniqueInSummary - flaggedCount).toLocaleString()} unflagged number entries from memory`);
+
+  // ── Pre-computed summary values used in both Excel and PPTX ─────────────────
+  const agentHoursSaved = Math.round(_totalSuccess * 3 / 60);
+
+  // Best Next Action — single highest-impact recommendation
+  const _cadTotalBNA = cadenceSingleTouch + cadenceMultiTouchCount;
+  const _stPctBNA    = _cadTotalBNA > 0 ? cadenceSingleTouch / _cadTotalBNA : 0;
+  const _longCadPct  = cadenceMultiTouchCount > 0 ? (cadenceBucket_over30 + cadenceBucket_16to30) / cadenceMultiTouchCount : 0;
+  let bestNextAction;
+  if (_stPctBNA >= 0.4) {
+    bestNextAction = `${cadenceSingleTouch.toLocaleString()} numbers (${(_stPctBNA * 100).toFixed(0)}% of the list) received only one DDVM during this period. Scheduling a follow-up campaign at a 3–10 day interval is the single highest-impact next step — consumers who didn't act on the first touch often engage on the second or third. This is existing-list volume with no new sourcing required.`;
+  } else if (staleWarmCount > 0 && staleWarmCount >= uniqueNumbers * 0.1) {
+    bestNextAction = `${staleWarmCount.toLocaleString()} numbers (${(staleWarmCount / Math.max(uniqueNumbers, 1) * 100).toFixed(0)}% of the list) previously received a successful DDVM but haven't been contacted in 30+ days. These are confirmed-reachable numbers — low-hanging fruit for re-engagement. A follow-up campaign here has a strong baseline delivery probability, subject to applicable compliance requirements.`;
+  } else if (_stPctBNA >= 0.2) {
+    bestNextAction = `${cadenceSingleTouch.toLocaleString()} numbers (${(_stPctBNA * 100).toFixed(0)}%) were contacted only once. Adding a follow-up campaign at a 3–10 day interval would put additional touches on a meaningful portion of the list — typically the easiest place to find incremental results without expanding the contact pool.`;
+  } else if (_longCadPct > 0.3) {
+    const _longCount = cadenceBucket_over30 + cadenceBucket_16to30;
+    bestNextAction = `${_longCount.toLocaleString()} re-attempted numbers are on a 16+ day cadence. Tightening to the 3–10 day ideal keeps outreach timely and relevant — consumers are more likely to respond when the next touch arrives before their situation changes.`;
+  } else if (overallSuccessRate >= 70) {
+    bestNextAction = `Campaign is delivering at ${overallSuccessRate.toFixed(1)}% — well above the industry midpoint. This is a strong foundation for expanding outreach: adding more numbers or increasing frequency on the existing list should yield proportional returns with low risk.`;
+  } else {
+    bestNextAction = `Focus next on the ${healthyCount.toLocaleString()} numbers (${(healthyCount / Math.max(uniqueNumbers, 1) * 100).toFixed(0)}%) currently connecting well. Concentrating volume on this reachable segment while monitoring the rest will improve overall campaign efficiency and ROI.`;
+  }
 
   // ============================================================================
   // CREATE WORKBOOK
@@ -1695,14 +1754,14 @@ async function generateTrendAnalysis(
   execSheet.getCell(`A${row}`).style = sectionHeaderStyle;
   row++;
 
-  // Grade-specific actionable advice for column C
+  // Grade-specific advice for column C — value-focused framing
   const listGradeAdvice = listGrade === 'A'
-    ? 'Excellent list health. Continue monitoring Delivery Unlikely numbers monthly and suppress promptly.'
+    ? 'Strong list health — your numbers are connecting well. Maintaining this grade protects delivery speed and keeps cost-per-contact low. Monthly review of Delivery Unlikely numbers will keep performance at this level.'
     : listGrade === 'B'
-    ? 'Good list health. Suppressing all Delivery Unlikely numbers and removing Never Delivered numbers could push this to an A.'
+    ? 'Good list health with clear room to improve. Removing numbers that are no longer reachable sharpens the active list, which typically raises overall delivery rate and reduces wasted attempts — a straightforward path to Grade A performance.'
     : listGrade === 'C'
-    ? 'Fair list health. Action recommended: suppress Delivery Unlikely numbers now and investigate Never Delivered numbers — many are likely landlines, disconnected, or invalid numbers that should be permanently removed from your list.'
-    : 'Poor list health. This list needs immediate cleanup. Suppressing Delivery Unlikely and removing Never Delivered numbers will improve delivery rates, lower cost-per-contact, and protect caller reputation.';
+    ? 'Moderate list health — there is meaningful opportunity here. Trimming numbers that have never delivered and suppressing persistent failures will concentrate your campaign spend on numbers that actually connect, improving ROI on every drop.'
+    : 'The list has a high proportion of numbers that are not connecting. Focusing spend on the reachable segment — by removing numbers that have repeatedly failed — will dramatically increase delivered % and reduce cost-per-contact for the numbers that matter.';
 
   // All aggregates pre-computed and numberSummaryArray freed above
   const keyMetrics = [
@@ -1711,14 +1770,22 @@ async function generateTrendAnalysis(
     ['Delivered %', `${overallSuccessRate.toFixed(1)}%`,
       'The percentage of all DDVM delivery attempts that resulted in a successful voicemail drop (result code 200 | Successfully delivered). Each attempt on a number counts separately — a number attempted 3 times and delivered once counts as 1 success out of 3 attempts.'],
     ['Never Delivered %', `${neverDeliveredPct.toFixed(1)}%`,
-      'The percentage of unique phone numbers that never received a single successful delivery across the entire date range. These numbers are the highest-priority suppression candidates — they consume campaign budget with zero return.'],
+      'The percentage of unique phone numbers that never received a successful voicemail delivery in this date range. Removing these from the active list redirects campaign spend entirely toward numbers that can and do connect.'],
     ['Average Variability Score', `${avgVariability.toFixed(0)}/100`,
-      '0–100 composite score measuring call pattern diversity — message rotation, caller variety, time-of-day spread, and day-of-week distribution. Below 60 is flagged; below 40 suggests repetitive, robocall-like patterns that risk carrier detection.'],
+      '0–100 composite score measuring call pattern diversity — message rotation, caller variety, time-of-day spread, and day-of-week distribution. Higher scores correlate with better deliverability and callback rates. Scores below 60 indicate patterns where increased variety is likely to improve results.'],
     ['List Quality Grade', listGrade, listGradeAdvice],
     ['Numbers Flagged in Detail Tabs', `${flaggedCount.toLocaleString()} of ${totalUniqueInSummary.toLocaleString()} (${flaggedPct.toFixed(1)}%) — Delivery Unlikely or variability < 60`,
       'Any number failing at least one threshold — classified Delivery Unlikely by TN Health, OR variability score below 60. A Healthy number with poor call diversity is still flagged. See TN Health and Variability Analysis tabs for the full breakdown (if enabled).'],
     ['Date Range', `${formatDate(minDate)} - ${formatDate(maxDate)}`],
-    ['Timezone', detectedTimezone]
+    ['Timezone', detectedTimezone],
+    ['Re-Engagement Opportunity', staleWarmCount > 0
+      ? `${staleWarmCount.toLocaleString()} numbers`
+      : 'None identified',
+      staleWarmCount > 0
+        ? `${staleWarmCount.toLocaleString()} numbers previously received at least one successful delivery but haven't been contacted in 30+ days (relative to the end of this date range). These are low-hanging fruit for re-engagement — the number is confirmed reachable, so a follow-up campaign has a strong baseline probability of delivery. Subject to any applicable compliance or opt-out requirements.`
+        : 'All numbers with prior successful deliveries have been contacted within the last 30 days.'],
+    ['Agent Hours Saved (est.)', `${agentHoursSaved.toLocaleString()} hrs`,
+      `Estimated agent capacity freed by DDVM. Based on ${_totalSuccess.toLocaleString()} successful deliveries × 3 min avg manual voicemail handle time (dial + wait + message). Use the ROI Calculator (coming soon) to customize this assumption.`]
   ];
 
   for (const [label, value, desc] of keyMetrics) {
@@ -1797,7 +1864,7 @@ async function generateTrendAnalysis(
     const cadenceRows = [
       ['Single Touch (1 attempt only)',
         `${cadenceSingleTouch.toLocaleString()} (${cadenceTotalNumbers > 0 ? (cadenceSingleTouch / cadenceTotalNumbers * 100).toFixed(1) : '0.0'}%)`,
-        'Numbers contacted exactly once in this dataset — no re-attempt cadence applicable.'],
+        'Numbers reached with a single DDVM during this period. Consumers often need 2–3 touches before taking action — a callback, a payment, or a response rarely happens the first time a message is heard. These numbers represent real follow-up opportunity: adding a second or third DDVM attempt at the right cadence (3–10 days) typically produces meaningful incremental results without diminishing returns.'],
       ['Re-attempted (2+ attempts)',
         `${cadenceMultiTouchCount.toLocaleString()} (${cadenceTotalNumbers > 0 ? (cadenceMultiTouchCount / cadenceTotalNumbers * 100).toFixed(1) : '0.0'}%)`,
         'Numbers with multiple attempts. Cadence breakdown below is based on the median interval between consecutive attempts for each number.'],
@@ -1806,7 +1873,7 @@ async function generateTrendAnalysis(
         'Numbers typically re-attempted on the same calendar day. Same-day re-attempts are rarely effective and may indicate a campaign configuration issue.'],
       ['  1–2 days',
         `${cadenceBucket_1to2.toLocaleString()} (${(cadenceBucket_1to2 / cadenceMultiTouchCount * 100).toFixed(1)}% of re-attempted)`,
-        'Very short interval. Next-day re-attempts do not give consumers adequate time to respond and can accelerate list fatigue.'],
+        'Very short interval after a successful delivery. Re-attempting a number the day after a successful drop does not give the consumer time to respond and can accelerate list fatigue. Note: re-attempting a number the day after an unsuccessful delivery attempt is perfectly acceptable — this flag is relevant only when the prior attempt succeeded.'],
       ['  3–5 days ✓',
         `${cadenceBucket_3to5.toLocaleString()} (${(cadenceBucket_3to5 / cadenceMultiTouchCount * 100).toFixed(1)}% of re-attempted)`,
         'Ideal range. Frequent enough to maintain urgency while giving consumers time to respond.'],
@@ -1815,10 +1882,10 @@ async function generateTrendAnalysis(
         'Ideal range. Solid cadence that balances persistence with consumer experience.'],
       ['  11–15 days',
         `${cadenceBucket_11to15.toLocaleString()} (${(cadenceBucket_11to15 / cadenceMultiTouchCount * 100).toFixed(1)}% of re-attempted)`,
-        'Slightly above ideal. Acceptable, but tightening to 6–10 days could improve results for time-sensitive campaigns.'],
+        'Longer than the 3–10 day ideal. Works well for lower-urgency or compliance-sensitive campaigns. For time-sensitive outreach, a tighter interval is likely to produce better engagement.'],
       ['  16–30 days',
         `${cadenceBucket_16to30.toLocaleString()} (${(cadenceBucket_16to30 / cadenceMultiTouchCount * 100).toFixed(1)}% of re-attempted)`,
-        'Below ideal frequency. Monthly cadence may leave recovery opportunities on the table — consider increasing contact frequency where list health allows.'],
+        'Significantly longer than the 3–10 day ideal. For most campaign types, a tighter cadence will increase the likelihood of connecting while the consumer\'s situation is still active.'],
       ['  30+ days',
         `${cadenceBucket_over30.toLocaleString()} (${(cadenceBucket_over30 / cadenceMultiTouchCount * 100).toFixed(1)}% of re-attempted)`,
         'Infrequent. Re-attempt intervals this long are likely leaving significant outreach opportunity unrealized for most campaign types.'],
@@ -1996,10 +2063,21 @@ async function generateTrendAnalysis(
     execSheet.getCell(`A${row}`).value = `Attempt ${dc.attemptIndex}`;
     execSheet.getCell(`A${row}`).font = { bold: true };
     execSheet.getCell(`B${row}`).value = `${(dc.probability * 100).toFixed(1)}%`;
-    execSheet.getCell(`C${row}`).value = `(${dc.total.toLocaleString()} attempts)`;
-    execSheet.getCell(`C${row}`).font = { color: { argb: '666666' } };
+    execSheet.getCell(`C${row}`).value = `${dc.successful.toLocaleString()} successful of ${dc.total.toLocaleString()} attempts`;
+    execSheet.getCell(`C${row}`).font = { italic: true, size: 9, color: { argb: 'FF555555' } };
     row++;
   }
+
+  // Decay context note
+  execSheet.mergeCells(`A${row}:C${row}`);
+  execSheet.getCell(`A${row}`).value =
+    'Success probability typically drops significantly after 4–6 consecutive unsuccessful attempts on a given number. ' +
+    'Numbers that reach this threshold are strong candidates for suppression — continued retries consume capacity with diminishing return. ' +
+    'Use the Suppression Candidates tab to identify numbers with extended consecutive failure runs.';
+  execSheet.getCell(`A${row}`).font = { italic: true, size: 9, color: { argb: 'FF555555' } };
+  execSheet.getCell(`A${row}`).alignment = { wrapText: true };
+  execSheet.getRow(row).height = 40;
+  row++;
 
   row++; // Blank row
 
@@ -2072,31 +2150,38 @@ async function generateTrendAnalysis(
   const actions = [];
 
   if (toxicCount > 0) {
-    actions.push(`SUPPRESS: ${toxicCount.toLocaleString()} numbers classified "Delivery Unlikely" should be suppressed from DDVM campaigns.`);
-  }
-  if (neverDeliveredCount > uniqueNumbers * 0.1) {
-    actions.push(`REVIEW: ${neverDeliveredCount.toLocaleString()} numbers have never been successfully delivered. Consider HLR lookup or removal.`);
+    actions.push('LIST QUALITY: Consider reviewing numbers with 4–6+ consecutive unsuccessful deliveries over a span of 30+ days. Numbers that have not connected after sustained attempts are unlikely to connect going forward — focusing future campaigns on the reachable segment concentrates spend where it produces results. The Suppression Candidates tab has this list ready to review.');
   }
   if (avgVariability < 40) {
-    actions.push(`IMPROVE ROTATION: Average variability score of ${avgVariability.toFixed(0)} is low. Increase message and caller diversity.`);
+    actions.push(`MESSAGE DIVERSITY: Variability score of ${avgVariability.toFixed(0)} suggests the same recordings are being used frequently on the same numbers. Introducing additional message recordings and rotating them across attempts tends to improve engagement — consumers are more likely to listen when each contact feels distinct. See Variability Analysis for numbers where this will have the most impact.`);
   }
 
   // Check for back-to-back issues (backToBackIssues pre-computed above)
   if (backToBackIssues > uniqueNumbers * 0.1) {
-    actions.push(`MESSAGE FATIGUE: ${backToBackIssues.toLocaleString()} numbers received back-to-back identical messages. Vary your messaging.`);
+    actions.push(`MESSAGE ROTATION: ${backToBackIssues.toLocaleString()} numbers received the same message on consecutive attempts. Varying the recording each time a number is re-attempted keeps the outreach feeling fresh and increases the chance the consumer engages rather than dismisses it.`);
   }
 
   // Check day distribution (lowDayVariety pre-computed above)
   if (lowDayVariety > uniqueNumbers * 0.2) {
-    actions.push(`WEEKDAY VARIANCE: ${lowDayVariety.toLocaleString()} numbers have DDVM attempts on the same days. Spread attempts across the week.`);
+    actions.push(`DAY ROTATION: A portion of numbers are being contacted on the same day pattern each week. Consumers who receive outreach on a predictable day begin to mentally categorize it as routine, which reduces engagement. Spreading attempts across additional days keeps the contact feeling timely and relevant. See "Global Insights (Days)" for specifics.`);
   }
 
   // Add day-of-week recommendations for accounts/messages
   if (accountDayRecommendations.length > 0) {
-    actions.push(`DAY DISTRIBUTION: ${accountDayRecommendations.length} account(s) only send DDVM on limited days. See "Global Insights (Days)" for details.`);
+    actions.push(`DAY ROTATION: ${accountDayRecommendations.length} account(s) are using a limited set of delivery days. Expanding to additional days of the week is a low-effort change that can meaningfully improve engagement rates. See "Global Insights (Days)" for details.`);
   }
   if (messageDayRecommendations.length > 0) {
-    actions.push(`DAY DISTRIBUTION: ${messageDayRecommendations.length} message(s) only used on limited days. See "Global Insights (Days)" for details.`);
+    actions.push(`DAY ROTATION: ${messageDayRecommendations.length} message(s) are being used on a limited set of days. Rotating delivery days for these messages will help avoid the predictable-pattern effect. See "Global Insights (Days)" for details.`);
+  }
+
+  // Check for aggressive re-attempt cadence
+  if (cadenceMultiTouchCount > 0) {
+    if (cadenceBucket_sameDay > cadenceMultiTouchCount * 0.1) {
+      actions.push(`CADENCE: ${cadenceBucket_sameDay.toLocaleString()} numbers (${(cadenceBucket_sameDay / cadenceMultiTouchCount * 100).toFixed(0)}% of re-attempted) are being contacted multiple times on the same calendar day. Same-day re-attempts rarely produce additional successful deliveries and may indicate a campaign configuration issue worth reviewing.`);
+    }
+    if (cadenceBucket_1to2 > cadenceMultiTouchCount * 0.2) {
+      actions.push(`CADENCE: A significant share of re-attempts are occurring within 1–2 days of a prior successful delivery. Consumers need time to act on a message — re-contacting too quickly after a successful drop reduces the likelihood they respond and can diminish the impact of future attempts. A 3–10 day interval after a successful delivery gives the message time to work.`);
+    }
   }
 
   // Check for aggressive re-attempt cadence
@@ -2111,22 +2196,22 @@ async function generateTrendAnalysis(
 
   // Add timezone discrepancy warning
   if (timezoneDiscrepancies.length > 0) {
-    actions.push(`TIMEZONE SETTINGS: ${timezoneDiscrepancies.length} account(s) have timezone mismatches between account settings and results. Check DirectDrop Voicemail account settings to ensure the "Use account timezone in results file" checkbox is enabled for consistent reporting.`);
+    actions.push(`REPORTING ACCURACY: ${timezoneDiscrepancies.length} account(s) have timezone mismatches between account settings and results. Enabling "Use account timezone in results file" in DirectDrop Voicemail account settings will ensure timestamps and day-of-week analysis in this report reflect the correct local time for each account.`);
   }
 
   // Add config error warnings
   if (configErrors['invalid message id'].total > 0) {
-    actions.push(`INVALID MESSAGE ID: ${configErrors['invalid message id'].total.toLocaleString()} attempts failed due to an invalid message ID. Verify message IDs are correct in your campaign configuration. See Executive Summary for breakdown by caller number.`);
+    actions.push(`CONFIGURATION: ${configErrors['invalid message id'].total.toLocaleString()} attempts could not be delivered due to an invalid message ID — these represent campaign spend with no delivery outcome. Verifying message IDs in the campaign configuration will recover this capacity for productive attempts. See the Executive Summary config error section for a breakdown by caller number.`);
   }
   if (configErrors['invalid caller number'].total > 0) {
-    actions.push(`INVALID CALLER NUMBER: ${configErrors['invalid caller number'].total.toLocaleString()} attempts failed due to an invalid caller number. Verify caller numbers are active and correctly configured in your account.`);
+    actions.push(`CONFIGURATION: ${configErrors['invalid caller number'].total.toLocaleString()} attempts could not be delivered due to an invalid caller number. Confirming that all caller numbers are active and correctly configured in the account will ensure these attempts reach consumers on future campaigns.`);
   }
   if (configErrors['prohibited self call'].total > 0) {
-    actions.push(`PROHIBITED SELF CALL: ${configErrors['prohibited self call'].total.toLocaleString()} attempts were blocked as self-calls. Ensure caller numbers do not match destination numbers in your campaigns.`);
+    actions.push(`CONFIGURATION: ${configErrors['prohibited self call'].total.toLocaleString()} attempts were blocked because the caller number matched the destination number. Reviewing the campaign contact list for numbers that match any active caller IDs will prevent these from being skipped.`);
   }
 
   if (actions.length === 0) {
-    actions.push('No critical issues detected. Continue monitoring delivery performance.');
+    actions.push('Campaign performance looks strong. Delivery rates, list health, and rotation patterns are all within recommended ranges — continue monitoring regularly to maintain this level of performance.');
   }
 
   for (const action of actions) {
@@ -2139,6 +2224,27 @@ async function generateTrendAnalysis(
 
   row++; // Blank row
 
+  // ── Best Next Action ──────────────────────────────────────────────────────
+  {
+    execSheet.mergeCells(`A${row}:C${row}`);
+    execSheet.getCell(`A${row}`).value = 'Best Next Action';
+    execSheet.getCell(`A${row}`).style = {
+      ...sectionHeaderStyle,
+      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF3F2FB8' } }
+    };
+    row++;
+    execSheet.mergeCells(`A${row}:C${row}`);
+    execSheet.getCell(`A${row}`).value = bestNextAction;
+    execSheet.getCell(`A${row}`).style = {
+      ...contentStyle,
+      font: { size: 11, bold: true, color: { argb: 'FF0D053F' } },
+      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8E4FF' } }
+    };
+    execSheet.getRow(row).height = 55;
+    row++;
+    row++; // spacer
+  }
+
   // Client Rationale
   execSheet.mergeCells(`A${row}:C${row}`);
   execSheet.getCell(`A${row}`).value = 'Why This Matters';
@@ -2146,10 +2252,10 @@ async function generateTrendAnalysis(
   row++;
 
   const rationale = [
-    'Even though unsuccessful deliveries are not billed, repeated retries consume carrier capacity, delay successful drops, distort analytics, and can degrade caller reputation.',
-    'After several consecutive failures, success probability typically drops below 20%. Continuing to retry mostly creates noise rather than results.',
-    'Suppressing persistently failing numbers improves delivery speed for good numbers, protects your caller reputation with carriers, and produces cleaner performance data.',
-    'Varying messages, caller numbers, and delivery timing creates a more natural pattern that improves deliverability and increases the likelihood that messages are received and heard.'
+    'DDVM works best when it reaches numbers that are genuinely reachable. A clean, focused list means every drop has a higher probability of connecting — improving delivered %, reducing cost-per-contact, and generating more callbacks from the same campaign spend.',
+    'Delivery success rate naturally declines as a number accumulates failed attempts. Numbers that haven\'t connected after several tries are unlikely to connect in the future — concentrating volume on the active segment unlocks the performance the channel is capable of.',
+    'Message and caller rotation signal to both consumers and carriers that the outreach is varied and purposeful. Higher variability scores correlate with better deliverability and stronger callback rates over time.',
+    'Cadence matters: the 3–10 day re-attempt window gives consumers enough time to act on a message before the next drop arrives. Campaigns operating in this window typically see meaningfully better engagement than those with very short or very long intervals.'
   ];
 
   for (const text of rationale) {
@@ -2169,11 +2275,10 @@ async function generateTrendAnalysis(
   row++;
 
   const insights = [
-    'Review "TN Health" tab (if enabled) to identify numbers with poor delivery performance.',
-    'Review "Retry Decay Curve" to understand when retries become unproductive.',
-    'Review "Global Insights (Days)" to identify day-of-week delivery patterns and consider scheduling changes.',
-    'Review "Variability Analysis" to find numbers that may benefit from more diverse messaging.',
-    'Review "Suppression Candidates" for numbers with repeated delivery failures — suppression recommended.'
+    '"TN Health" tab: identifies which numbers are connecting consistently and which have stalled — a direct indicator of where campaign spend is working hardest.',
+    '"Suppression Candidates" tab: numbers with extended consecutive failure runs, ready to act on — removing these sharpens the active list and raises the overall delivery rate.',
+    '"Variability Analysis" tab: shows where message and caller rotation is strong and where it has room to grow — higher diversity consistently correlates with better results.',
+    '"Global Insights (Days)" tab: reveals day-of-week delivery patterns — varying the days consumers receive messages prevents the predictable-pattern effect and keeps outreach feeling timely.'
   ];
 
   for (const insight of insights) {
@@ -2188,53 +2293,7 @@ async function generateTrendAnalysis(
   execSheet.getColumn(3).width = 130.83; // renders as 130
 
   // ========================================
-  // TAB 2: RETRY DECAY CURVE
-  // ========================================
-
-  log('Creating Retry Decay Curve tab...');
-
-  const decaySheet = workbook.addWorksheet('Retry Decay Curve', {
-    views: [{ state: 'frozen', xSplit: 0, ySplit: 1 }]
-  });
-
-  // Add table headers with VoApps styling
-  const decayHeaders = ['Attempt Index', 'Total DDVM Attempts', 'Successful', 'Success Probability', 'Insight'];
-  decaySheet.getRow(1).values = decayHeaders;
-  decaySheet.getRow(1).eachCell((cell) => {
-    cell.style = tableHeaderStyle;
-  });
-
-  let decayRow = 2;
-  for (const dc of decayCurve) {
-    let insight = '';
-    if (dc.probability >= 0.5) insight = 'Good - Continue';
-    else if (dc.probability >= 0.25) insight = 'Declining - Monitor';
-    else if (dc.probability >= 0.15) insight = 'Low - Consider suppression';
-    else insight = 'Very Low - Suppress';
-
-    decaySheet.getRow(decayRow).values = [
-      dc.attemptIndex,
-      dc.total,
-      dc.successful,
-      dc.probability,
-      insight
-    ];
-    // Attempt Index may be the string '10+' which ExcelJS left-aligns by default —
-    // explicitly right-align every data cell in column A for consistency.
-    decaySheet.getCell(`A${decayRow}`).alignment = { horizontal: 'right' };
-    decaySheet.getCell(`D${decayRow}`).numFmt = '0.0%';
-
-    if (dc.probability < 0.15) {
-      decaySheet.getCell(`E${decayRow}`).style = warningStyle;
-    }
-
-    decayRow++;
-  }
-
-  autoFitColumns(decaySheet, 12, 40);
-
-  // ========================================
-  // TAB 3: TN HEALTH
+  // TAB 2: TN HEALTH
   // ========================================
 
   log('Creating TN Health tab...');
@@ -2534,7 +2593,7 @@ async function generateTrendAnalysis(
   timeSheet.mergeCells('A1:E1');
 
   // Daily Success Patterns
-  const dailyStats = globalDayStats;
+  const dowStats = globalDayStats;
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
   const dayHeaderRow = 3;
@@ -2545,7 +2604,7 @@ async function generateTrendAnalysis(
 
   let dayRow = dayHeaderRow + 1;
   for (let d = 0; d < 7; d++) {
-    const stats = dailyStats[d];
+    const stats = dowStats[d];
     const successRate = stats.total > 0 ? stats.successful / stats.total : 0;
     timeSheet.getRow(dayRow).values = [dayNames[d], stats.total, stats.successful, stats.unsuccessful, successRate];
     timeSheet.getCell(`E${dayRow}`).numFmt = '0.0%';
@@ -2560,8 +2619,11 @@ async function generateTrendAnalysis(
     const tipRow = recoStartRow - 1;
     timeSheet.mergeCells(`A${tipRow}:E${tipRow}`);
     timeSheet.getCell(`A${tipRow}`).value =
-      'Tip: Consumers contacted on predictable, recurring days can unconsciously learn to dismiss your messages. ' +
-      'Varying day of week — even slightly — disrupts that pattern recognition and makes your outreach more likely to prompt action.';
+      'Consumers who receive your message on a predictable day pattern begin to recognize and mentally categorize it as routine — ' +
+      'reducing the likelihood they listen or call back. Rotating across additional days of the week (in addition to using different ' +
+      'message recordings) makes your outreach feel less automated and more timely. Keep in mind that if a specific message is part ' +
+      'of a planned sequence and future messages will be different, the rotation benefit compounds — each touchpoint feels fresh ' +
+      'rather than expected.';
     timeSheet.getCell(`A${tipRow}`).font = { italic: true, size: 10, color: { argb: 'FF555555' } };
 
     timeSheet.getCell(`A${recoStartRow}`).value = 'Day-of-Week Recommendations';
@@ -2587,7 +2649,11 @@ async function generateTrendAnalysis(
     }
   }
 
-  autoFitColumns(timeSheet, 12, 100);
+  timeSheet.getColumn(1).width = 40;
+  timeSheet.getColumn(2).width = 40;
+  timeSheet.getColumn(3).width = 40;
+  timeSheet.getColumn(4).width = 40;
+  autoFitColumns(timeSheet, 12, 100, [1, 2, 3, 4]); // skip A–D, auto-fit remaining columns only
 
   // ========================================
   // TAB 9: CONSECUTIVE UNSUCCESSFUL
@@ -2627,7 +2693,163 @@ async function generateTrendAnalysis(
   autoFitColumns(consecSheet, 12, 50);
 
   // ========================================
-  // TAB 10: GLOSSARY
+  // TAB 10: DELIVERY TREND
+  // ========================================
+
+  log('Creating Delivery Trend tab...');
+  {
+    const trendSheet = workbook.addWorksheet('Delivery Trend', {
+      properties: { tabColor: { argb: 'FF16509B' } }
+    });
+
+    // ── Build sorted date list ──────────────────────────────────────────────
+    const sortedDates = Object.keys(dailyStats).sort();
+    const useWeekly   = sortedDates.length > 60; // collapse to weeks if wide range
+
+    // Aggregate into buckets (daily or ISO-week Mon–Sun)
+    const buckets = new Map(); // key → { label, attempts, successes, weekStart }
+    for (const d of sortedDates) {
+      let key, label;
+      if (useWeekly) {
+        // ISO week: find Monday of the week containing this date
+        const dt   = new Date(d + 'T00:00:00Z');
+        const dow  = (dt.getUTCDay() + 6) % 7; // Mon=0
+        const mon  = new Date(dt.getTime() - dow * 86400000);
+        const mon2 = new Date(mon.getTime() + 6 * 86400000);
+        const fmt  = (d2) => {
+          const mo = String(d2.getUTCMonth() + 1).padStart(2, '0');
+          const dy = String(d2.getUTCDate()).padStart(2, '0');
+          return `${d2.getUTCFullYear()}-${mo}-${dy}`;
+        };
+        key   = fmt(mon);
+        label = `${fmt(mon)} – ${fmt(mon2)}`;
+      } else {
+        key = label = d;
+      }
+      const existing = buckets.get(key) || { label, attempts: 0, successes: 0 };
+      existing.attempts  += dailyStats[d].attempts;
+      existing.successes += dailyStats[d].successes;
+      buckets.set(key, existing);
+    }
+    const bucketList = Array.from(buckets.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+
+    // ── Styles ──────────────────────────────────────────────────────────────
+    const trHeaderStyle = {
+      font: { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 },
+      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0D053F' } },
+      alignment: { horizontal: 'center', vertical: 'middle' },
+      border: { bottom: { style: 'thin', color: { argb: 'FFFF4B7D' } } }
+    };
+    const trEvenStyle = { fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFBF7F3' } } };
+    const trOddStyle  = { fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } } };
+    const trNumStyle  = { alignment: { horizontal: 'right' }, numFmt: '#,##0' };
+    const trPctStyle  = { alignment: { horizontal: 'right' }, numFmt: '0.0%' };
+
+    // ── Title ───────────────────────────────────────────────────────────────
+    trendSheet.mergeCells('A1:F1');
+    trendSheet.getCell('A1').value = `Delivery Trend — ${useWeekly ? 'Weekly' : 'Daily'} Breakdown`;
+    trendSheet.getCell('A1').style = {
+      font: { bold: true, size: 14, color: { argb: 'FF0D053F' } },
+      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFBF7F3' } },
+      alignment: { horizontal: 'left', vertical: 'middle' }
+    };
+    trendSheet.getRow(1).height = 30;
+
+    // ── Column headers ───────────────────────────────────────────────────────
+    const trHeaders = [
+      useWeekly ? 'Week' : 'Date',
+      'Attempts',
+      'Successful',
+      'Success Rate',
+      'WoW Attempts',
+      'WoW Successful'
+    ];
+    trendSheet.addRow([]); // row 2 blank
+    const hdrRow = trendSheet.getRow(3);
+    trHeaders.forEach((h, i) => {
+      hdrRow.getCell(i + 1).value = h;
+      hdrRow.getCell(i + 1).style = trHeaderStyle;
+    });
+    hdrRow.height = 24;
+
+    // ── Data rows ────────────────────────────────────────────────────────────
+    let dataStartRow = 4;
+    bucketList.forEach(([, bkt], idx) => {
+      const rowNum = dataStartRow + idx;
+      const prev   = idx > 0 ? bucketList[idx - 1][1] : null;
+      const wowAtt = prev ? bkt.attempts  - prev.attempts  : null;
+      const wowSuc = prev ? bkt.successes - prev.successes : null;
+      const rate   = bkt.attempts > 0 ? bkt.successes / bkt.attempts : 0;
+      const baseStyle = idx % 2 === 0 ? trEvenStyle : trOddStyle;
+
+      trendSheet.getRow(rowNum).height = 18;
+      trendSheet.getCell(`A${rowNum}`).value = bkt.label;
+      trendSheet.getCell(`A${rowNum}`).style = { ...baseStyle, font: { size: 10 }, alignment: { horizontal: 'left' } };
+      trendSheet.getCell(`B${rowNum}`).value = bkt.attempts;
+      trendSheet.getCell(`B${rowNum}`).style = { ...baseStyle, ...trNumStyle, font: { size: 10 } };
+      trendSheet.getCell(`C${rowNum}`).value = bkt.successes;
+      trendSheet.getCell(`C${rowNum}`).style = { ...baseStyle, ...trNumStyle, font: { size: 10 } };
+      trendSheet.getCell(`D${rowNum}`).value = rate;
+      trendSheet.getCell(`D${rowNum}`).style = { ...baseStyle, ...trPctStyle, font: { size: 10 } };
+      if (wowAtt !== null) {
+        trendSheet.getCell(`E${rowNum}`).value = wowAtt;
+        trendSheet.getCell(`E${rowNum}`).style = {
+          ...baseStyle, ...trNumStyle, font: { size: 10, color: { argb: wowAtt >= 0 ? 'FF1E7E34' : 'FFC0392B' } }
+        };
+        trendSheet.getCell(`F${rowNum}`).value = wowSuc;
+        trendSheet.getCell(`F${rowNum}`).style = {
+          ...baseStyle, ...trNumStyle, font: { size: 10, color: { argb: wowSuc >= 0 ? 'FF1E7E34' : 'FFC0392B' } }
+        };
+      }
+    });
+
+    // ── Data bars on Attempts (col B) and Successful (col C) ────────────────
+    if (bucketList.length > 0) {
+      const lastDataRow = dataStartRow + bucketList.length - 1;
+      const attRange = `B${dataStartRow}:B${lastDataRow}`;
+      const sucRange = `C${dataStartRow}:C${lastDataRow}`;
+      trendSheet.addConditionalFormatting({
+        ref: attRange,
+        rules: [{ type: 'dataBar', priority: 1, minLength: 0, maxLength: 100,
+          cfvo: [{ type: 'min' }, { type: 'max' }],
+          color: { argb: 'FF0D053F' }  // navy
+        }]
+      });
+      trendSheet.addConditionalFormatting({
+        ref: sucRange,
+        rules: [{ type: 'dataBar', priority: 1, minLength: 0, maxLength: 100,
+          cfvo: [{ type: 'min' }, { type: 'max' }],
+          color: { argb: 'FF1E7E34' }  // green
+        }]
+      });
+    }
+
+    // ── Totals row ───────────────────────────────────────────────────────────
+    if (bucketList.length > 0) {
+      const totRow = dataStartRow + bucketList.length + 1;
+      trendSheet.getCell(`A${totRow}`).value = 'TOTAL';
+      trendSheet.getCell(`A${totRow}`).style = { font: { bold: true, size: 10, color: { argb: 'FF0D053F' } }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFAD6D7' } } };
+      trendSheet.getCell(`B${totRow}`).value = totalAttempts;
+      trendSheet.getCell(`B${totRow}`).style = { font: { bold: true, size: 10 }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFAD6D7' } }, ...trNumStyle };
+      trendSheet.getCell(`C${totRow}`).value = _totalSuccess;
+      trendSheet.getCell(`C${totRow}`).style = { font: { bold: true, size: 10 }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFAD6D7' } }, ...trNumStyle };
+      const totRate = totalAttempts > 0 ? _totalSuccess / totalAttempts : 0;
+      trendSheet.getCell(`D${totRow}`).value = totRate;
+      trendSheet.getCell(`D${totRow}`).style = { font: { bold: true, size: 10 }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFAD6D7' } }, ...trPctStyle };
+    }
+
+    trendSheet.getColumn('A').width = useWeekly ? 26 : 14;
+    trendSheet.getColumn('B').width = 16;
+    trendSheet.getColumn('C').width = 16;
+    trendSheet.getColumn('D').width = 14;
+    trendSheet.getColumn('E').width = 16;
+    trendSheet.getColumn('F').width = 16;
+
+    log(`  Delivery Trend: ${bucketList.length} ${useWeekly ? 'week' : 'day'} buckets`);
+  }
+
+  // ========================================
+  // TAB 11: GLOSSARY
   // ========================================
 
   log('Creating Glossary tab...');
@@ -2654,7 +2876,7 @@ async function generateTrendAnalysis(
     ['TN Health', 'Classification of phone number health based on delivery performance: Healthy (good deliverability) or Delivery Unlikely (successful delivery is highly unlikely based on consecutive failures and low success rate).'],
     ['Never Delivered', 'A phone number that has never received a successful DDVM delivery across all attempts.'],
     ['Variability Score', 'A 0-100 score measuring how much variety exists in messaging, caller numbers, and timing. Higher scores indicate better rotation practices.'],
-    ['Retry Decay Curve', `Shows how DDVM delivery success rate changes with each successive attempt on a phone number. "Attempt index" is how many times a given number has been tried within this date range.
+    ['Success Probability by Attempt', `Shows how DDVM delivery success rate changes with each successive attempt on a phone number. "Attempt index" is how many times a given number has been tried within this date range.
 
 How to read it: Each data point represents all numbers at that attempt count — not the same number over time. Attempt 1 numbers are those receiving their very first DDVM attempt; attempt 2 numbers have already had one failed delivery; and so on.
 
@@ -2667,7 +2889,7 @@ Why does overall Delivered % (76%) seem higher than attempt 2 (30%)? Because the
 
 The declining curve also reflects selection bias: numbers that succeed on attempt 1 are the easy-to-reach numbers. By attempt 2, the pool consists mostly of harder-to-reach numbers — full voicemails, non-wireless lines, carrier restrictions — which naturally have lower success rates regardless of how many times they are tried.
 
-Use the curve to set retry limits: when the curve drops below ~15–20%, additional retries produce very few new successful deliveries. Suppress those numbers as Delivery Unlikely rather than continuing to burn attempts on them.`],
+Use the data to set retry limits: when success probability drops below ~15–20%, additional retries produce very few new successful deliveries. Numbers with extended consecutive failure runs are listed in the Suppression Candidates tab.`],
     ['Back-to-Back Identical', 'Count of times the same message was delivered to a number in consecutive attempts. Should be minimized for natural delivery patterns.'],
     ['Day Entropy', 'Measure of how evenly distributed DDVM attempts are across days of the week. Higher entropy (closer to 1.0) means better day-of-week variety.'],
     ['Message Intent', 'Inferred purpose of a message based on its name or AI transcript (e.g., collections, reminder, appointment, callback, welcome, followup, loan servicing). When AI Message Analysis is enabled, intent is derived from the full transcript using a classification model for higher accuracy.'],
@@ -2683,7 +2905,7 @@ Use the curve to set retry limits: when the curve drops below ~15–20%, additio
     glossarySheet.getCell(`A${glossRow}`).font = { bold: true };
     glossarySheet.getCell(`B${glossRow}`).value = def;
     glossarySheet.getCell(`B${glossRow}`).style = contentStyle;
-    glossarySheet.getRow(glossRow).height = term === 'Retry Decay Curve' ? 240 : 40;
+    glossarySheet.getRow(glossRow).height = term === 'Success Probability by Attempt' ? 240 : 40;
     glossRow++;
   }
 
@@ -2768,8 +2990,8 @@ Use the curve to set retry limits: when the curve drops below ~15–20%, additio
   const bestPractices = [
     ['Message Rotation', 'Avoid sending the same message to a number repeatedly. Vary your messages to improve deliverability and engagement.'],
     ['Caller Number Diversity', 'Use multiple caller numbers to reduce the appearance of automated patterns and improve answer rates.'],
-    ['Day-of-Week Variety', 'Distribute DDVM attempts across different days of the week. Consumers who receive your message on the same day each week develop a predictable pattern — they learn to dismiss or delete without listening. Varying the day of contact disrupts this expectation and increases engagement. Note: most contact centers do not work Sundays, and some do not work Saturdays.'],
-    ['Retry Limits', 'Stop retrying numbers after 4-6 consecutive failures. The Retry Decay Curve shows how success probability drops sharply after repeated attempts — continued retries waste resources with diminishing returns.'],
+    ['Day-of-Week Variety', 'Consumers who receive your message on a predictable day pattern begin to recognize and mentally categorize it as routine — reducing the likelihood they listen or call back. Rotating across additional days of the week, in addition to varying message recordings, makes your outreach feel less automated and more timely. Note: most contact centers do not work Sundays, and some do not work Saturdays.'],
+    ['Retry Limits', 'Stop retrying numbers after 4–6 consecutive failures. Success probability drops sharply with each additional attempt on a persistently failing number — continued retries waste carrier capacity and campaign budget with diminishing returns.'],
     ['List Hygiene', 'Regularly suppress numbers classified as Delivery Unlikely to protect caller reputation, improve delivery speed, and maintain clean analytics. Numbers classified as Never Delivered should be permanently removed — these are not reachable by DDVM and will never generate a return on your campaign spend.']
   ];
 
@@ -2792,6 +3014,54 @@ Use the curve to set retry limits: when the curve drops below ~15–20%, additio
   log('Writing Excel file...');
   await workbook.xlsx.writeFile(outputPath);
   log(`Delivery Intelligence Analysis complete: ${path.basename(outputPath)}`);
+
+  // ── Business Review Slides ───────────────────────────────────────────────────
+  try {
+    const pptxPath    = outputPath.replace(/\.xlsx$/i, '_Business_Review.pptx');
+    const squareLogo  = path.join(__dirname, 'assets', 'logo_square.png');
+    const circleLogo  = path.join(__dirname, 'assets', 'logo_circle.png');
+    const slideAccountIds = Object.keys(accountStats).slice(0, 6);
+    await generateBusinessReviewSlides(
+      {
+        uniqueNumbers,
+        totalAttempts,
+        totalSuccess:         _totalSuccess,
+        overallSuccessRate,
+        listGrade,
+        healthyCount,
+        toxicCount,
+        neverDeliveredCount,
+        avgVariability,
+        decayCurve,
+        cadence: {
+          cadenceMultiTouchCount,
+          cadenceSingleTouch,
+          cadenceBucket_sameDay,
+          cadenceBucket_1to2,
+          cadenceBucket_3to5,
+          cadenceBucket_6to10,
+          cadenceBucket_11to15,
+          cadenceBucket_16to30,
+          cadenceBucket_over30,
+          cadenceOverallMedian
+        },
+        actions,
+        bestNextAction,
+        agentHoursSaved,
+        staleWarmCount,
+        minDate,
+        maxDate,
+        accountIds: slideAccountIds
+      },
+      pptxPath,
+      null,
+      fs.existsSync(squareLogo) ? squareLogo : null,
+      fs.existsSync(circleLogo) ? circleLogo : null
+    );
+    log(`Business review slides saved: ${path.basename(pptxPath)}`);
+  } catch (slideErr) {
+    log(`[Warning] Business review slides could not be generated: ${slideErr.message}`);
+  }
 
   return {
     totalRecords: totalValidRows,

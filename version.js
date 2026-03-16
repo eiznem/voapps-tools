@@ -2,7 +2,7 @@
 // VoApps Tools Version Management
 //
 // Notes:
-// - Current version reflects the newest release (4.1.0).
+// - Current version reflects the newest release (4.2.3).
 // - Keeps feature flags + author from the original "DuckDB Edition" file.
 // - Changelog is unified so each version can include: changes/features, fixes, and breaking changes.
 
@@ -10,9 +10,9 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '4.1.0',
-  VERSION_NAME: 'AI Message Intelligence',
-  RELEASE_DATE: '2026-03-11',
+  VERSION: '4.2.3',
+  VERSION_NAME: 'Call Center Intelligence',
+  RELEASE_DATE: '2026-03-13',
   AUTHOR: 'Brett Menzie',
 
   // -----------------------------
@@ -50,6 +50,78 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '4.2.3': {
+      date: '2026-03-13',
+      title: 'Call Center Intelligence',
+      fixes: [
+        'PPTX header: date subheading now overlays inside the header band (no vertical stretch of the pink icon block)',
+        'PPTX metric card values: font size increased to 32pt (IvyPresto Text) across all campaign overview cards for improved readability',
+        'PPTX metric card labels: font size increased to 11pt for improved readability',
+        'PPTX metric card subtext: font size increased to 10pt',
+        'PPTX slide layout: content area shifted down to match refined spacing (row1Y=1.50, table y=1.98 on slides 3–4)',
+        'PPTX Agent Hours card: redesigned as full purple card with precise interior layout — value at correct position, subtext no longer overlaps the number',
+        'PPTX Agent Hours card: width aligned to card grid right edge (12.32 in)',
+        'PPTX single-touch strip: headline 12pt, body 10pt, tightened vertical positions',
+        'PPTX Best Next Action banner: height increased to 0.98 in, eyebrow label 10pt, moved closer to header'
+      ]
+    },
+    '4.2.2': {
+      date: '2026-03-12',
+      title: 'Call Center Intelligence',
+      fixes: [
+        'Fixed startup crash — SyntaxError: Identifier "dailyStats" has already been declared (duplicate variable name in day-of-week analysis block introduced in 4.2.1)'
+      ]
+    },
+    '4.2.1': {
+      date: '2026-03-12',
+      title: 'Call Center Intelligence',
+      changes: [
+        'New "Delivery Trend" Excel tab: daily or weekly breakdown of attempts and successful deliveries with navy/green data bars, week-over-week change columns (green/red), and a totals row — auto-switches to weekly view when date range exceeds 60 days',
+        'Best Next Action: synthesized single headline recommendation surfaced in the Excel executive summary (purple section) and as a navy top banner on the PPTX Opportunities slide — prioritizes single-touch follow-up, stale re-engagement, or cadence tightening based on the data',
+        'Agent Hours Saved: successful deliveries × 3 min avg manual handle time — shown in Excel Key Metrics and as a full-width metric card on the PPTX Campaign Overview slide',
+        'Re-Engagement Opportunity: counts numbers with prior successful delivery not contacted in 30+ days — confirmed-reachable low-hanging fruit for re-engagement, subject to compliance requirements — in Excel Key Metrics and PPTX Slide 2 callout',
+        'Single-touch insight on PPTX Slide 2: callout strip shows how many numbers received only one attempt and frames them as follow-up opportunity; includes stale warm number count when present',
+        'PPTX Slide 4 (Cadence): preamble now shows both re-attempted and single-touch counts; navy insight strip added encouraging multi-touch outreach',
+        'Delivery Cadence executive summary: Single Touch row rewritten with value/opportunity framing — explains consumers often need 2–3 touches before acting',
+        'Toast action buttons now stack vertically — close × always visible even with two action buttons (Open Delivery Intelligence + Open Business Review)'
+      ],
+      features: [
+        'Delivery Trend tab: momentum view with data bars and week-over-week change',
+        'Best Next Action: one synthesized headline recommendation per report',
+        'Agent Hours Saved: capacity metric framing DDVM ROI for call center managers',
+        'Re-Engagement Opportunity: low-hanging fruit — confirmed-reachable numbers not contacted in 30+ days'
+      ],
+      fixes: [
+        'Toast notification overflowing viewport when two action buttons are shown simultaneously'
+      ]
+    },
+    '4.2.0': {
+      date: '2026-03-12',
+      title: 'Business Review Slides',
+      changes: [
+        'Delivery Intelligence Report now generates a branded PowerPoint business review deck (.pptx) alongside the Excel file — 5 slides covering Campaign Overview, Success Probability by Attempt, Delivery Cadence, and Recommended Actions, all styled to the VoApps brand (navy, pink, cream palette; IvyPresto Text + Aktiv Grotesk fonts)',
+        'Exec summary guidance and recommended actions reframed to be value-focused and consultative — language now highlights ROI opportunity and performance wins rather than leading with issues',
+        'Retry Decay Curve tab removed from Excel output — data folded into the Executive Summary Success Probability by Attempt section with context note; reduces tab clutter',
+        'Success Probability by Attempt column C now shows "X successful of Y attempts" for clearer at-a-glance context',
+        'Delivery Cadence: 1–2 day bucket description clarified to distinguish re-attempting after a successful delivery (not ideal) vs. re-attempting after an unsuccessful delivery (acceptable)',
+        '11–15 and 16–30 day cadence descriptions rewritten for consistency — both now frame relative to the 3–10 day ideal without contradictory language',
+        'Global Insights (Days) columns A–D fixed to width 40; preamble updated to use consultative language about predictable day patterns and rotation strategy',
+        'Suppress/never-delivered recommended actions replaced with guidance-based language; HLR lookup reference removed',
+        'Windows AI model path corrected: %APPDATA%\\voapps-tools\\models\\ (was incorrectly documented as %APPDATA%\\VoApps Tools\\models\\)',
+        'Live log now shows the correct Windows and macOS model paths when a HuggingFace download fails, as an alternative to switching to OpenAI mode',
+        'GitHub Actions workflows updated to opt into Node.js 24 (FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true) ahead of the June 2026 forced cutover',
+        'App icon rounded square applied for macOS; gray border artifact removed from all PNG icon sizes'
+      ],
+      features: [
+        'Business review .pptx: auto-generated alongside every Delivery Intelligence Excel report',
+        'Value-focused exec summary: guidance positioned as opportunity identification, not just issue reporting'
+      ],
+      fixes: [
+        'Fixed incorrect Windows model directory in documentation and live log (VoApps Tools → voapps-tools)',
+        'Fixed Global Insights (Days) column widths — A–D were rendering at ~99 wide instead of 40',
+        'Fixed Retry Decay Curve Glossary row-height conditional referencing the old tab name'
+      ]
+    },
     '4.1.0': {
       date: '2026-03-11',
       title: 'Stability & Intelligence Release',
@@ -62,13 +134,14 @@ module.exports = {
       features: [
         'Caller # Match: actual phone number comparison with ✅/⚠️ result per message',
         'Message ID hyperlinks in Message Insights Excel tab',
-        'AI transcription for CSV upload and database analysis flows'
+        'AI transcription for CSV upload and database analysis flows',
+        'Delivery Cadence section on Executive Summary — per-number median re-attempt intervals bucketed into 7 ranges (same-day through 30+ days); 3–10 day ideal range highlighted; cadence warnings in Recommended Actions for same-day and next-day re-attempts'
       ],
       fixes: [
         'Fixed AI models not loading from manually-transferred cache on Windows — env.cacheDir was resolving to an asar-virtual path; explicitly set to the correct location after import',
         'Fixed AI model status button always showing "Download" instead of "Re-download" — was checking the wrong cache path format (Python HuggingFace Hub format instead of @xenova/transformers FileCache path)',
         'Fixed OpenAI STT "spawn npm.cmd ENOENT" (Windows) and "spawn ENOTDIR" (Mac) in packaged app — form-data is now a declared bundled dependency; removed broken npm fallback',
-        'AI model cache is now stored at a user-accessible path: %APPDATA%\\VoApps Tools\\models\\ on Windows, ~/Library/Application Support/VoApps Tools/models/ on macOS — makes manual model transfer straightforward',
+        'AI model cache is now stored at a user-accessible path: %APPDATA%\\voapps-tools\\models\\ on Windows, ~/Library/Application Support/VoApps Tools/models/ on macOS — makes manual model transfer straightforward',
         'Fixed LCM false positive on loan application follow-up messages — added context-term exclusion (application, funding, financing, approval, etc.), URL exclusion (real LCMs never include links), and 30-second duration gate',
         'Improved LCM callback phrase detection — now matches "contact/call/reach me or any of my colleagues/associates at [number]" in addition to the existing patterns',
         'Audio duration now threads through from Whisper transcription to intent classifiers so duration-based LCM gating works correctly',

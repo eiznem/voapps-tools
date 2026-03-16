@@ -1,8 +1,12 @@
 # VoApps Tools
 
+<p align="center">
+  <img src="assets/icon_256x256.png" width="120" alt="VoApps Tools icon" />
+</p>
+
 Desktop application for searching and analyzing VoApps DirectDrop Voicemail campaign data.
 
-![Version](https://img.shields.io/badge/version-4.0.9-blue)
+![Version](https://img.shields.io/badge/version-4.1.0-blue)
 ![Platform](https://img.shields.io/badge/platform-macOS%20|%20Windows-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
