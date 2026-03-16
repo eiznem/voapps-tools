@@ -2328,10 +2328,11 @@
               </div>
             </div>
 
-            <!-- Tabbed: Analysis Tabs / CSV Columns -->
+            <!-- Tabbed: Analysis Tabs / CSV Columns / Business Review Slides -->
             <div class="drawer-tabs">
               <button class="drawer-tab active" onclick="switchDrawerTab(this,'reportTab-analysisTabs')">Analysis Tabs</button>
               <button class="drawer-tab" onclick="switchDrawerTab(this,'reportTab-csvColumns')">CSV Columns</button>
+              <button class="drawer-tab" onclick="switchDrawerTab(this,'reportTab-bizReview')">Business Review</button>
             </div>
 
             <!-- Tab: Analysis Tabs -->
@@ -2349,6 +2350,24 @@
               <label class="checkbox-label">
                 <input type="checkbox" id="includeTabNumberSummary"> Number Summary
               </label>
+
+              <!-- Re-attempt Analysis section -->
+              <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #e0e0e0;">
+                <div class="settings-section-subtitle" style="font-size: 11px; font-weight: 600; color: #333; margin-bottom: 4px;">RE-ATTEMPT ANALYSIS</div>
+                <div style="font-size: 11px; color: #666; margin-bottom: 6px;">Analyzes how outcomes evolve across multiple delivery attempts to the same number. Requires 2+ attempts in the dataset.</div>
+                <label class="checkbox-label">
+                  <input type="checkbox" id="includeTabReAttemptSummary"> Re-attempt Summary
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" id="includeTabReAttemptMatrix"> Outcome Transition Matrix
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" id="includeTabReAttemptFunnel"> Attempt Funnel by Code
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" id="includeTabReAttemptTiming"> Retry Timing Analysis
+                </label>
+              </div>
             </div>
 
             <!-- Tab: CSV Columns -->
@@ -2400,6 +2419,51 @@
                 </div>
               </div>
             </div>
+
+            <!-- Tab: Business Review Slides -->
+            <div id="reportTab-bizReview" class="drawer-tab-panel" style="display:none;">
+
+              <!-- HIGH-LEVEL OVERVIEW (always included) -->
+              <div class="settings-section-subtitle" style="margin-top: 4px;">HIGH-LEVEL OVERVIEW</div>
+              <div style="font-size: 11px; color: #666; margin-bottom: 8px;">Always included — not optional.</div>
+
+              <div style="font-size: 12px; font-weight: 600; margin-bottom: 4px; color: #333;">
+                Metric Cards
+                <span style="font-weight: normal; font-size: 11px; color: #666;">(select up to 6)</span>
+              </div>
+              <div id="cardSelectionCount" style="font-size: 11px; color: #666; margin-bottom: 6px;">6 / 6 selected</div>
+
+              <!-- Default ON (6) -->
+              <label class="checkbox-label"><input type="checkbox" class="card-check" id="card_uniquePhoneNumbers" value="uniquePhoneNumbers" checked onchange="updateCardCount()"> Unique Phone Numbers</label>
+              <label class="checkbox-label"><input type="checkbox" class="card-check" id="card_totalAttempts" value="totalAttempts" checked onchange="updateCardCount()"> Total DDVM Attempts</label>
+              <label class="checkbox-label"><input type="checkbox" class="card-check" id="card_overallSuccessRate" value="overallSuccessRate" checked onchange="updateCardCount()"> Overall Success Rate</label>
+              <label class="checkbox-label"><input type="checkbox" class="card-check" id="card_successfulDeliveries" value="successfulDeliveries" checked onchange="updateCardCount()"> Successful Deliveries</label>
+              <label class="checkbox-label"><input type="checkbox" class="card-check" id="card_numbersConnectingWell" value="numbersConnectingWell" checked onchange="updateCardCount()"> Numbers Connecting Well</label>
+              <label class="checkbox-label"><input type="checkbox" class="card-check" id="card_dateSpan" value="dateSpan" checked onchange="updateCardCount()"> Date Span</label>
+
+              <!-- Default OFF (additional options) -->
+              <label class="checkbox-label"><input type="checkbox" class="card-check" id="card_agentHoursSaved" value="agentHoursSaved" onchange="updateCardCount()"> Agent Hours Saved</label>
+              <label class="checkbox-label"><input type="checkbox" class="card-check" id="card_unsuccessfulAttempts" value="unsuccessfulAttempts" onchange="updateCardCount()"> Unsuccessful Attempts</label>
+              <label class="checkbox-label"><input type="checkbox" class="card-check" id="card_firstAttemptSuccessRate" value="firstAttemptSuccessRate" onchange="updateCardCount()"> First Attempt Success Rate</label>
+              <label class="checkbox-label"><input type="checkbox" class="card-check" id="card_avgAttemptsPerNumber" value="avgAttemptsPerNumber" onchange="updateCardCount()"> Avg Attempts per Number</label>
+              <label class="checkbox-label"><input type="checkbox" class="card-check" id="card_nonDeliverableNumbers" value="nonDeliverableNumbers" onchange="updateCardCount()"> Non-Deliverable Numbers</label>
+
+              <hr style="margin: 12px 0; border: 0; border-top: 1px solid #e0e0e0;">
+
+              <!-- Other Slides -->
+              <div class="settings-section-subtitle">OTHER SLIDES</div>
+              <label class="checkbox-label">
+                <input type="checkbox" id="slideDdecayCurve"> Success Probability by Attempt
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" id="slideReAttemptCadence" checked> Delivery Re-Attempt Cadence
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" id="slideOpportunities" checked> Opportunities to Maximize Performance
+              </label>
+
+            </div>
+
           </div>
         </div>
 
@@ -4551,6 +4615,19 @@
       saveSettings();
     };
 
+    window.updateCardCount = () => {
+      const checked = document.querySelectorAll('.card-check:checked');
+      const count = checked.length;
+      const display = document.getElementById('cardSelectionCount');
+      if (display) display.textContent = `${count} / 6 selected`;
+      if (count >= 6) {
+        document.querySelectorAll('.card-check:not(:checked)').forEach(cb => { cb.disabled = true; });
+      } else {
+        document.querySelectorAll('.card-check').forEach(cb => { cb.disabled = false; });
+      }
+      saveSettings();
+    };
+
     // ============================================================================
     // RUN
     // ============================================================================
@@ -4687,6 +4764,11 @@
         payload.min_consec_unsuccessful = parseInt($('minConsecUnsuccessful').value) || 4;
         payload.min_run_span_days = parseInt($('minRunSpanDays').value) || 30;
         payload.include_detail_tabs = $('includeTabTnHealth')?.checked || $('includeTabVariability')?.checked || $('includeTabNumberSummary')?.checked || false;
+        payload.include_re_attempt_tabs = $('includeTabReAttemptSummary')?.checked || $('includeTabReAttemptMatrix')?.checked || $('includeTabReAttemptFunnel')?.checked || $('includeTabReAttemptTiming')?.checked || false;
+        payload.pptx_include_slide_decay_curve = $('slideDdecayCurve')?.checked ?? false;
+        payload.pptx_include_slide_cadence = $('slideReAttemptCadence')?.checked ?? true;
+        payload.pptx_include_slide_opportunities = $('slideOpportunities')?.checked ?? true;
+        payload.pptx_overview_cards = Array.from(document.querySelectorAll('.card-check:checked')).map(cb => cb.value);
       }
 
       // AI Message Analysis settings — always sent with combine requests.
@@ -5522,6 +5604,20 @@
         if ($('includeTabVariability'))   $('includeTabVariability').checked   = s.includeTabVariability   || false;
         if ($('includeTabNumberSummary')) $('includeTabNumberSummary').checked = s.includeTabNumberSummary || false;
 
+        if ($('includeTabReAttemptSummary')) $('includeTabReAttemptSummary').checked = s.includeTabReAttemptSummary || false;
+        if ($('includeTabReAttemptMatrix'))  $('includeTabReAttemptMatrix').checked  = s.includeTabReAttemptMatrix  || false;
+        if ($('includeTabReAttemptFunnel'))  $('includeTabReAttemptFunnel').checked  = s.includeTabReAttemptFunnel  || false;
+        if ($('includeTabReAttemptTiming'))  $('includeTabReAttemptTiming').checked  = s.includeTabReAttemptTiming  || false;
+
+        if ($('slideDdecayCurve'))      $('slideDdecayCurve').checked      = s.includeSlideDecayCurve        ?? false;
+        if ($('slideReAttemptCadence')) $('slideReAttemptCadence').checked = s.includeSlideReAttemptCadence  ?? true;
+        if ($('slideOpportunities'))    $('slideOpportunities').checked    = s.includeSlideOpportunities     ?? true;
+
+        if (s.overviewCards && Array.isArray(s.overviewCards) && s.overviewCards.length > 0) {
+          document.querySelectorAll('.card-check').forEach(cb => { cb.checked = s.overviewCards.includes(cb.value); });
+          if (typeof window.updateCardCount === 'function') window.updateCardCount();
+        }
+
         if (s.outputMode) setOutputMode(s.outputMode);
         if (s.clientPrefix && $('clientPrefix')) $('clientPrefix').value = s.clientPrefix;
 
@@ -5559,6 +5655,14 @@
         includeTabTnHealth: $('includeTabTnHealth')?.checked || false,
         includeTabVariability: $('includeTabVariability')?.checked || false,
         includeTabNumberSummary: $('includeTabNumberSummary')?.checked || false,
+        includeTabReAttemptSummary: $('includeTabReAttemptSummary')?.checked || false,
+        includeTabReAttemptMatrix: $('includeTabReAttemptMatrix')?.checked || false,
+        includeTabReAttemptFunnel: $('includeTabReAttemptFunnel')?.checked || false,
+        includeTabReAttemptTiming: $('includeTabReAttemptTiming')?.checked || false,
+        includeSlideDecayCurve: $('slideDdecayCurve')?.checked ?? false,
+        includeSlideReAttemptCadence: $('slideReAttemptCadence')?.checked ?? true,
+        includeSlideOpportunities: $('slideOpportunities')?.checked ?? true,
+        overviewCards: Array.from(document.querySelectorAll('.card-check:checked')).map(cb => cb.value),
         enableAiAnalysis: $('enableAiAnalysis')?.checked || false,
         transcriptionMode: document.querySelector('input[name="transcriptionMode"]:checked')?.value || 'local',
         intentMode: document.querySelector('input[name="intentMode"]:checked')?.value || 'local',

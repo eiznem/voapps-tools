@@ -1412,10 +1412,10 @@ function detectUrlMention(transcript) {
 /**
  * Run generateTrendAnalysis in a worker thread so the main/UI thread stays responsive.
  */
-function runAnalysisInWorker(inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel, includeDetailTabs = true, transcriptMap = {}) {
+function runAnalysisInWorker(inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel, includeDetailTabs = true, transcriptMap = {}, includeReAttemptTabs = false, pptxOptions = {}) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(path.join(__dirname, 'analysisWorker.js'), {
-      workerData: { inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel, includeDetailTabs, transcriptMap },
+      workerData: { inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel, includeDetailTabs, transcriptMap, includeReAttemptTabs, pptxOptions },
       // Allow up to 6GB heap for large dataset analysis
       resourceLimits: { maxOldGenerationSizeMb: 6144 }
     });
@@ -3707,6 +3707,11 @@ async function runCombineCampaigns(config) {
     min_consec_unsuccessful = 4,
     min_run_span_days = 30,
     include_detail_tabs = false, // TN Health, Variability Analysis, Number Summary tabs
+    include_re_attempt_tabs = false,
+    pptx_include_slide_decay_curve = false,
+    pptx_include_slide_cadence = true,
+    pptx_include_slide_opportunities = true,
+    pptx_overview_cards = null,
     output_mode = "csv", // "csv", "database", or "both"
     job_id = null,
     client_prefix = "", // Optional prefix for output files
@@ -4092,6 +4097,15 @@ async function runCombineCampaigns(config) {
         }
       }
 
+      const VALID_CARD_KEYS = new Set(['uniquePhoneNumbers','totalAttempts','overallSuccessRate','successfulDeliveries','numbersConnectingWell','dateSpan','agentHoursSaved','unsuccessfulAttempts','firstAttemptSuccessRate','avgAttemptsPerNumber','nonDeliverableNumbers']);
+      const pptxOptions = {
+        includeSlideDecayCurve: !!pptx_include_slide_decay_curve,
+        includeSlideReAttemptCadence: pptx_include_slide_cadence !== false,
+        includeSlideOpportunities: pptx_include_slide_opportunities !== false,
+        overviewCards: Array.isArray(pptx_overview_cards)
+          ? pptx_overview_cards.filter(k => VALID_CARD_KEYS.has(k)).slice(0, 6)
+          : null,
+      };
       await runAnalysisInWorker(
         allCsvFiles,
         analysisPath,
@@ -4103,7 +4117,9 @@ async function runCombineCampaigns(config) {
         userTimezone,
         userTimezoneLabel,
         include_detail_tabs,
-        transcriptMap
+        transcriptMap,
+        include_re_attempt_tabs,
+        pptxOptions
       );
 
       lastArtifacts.analysisPath = analysisPath;
@@ -4998,6 +5014,11 @@ function createHttpServer() {
           min_consec_unsuccessful: body.min_consec_unsuccessful,
           min_run_span_days: body.min_run_span_days,
           include_detail_tabs: !!body.include_detail_tabs,
+          include_re_attempt_tabs: !!body.include_re_attempt_tabs,
+          pptx_include_slide_decay_curve: !!body.pptx_include_slide_decay_curve,
+          pptx_include_slide_cadence: body.pptx_include_slide_cadence !== false,
+          pptx_include_slide_opportunities: body.pptx_include_slide_opportunities !== false,
+          pptx_overview_cards: Array.isArray(body.pptx_overview_cards) ? body.pptx_overview_cards : null,
           output_mode: body.output_mode || "csv",
           job_id: body.job_id || null,
           client_prefix: body.client_prefix || "",
@@ -5086,6 +5107,11 @@ function createHttpServer() {
         let csvAiEnabled = false;
         let csvAiTranscriptionMode = 'local';
         let csvAiIntentMode = 'local';
+        let csvIncludeReAttemptTabs = false;
+        let csvPptxIncludeSlideDecayCurve = false;
+        let csvPptxIncludeSlideCadence = true;
+        let csvPptxIncludeSlideOpportunities = true;
+        let csvPptxOverviewCards = null;
 
         let searchStart = 0;
         while (searchStart < bodyBuf.length) {
@@ -5116,6 +5142,16 @@ function createHttpServer() {
             csvAiTranscriptionMode = bodyBuf.slice(contentStart, contentEnd).toString().trim() || 'local';
           } else if (header.includes('name="ai_intent_mode"')) {
             csvAiIntentMode = bodyBuf.slice(contentStart, contentEnd).toString().trim() || 'local';
+          } else if (header.includes('name="include_re_attempt_tabs"')) {
+            csvIncludeReAttemptTabs = bodyBuf.slice(contentStart, contentEnd).toString().trim() === 'true';
+          } else if (header.includes('name="pptx_include_slide_decay_curve"')) {
+            csvPptxIncludeSlideDecayCurve = bodyBuf.slice(contentStart, contentEnd).toString().trim() === 'true';
+          } else if (header.includes('name="pptx_include_slide_cadence"')) {
+            csvPptxIncludeSlideCadence = bodyBuf.slice(contentStart, contentEnd).toString().trim() !== 'false';
+          } else if (header.includes('name="pptx_include_slide_opportunities"')) {
+            csvPptxIncludeSlideOpportunities = bodyBuf.slice(contentStart, contentEnd).toString().trim() !== 'false';
+          } else if (header.includes('name="pptx_overview_cards"')) {
+            try { csvPptxOverviewCards = JSON.parse(bodyBuf.slice(contentStart, contentEnd).toString()); } catch (_) {}
           }
         }
 
@@ -5236,11 +5272,21 @@ function createHttpServer() {
         const targetBytesPerFile = 50 * 1024 * 1024; // 50MB
         const dynamicRowLimit = Math.max(50000, Math.min(MAX_ROWS_PER_FILE, Math.floor(targetBytesPerFile / avgBytesPerRow)));
 
+        const CSV_VALID_CARD_KEYS = new Set(['uniquePhoneNumbers','totalAttempts','overallSuccessRate','successfulDeliveries','numbersConnectingWell','dateSpan','agentHoursSaved','unsuccessfulAttempts','firstAttemptSuccessRate','avgAttemptsPerNumber','nonDeliverableNumbers']);
+        const csvPptxOptions = {
+          includeSlideDecayCurve: csvPptxIncludeSlideDecayCurve,
+          includeSlideReAttemptCadence: csvPptxIncludeSlideCadence,
+          includeSlideOpportunities: csvPptxIncludeSlideOpportunities,
+          overviewCards: Array.isArray(csvPptxOverviewCards)
+            ? csvPptxOverviewCards.filter(k => CSV_VALID_CARD_KEYS.has(k)).slice(0, 6)
+            : null,
+        };
+
         if (allRows.length > dynamicRowLimit) {
           const tempCsvPath = path.join(outDir, `UploadedCSV_${suffix}.csv`);
           const csvResult = await writeCsv(tempCsvPath, allRows, headers, null, dynamicRowLimit);
 
-          await runAnalysisInWorker(csvResult.files, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel, false, csvTranscriptMap);
+          await runAnalysisInWorker(csvResult.files, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel, false, csvTranscriptMap, csvIncludeReAttemptTabs, csvPptxOptions);
 
           lastArtifacts.analysisPath = analysisPath;
           const pptxPath1 = analysisPath.replace(/\.xlsx$/i, '_Business_Review.pptx');
@@ -5254,7 +5300,7 @@ function createHttpServer() {
           });
         }
 
-        await runAnalysisInWorker(allRows, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel, false, csvTranscriptMap);
+        await runAnalysisInWorker(allRows, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel, false, csvTranscriptMap, csvIncludeReAttemptTabs, csvPptxOptions);
 
         lastArtifacts.analysisPath = analysisPath;
         const pptxPath2 = analysisPath.replace(/\.xlsx$/i, '_Business_Review.pptx');
@@ -5283,6 +5329,11 @@ function createHttpServer() {
           min_run_span_days = 30,
           client_prefix = "",
           include_detail_tabs = false,
+          include_re_attempt_tabs: dbIncludeReAttemptTabs = false,
+          pptx_include_slide_decay_curve: dbPptxIncludeSlideDecayCurve = false,
+          pptx_include_slide_cadence: dbPptxIncludeSlideCadence = true,
+          pptx_include_slide_opportunities: dbPptxIncludeSlideOpportunities = true,
+          pptx_overview_cards: dbPptxOverviewCards = null,
           api_key: dbApiKey = '',
           ai_enabled: dbAiEnabled = false,
           ai_transcription_mode: dbAiTranscriptionMode = 'local',
@@ -5490,6 +5541,15 @@ function createHttpServer() {
           console.warn('[AI DB] AI analysis failed (non-fatal):', aiErr.message);
         }
 
+        const DB_VALID_CARD_KEYS = new Set(['uniquePhoneNumbers','totalAttempts','overallSuccessRate','successfulDeliveries','numbersConnectingWell','dateSpan','agentHoursSaved','unsuccessfulAttempts','firstAttemptSuccessRate','avgAttemptsPerNumber','nonDeliverableNumbers']);
+        const dbPptxOptions = {
+          includeSlideDecayCurve: !!dbPptxIncludeSlideDecayCurve,
+          includeSlideReAttemptCadence: dbPptxIncludeSlideCadence !== false,
+          includeSlideOpportunities: dbPptxIncludeSlideOpportunities !== false,
+          overviewCards: Array.isArray(dbPptxOverviewCards)
+            ? dbPptxOverviewCards.filter(k => DB_VALID_CARD_KEYS.has(k)).slice(0, 6)
+            : null,
+        };
         await runAnalysisInWorker(
           tempCsvFiles,
           analysisPath,
@@ -5501,7 +5561,9 @@ function createHttpServer() {
           userTz,
           userTzLabel,
           include_detail_tabs,
-          dbTranscriptMap
+          dbTranscriptMap,
+          dbIncludeReAttemptTabs,
+          dbPptxOptions
         );
 
         // Clean up temp CSV files

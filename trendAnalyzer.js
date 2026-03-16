@@ -624,7 +624,9 @@ async function generateTrendAnalysis(
   userTimezone = 'VoApps',
   userTimezoneLabel = 'VoApps',
   includeDetailTabs = false,
-  transcriptMap = {}
+  transcriptMap = {},
+  includeReAttemptTabs = false,
+  pptxOptions = {}
 ) {
   log(`Starting Delivery Intelligence Analysis (v${VERSION})`);
 
@@ -835,6 +837,7 @@ async function generateTrendAnalysis(
                 nd.attempts.push({
                   ts:          pdOk ? parsedDate.getTime() : 0,
                   isSuccess,
+                  result:      resultNorm,
                   attemptIndex: nd.attemptIndex   // already incremented above
                 });
               }
@@ -1098,6 +1101,7 @@ async function generateTrendAnalysis(
         nd.attempts.push({
           ts:          row.parsedMs || 0,
           isSuccess:   row.isSuccess,
+          result:      row.voapps_result_normalized,
           attemptIndex: nd.attemptIndex   // already incremented above
         });
       }
@@ -1262,6 +1266,161 @@ async function generateTrendAnalysis(
   const cadenceMultiTouchCount = cadenceBucket_sameDay + cadenceBucket_1to2 +
     cadenceBucket_3to5 + cadenceBucket_6to10 + cadenceBucket_11to15 +
     cadenceBucket_16to30 + cadenceBucket_over30;
+
+  // ============================================================================
+  // RE-ATTEMPT ANALYSIS
+  // ============================================================================
+  const RE_ATTEMPT_CODES = [
+    'successfully delivered',
+    'unsuccessful delivery attempt',
+    'not in service',
+    'voicemail not setup',
+    'voicemail full'
+  ];
+  const TIMING_BUCKETS = ['sameDay', 'day1to2', 'day2to3', 'day4to7', 'day8plus'];
+
+  let reAttemptData = null;
+
+  if (includeReAttemptTabs) {
+    log('Computing re-attempt analysis...');
+
+    // Transition matrix: transMatrix[from][to] = count of consecutive-attempt pairs
+    const transMatrix = {};
+    const transRowTotals = {};
+    for (const fc of RE_ATTEMPT_CODES) {
+      transMatrix[fc] = {};
+      transRowTotals[fc] = 0;
+      for (const tc of RE_ATTEMPT_CODES) transMatrix[fc][tc] = 0;
+    }
+
+    // Funnel by initial result code
+    const funnelByCode = {};
+    for (const fc of RE_ATTEMPT_CODES) {
+      funnelByCode[fc] = { at1: 0, at2: 0, at3: 0, at4plus: 0, neverDelivered: 0, total: 0 };
+    }
+
+    // Retry timing matrix: timingMatrix[from][bucket].{total, nextSuccess}
+    const timingMatrix = {};
+    for (const fc of RE_ATTEMPT_CODES) {
+      timingMatrix[fc] = {};
+      for (const b of TIMING_BUCKETS) timingMatrix[fc][b] = { total: 0, nextSuccess: 0 };
+    }
+
+    // Eventually delivered counts per initial code
+    const eventuallyDelivered = {};
+    for (const fc of RE_ATTEMPT_CODES) eventuallyDelivered[fc] = { delivered: 0, total: 0 };
+
+    // Code persistence: for multi-attempt never-delivered numbers
+    const persistenceData = {};
+    for (const fc of RE_ATTEMPT_CODES) {
+      if (fc !== 'successfully delivered') {
+        persistenceData[fc] = { multiAttemptNeverDelivered: 0, alwaysSameCode: 0 };
+      }
+    }
+
+    // Multi-attempt delivery stats
+    let totalMultiAttemptNumbers = 0;
+    let sumAttemptsToDelivery = 0; // for non-first-attempt successes
+    let countNonFirstAttemptDeliveries = 0;
+    let sumDaysFirstToDelivery = 0;
+    let sumTotalAttemptsAmongDelivered = 0;
+    let countDeliveredNumbers = 0;
+    let sumSuccessCountAmongDelivered = 0;
+
+    for (const num in numberData) {
+      const atts = numberData[num].attempts;
+      if (atts.length < 2) continue;
+      totalMultiAttemptNumbers++;
+
+      // Ensure time-ordered
+      if (atts[0].ts > atts[atts.length - 1].ts) atts.sort((a, b) => a.ts - b.ts);
+
+      const firstResult = atts[0].result;
+      if (!firstResult || !transMatrix[firstResult]) continue;
+
+      // Eventually delivered?
+      const firstSuccessIdx = atts.findIndex(a => a.isSuccess);
+      const everDelivered = firstSuccessIdx !== -1;
+      if (eventuallyDelivered[firstResult]) {
+        eventuallyDelivered[firstResult].total++;
+        if (everDelivered) eventuallyDelivered[firstResult].delivered++;
+      }
+
+      // Multi-attempt delivery stats
+      const nd2 = numberData[num];
+      if (everDelivered) {
+        countDeliveredNumbers++;
+        sumTotalAttemptsAmongDelivered += atts.length;
+        sumSuccessCountAmongDelivered += nd2.successCount;
+        if (firstSuccessIdx > 0) {
+          // First success was NOT on attempt 1
+          countNonFirstAttemptDeliveries++;
+          sumAttemptsToDelivery += firstSuccessIdx + 1; // 1-based
+          if (atts[0].ts > 0 && atts[firstSuccessIdx].ts > 0) {
+            sumDaysFirstToDelivery += (atts[firstSuccessIdx].ts - atts[0].ts) / 86400000;
+          }
+        }
+      }
+
+      // Funnel: which attempt# was the first success?
+      if (funnelByCode[firstResult]) {
+        funnelByCode[firstResult].total++;
+        if      (!everDelivered)        funnelByCode[firstResult].neverDelivered++;
+        else if (firstSuccessIdx === 0) funnelByCode[firstResult].at1++;
+        else if (firstSuccessIdx === 1) funnelByCode[firstResult].at2++;
+        else if (firstSuccessIdx === 2) funnelByCode[firstResult].at3++;
+        else                            funnelByCode[firstResult].at4plus++;
+      }
+
+      // Code persistence (for never-delivered multi-attempt numbers)
+      if (!everDelivered && atts.length >= 2) {
+        const firstCode = atts[0].result;
+        if (firstCode && persistenceData[firstCode]) {
+          persistenceData[firstCode].multiAttemptNeverDelivered++;
+          const allSame = atts.every(a => a.result === firstCode);
+          if (allSame) persistenceData[firstCode].alwaysSameCode++;
+        }
+      }
+
+      // Transition matrix + timing
+      for (let i = 0; i < atts.length - 1; i++) {
+        const from = atts[i].result;
+        const to   = atts[i + 1].result;
+        if (!from || !to || transMatrix[from] === undefined || transMatrix[from][to] === undefined) continue;
+        transMatrix[from][to]++;
+        transRowTotals[from]++;
+
+        // Timing bucket
+        if (timingMatrix[from]) {
+          const diffDays = (atts[i + 1].ts - atts[i].ts) / 86400000;
+          const bucket = diffDays < 1      ? 'sameDay'
+                       : diffDays <= 2     ? 'day1to2'
+                       : diffDays <= 3     ? 'day2to3'
+                       : diffDays <= 7     ? 'day4to7'
+                       :                    'day8plus';
+          timingMatrix[from][bucket].total++;
+          if (atts[i + 1].isSuccess) timingMatrix[from][bucket].nextSuccess++;
+        }
+      }
+    }
+
+    reAttemptData = {
+      transMatrix, transRowTotals, funnelByCode, timingMatrix,
+      eventuallyDelivered, persistenceData,
+      totalMultiAttemptNumbers,
+      avgAttemptsToDelivery: countNonFirstAttemptDeliveries > 0
+        ? sumAttemptsToDelivery / countNonFirstAttemptDeliveries : null,
+      avgDaysFirstToDelivery: countNonFirstAttemptDeliveries > 0
+        ? sumDaysFirstToDelivery / countNonFirstAttemptDeliveries : null,
+      avgTotalAttemptsAmongDelivered: countDeliveredNumbers > 0
+        ? sumTotalAttemptsAmongDelivered / countDeliveredNumbers : null,
+      avgSuccessCountAmongDelivered: countDeliveredNumbers > 0
+        ? sumSuccessCountAmongDelivered / countDeliveredNumbers : null,
+      countNonFirstAttemptDeliveries,
+      RE_ATTEMPT_CODES, TIMING_BUCKETS
+    };
+    log(`  Re-attempt analysis complete: ${totalMultiAttemptNumbers.toLocaleString()} multi-touch numbers`);
+  }
 
   // ============================================================================
   // BUILD ACCOUNT AND MESSAGE LEVEL STATS WITH DAY-OF-WEEK ANALYSIS
@@ -2848,6 +3007,423 @@ async function generateTrendAnalysis(
     log(`  Delivery Trend: ${bucketList.length} ${useWeekly ? 'week' : 'day'} buckets`);
   }
 
+  // ============================================================================
+  // RE-ATTEMPT ANALYSIS TABS (optional — gated by includeReAttemptTabs)
+  // ============================================================================
+
+  if (includeReAttemptTabs && reAttemptData) {
+    const {
+      transMatrix, transRowTotals, funnelByCode, timingMatrix,
+      eventuallyDelivered, persistenceData, totalMultiAttemptNumbers,
+      avgAttemptsToDelivery, avgDaysFirstToDelivery,
+      avgTotalAttemptsAmongDelivered, avgSuccessCountAmongDelivered,
+      countNonFirstAttemptDeliveries,
+      RE_ATTEMPT_CODES: RA_CODES, TIMING_BUCKETS: RA_BUCKETS
+    } = reAttemptData;
+
+    const CODE_LABEL = {
+      'successfully delivered':        'Delivered (200)',
+      'unsuccessful delivery attempt': 'Unsuccessful (400)',
+      'not in service':                'Not in Service (405)',
+      'voicemail not setup':           'VM Not Setup (406)',
+      'voicemail full':                'VM Full (407)'
+    };
+    const BUCKET_LABELS = {
+      sameDay:  'Same day (< 1 day)',
+      day1to2:  'Next day (1–2 days)',
+      day2to3:  '2–3 days',
+      day4to7:  '4–7 days',
+      day8plus: '8+ days'
+    };
+
+    // ── Helper: apply alternating row fill ──────────────────────────────────
+    const altFill = (sheet, rowNum) => {
+      if (rowNum % 2 === 0) {
+        sheet.getRow(rowNum).eachCell({ includeEmpty: false }, cell => {
+          if (!cell.fill || cell.fill.fgColor?.argb === undefined) {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: VOAPPS_PURPLE_PALE } };
+          }
+        });
+      }
+    };
+
+    // ── Tab 1: Re-attempt Summary ────────────────────────────────────────────
+    log('Creating Re-attempt Summary tab...');
+    const raSum = workbook.addWorksheet('Re-attempt Summary', {
+      properties: { tabColor: { argb: VOAPPS_PURPLE } }
+    });
+    raSum.getColumn(1).width = 46;
+    raSum.getColumn(2).width = 26;
+    raSum.getColumn(3).width = 26;
+    raSum.getColumn(4).width = 20;
+
+    raSum.mergeCells('A1:D1');
+    raSum.getCell('A1').value = 'Re-attempt Analysis — Summary';
+    raSum.getCell('A1').style = headerStyle;
+    raSum.getRow(1).height = 30;
+
+    raSum.mergeCells('A2:D2');
+    raSum.getCell('A2').value =
+      'Analyzes what happened across multiple delivery attempts to the same phone number. ' +
+      'All numbers with 2+ attempts in this dataset are included. ' +
+      'Result codes used: 200 = successfully delivered, 400 = unsuccessful, 405 = not in service, ' +
+      '406 = voicemail not setup, 407 = voicemail full. Note: 401 (not a wireless number) is excluded — ' +
+      'those numbers never enter the delivery attempt pool.';
+    raSum.getCell('A2').font = { italic: true, size: 10, color: { argb: '555555' } };
+    raSum.getCell('A2').alignment = { wrapText: true, vertical: 'top' };
+    raSum.getRow(2).height = 50;
+
+    let raRow = 4;
+
+    // Section 1: Overall multi-touch overview
+    raSum.mergeCells(`A${raRow}:D${raRow}`);
+    raSum.getCell(`A${raRow}`).value = 'Multi-Touch Overview';
+    raSum.getCell(`A${raRow}`).style = sectionHeaderStyle;
+    raRow++;
+
+    raSum.getRow(raRow).values = ['Metric', 'Value', '', ''];
+    raSum.getRow(raRow).eachCell((c, col) => { if (col <= 2) c.style = tableHeaderStyle; });
+    raRow++;
+
+    const overallDelivered = RA_CODES.reduce((s, c) => s + (eventuallyDelivered[c]?.delivered || 0), 0);
+    const overallTotal     = RA_CODES.reduce((s, c) => s + (eventuallyDelivered[c]?.total    || 0), 0);
+    const overallRate      = overallTotal > 0 ? (overallDelivered / overallTotal * 100).toFixed(1) : '—';
+
+    const overviewRows = [
+      ['Numbers with 2+ attempts (multi-touch)', totalMultiAttemptNumbers.toLocaleString()],
+      ['Of those, eventually delivered (200)', overallDelivered.toLocaleString()],
+      ['Multi-touch eventual delivery rate', overallTotal > 0 ? `${overallRate}%` : '—'],
+    ];
+    for (const [label, value] of overviewRows) {
+      raSum.getCell(`A${raRow}`).value = label;
+      raSum.getCell(`A${raRow}`).font = { bold: true, size: 11 };
+      raSum.getCell(`B${raRow}`).value = value;
+      raSum.getCell(`B${raRow}`).font = { size: 11 };
+      altFill(raSum, raRow);
+      raRow++;
+    }
+    raRow++;
+
+    // Section 2: Eventually Delivered Rate by initial result code
+    raSum.mergeCells(`A${raRow}:D${raRow}`);
+    raSum.getCell(`A${raRow}`).value = 'Eventually Delivered Rate — by Initial Result Code';
+    raSum.getCell(`A${raRow}`).style = sectionHeaderStyle;
+    raRow++;
+
+    raSum.getRow(raRow).values = ['Initial Result Code', 'Multi-Touch Numbers', 'Eventually Delivered (200)', 'Eventual Rate'];
+    raSum.getRow(raRow).eachCell((c, col) => { if (col <= 4) c.style = tableHeaderStyle; });
+    raRow++;
+
+    for (const fc of RA_CODES) {
+      const ev = eventuallyDelivered[fc];
+      const rate = ev.total > 0 ? `${(ev.delivered / ev.total * 100).toFixed(1)}%` : '—';
+      raSum.getRow(raRow).values = [CODE_LABEL[fc] || fc, ev.total.toLocaleString(), ev.delivered.toLocaleString(), rate];
+      raSum.getCell(`A${raRow}`).font = { bold: fc === 'successfully delivered', size: 11 };
+      altFill(raSum, raRow);
+      raRow++;
+    }
+    raRow++;
+
+    // Section 3: Multi-attempt delivery stats
+    if (avgTotalAttemptsAmongDelivered !== null) {
+      raSum.mergeCells(`A${raRow}:D${raRow}`);
+      raSum.getCell(`A${raRow}`).value = 'Multi-Attempt Delivery Stats';
+      raSum.getCell(`A${raRow}`).style = sectionHeaderStyle;
+      raRow++;
+
+      raSum.getRow(raRow).values = ['Metric', 'Value', '', ''];
+      raSum.getRow(raRow).eachCell((c, col) => { if (col <= 2) c.style = tableHeaderStyle; });
+      raRow++;
+
+      const statsRows = [
+        ['Avg total attempts (numbers with at least one delivery)', avgTotalAttemptsAmongDelivered?.toFixed(1) ?? '—'],
+        ['Avg successful deliveries per delivered number', avgSuccessCountAmongDelivered?.toFixed(2) ?? '—'],
+      ];
+      if (countNonFirstAttemptDeliveries > 0) {
+        statsRows.push(
+          ['Numbers delivered on a non-first attempt', countNonFirstAttemptDeliveries.toLocaleString()],
+          ['Avg attempts needed to first successful delivery (non-first-attempt successes)', avgAttemptsToDelivery?.toFixed(1) ?? '—'],
+          ['Avg days from first attempt to first delivery (non-first-attempt successes)', avgDaysFirstToDelivery?.toFixed(1) ?? '—'],
+        );
+      }
+      for (const [label, value] of statsRows) {
+        raSum.getCell(`A${raRow}`).value = label;
+        raSum.getCell(`A${raRow}`).font = { bold: true, size: 11 };
+        raSum.getCell(`B${raRow}`).value = value;
+        raSum.getCell(`B${raRow}`).font = { size: 11 };
+        altFill(raSum, raRow);
+        raRow++;
+      }
+      raRow++;
+    }
+
+    // Section 4: Code Persistence Score
+    raSum.mergeCells(`A${raRow}:D${raRow}`);
+    raSum.getCell(`A${raRow}`).value = 'Code Persistence Score — Multi-Attempt Numbers That Never Delivered';
+    raSum.getCell(`A${raRow}`).style = sectionHeaderStyle;
+    raRow++;
+
+    raSum.mergeCells(`A${raRow}:D${raRow}`);
+    raSum.getCell(`A${raRow}`).value =
+      'High persistence suggests a structural issue (e.g., consistently full mailbox, out-of-service number) rather than random noise. ' +
+      'Low persistence suggests the issue may vary by time of day, day of week, or other retry conditions.';
+    raSum.getCell(`A${raRow}`).font = { italic: true, size: 10, color: { argb: '555555' } };
+    raSum.getCell(`A${raRow}`).alignment = { wrapText: true };
+    raSum.getRow(raRow).height = 35;
+    raRow++;
+
+    raSum.getRow(raRow).values = ['Result Code', 'Multi-Attempt Never-Delivered', 'Always Same Code', 'Persistence Rate'];
+    raSum.getRow(raRow).eachCell((c, col) => { if (col <= 4) c.style = tableHeaderStyle; });
+    raRow++;
+
+    for (const fc of RA_CODES) {
+      if (fc === 'successfully delivered') continue;
+      const pd = persistenceData[fc];
+      const rate = pd.multiAttemptNeverDelivered > 0
+        ? `${(pd.alwaysSameCode / pd.multiAttemptNeverDelivered * 100).toFixed(1)}%`
+        : '—';
+      raSum.getRow(raRow).values = [
+        CODE_LABEL[fc] || fc,
+        pd.multiAttemptNeverDelivered.toLocaleString(),
+        pd.alwaysSameCode.toLocaleString(),
+        rate
+      ];
+      raSum.getCell(`A${raRow}`).font = { size: 11 };
+      altFill(raSum, raRow);
+      raRow++;
+    }
+
+    // ── Tab 2: Outcome Transition Matrix ────────────────────────────────────
+    log('Creating Outcome Transition Matrix tab...');
+    const matSheet = workbook.addWorksheet('Outcome Transition Matrix', {
+      properties: { tabColor: { argb: VOAPPS_PINK } }
+    });
+    matSheet.getColumn(1).width = 28;
+    for (let i = 2; i <= RA_CODES.length + 2; i++) matSheet.getColumn(i).width = 24;
+
+    matSheet.mergeCells(`A1:${String.fromCharCode(65 + RA_CODES.length + 1)}1`);
+    matSheet.getCell('A1').value = 'Outcome Transition Matrix — From result (rows) → To result on next attempt (columns)';
+    matSheet.getCell('A1').style = headerStyle;
+    matSheet.getRow(1).height = 30;
+
+    matSheet.mergeCells(`A2:${String.fromCharCode(65 + RA_CODES.length + 1)}2`);
+    matSheet.getCell('A2').value =
+      'Each cell shows count and % of row total. ' +
+      'Read: "Of all attempts where the previous result was [row], [X]% transitioned to [column] on their next attempt." ' +
+      'Excludes 401 (not wireless — never a delivery attempt).';
+    matSheet.getCell('A2').font = { italic: true, size: 10, color: { argb: '555555' } };
+    matSheet.getCell('A2').alignment = { wrapText: true };
+    matSheet.getRow(2).height = 36;
+
+    // Header row (row 4 — row 3 is blank)
+    const matHdrRow = matSheet.getRow(4);
+    matHdrRow.getCell(1).value = 'From \\ To →';
+    matHdrRow.getCell(1).style = tableHeaderStyle;
+    RA_CODES.forEach((tc, i) => {
+      matHdrRow.getCell(i + 2).value = CODE_LABEL[tc];
+      matHdrRow.getCell(i + 2).style = tableHeaderStyle;
+    });
+    const totalColIdx = RA_CODES.length + 2;
+    matHdrRow.getCell(totalColIdx).value = 'Row Total';
+    matHdrRow.getCell(totalColIdx).style = tableHeaderStyle;
+    matSheet.getRow(4).height = 28;
+
+    let matRow = 5;
+    for (const fc of RA_CODES) {
+      const rowTotal = transRowTotals[fc] || 0;
+      matSheet.getCell(`A${matRow}`).value = CODE_LABEL[fc] || fc;
+      matSheet.getCell(`A${matRow}`).font = { bold: true, size: 11 };
+
+      RA_CODES.forEach((tc, i) => {
+        const count = transMatrix[fc][tc] || 0;
+        const pct   = rowTotal > 0 ? count / rowTotal : 0;
+        const cell  = matSheet.getCell(matRow, i + 2);
+        cell.value  = rowTotal > 0 ? `${count.toLocaleString()} (${(pct * 100).toFixed(1)}%)` : '—';
+        cell.font   = { size: 11 };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+
+        // Color hints
+        if (tc === 'successfully delivered' && count > 0) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: pct >= 0.3 ? 'C6EFCE' : 'E2F0D9' } };
+          cell.font = { size: 11, color: { argb: '375623' } };
+        } else if (tc === 'not in service' && count > 0) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FDECEA' } };
+          cell.font = { size: 11, color: { argb: 'C0392B' } };
+        } else if (tc === 'unsuccessful delivery attempt' && pct >= 0.5) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3CD' } };
+          cell.font = { size: 11, color: { argb: '856404' } };
+        }
+      });
+
+      matSheet.getCell(matRow, totalColIdx).value = rowTotal.toLocaleString();
+      matSheet.getCell(matRow, totalColIdx).font = { bold: true, size: 11 };
+      matRow++;
+    }
+
+    // Note row
+    matRow++;
+    matSheet.mergeCells(`A${matRow}:${String.fromCharCode(65 + RA_CODES.length + 1)}${matRow}`);
+    matSheet.getCell(`A${matRow}`).value =
+      'Interpretation: A high % on the diagonal (e.g., VM Full → VM Full) suggests a structural issue — ' +
+      'the mailbox is consistently full and may not clear between attempts. A high % transitioning to Delivered (200) ' +
+      'confirms that code is worth retrying. A high % on Not in Service (405) is a strong suppression signal.';
+    matSheet.getCell(`A${matRow}`).font = { italic: true, size: 10, color: { argb: '555555' } };
+    matSheet.getCell(`A${matRow}`).alignment = { wrapText: true };
+    matSheet.getRow(matRow).height = 42;
+
+    // ── Tab 3: Attempt Funnel by Code ────────────────────────────────────────
+    log('Creating Attempt Funnel by Code tab...');
+    const funnelSheet = workbook.addWorksheet('Attempt Funnel by Code', {
+      properties: { tabColor: { argb: VOAPPS_PURPLE_MID } }
+    });
+    funnelSheet.getColumn(1).width = 28;
+    for (let i = 2; i <= 7; i++) funnelSheet.getColumn(i).width = 20;
+
+    funnelSheet.mergeCells('A1:G1');
+    funnelSheet.getCell('A1').value = 'Attempt Funnel by Code — How Many Attempts to First Successful Delivery?';
+    funnelSheet.getCell('A1').style = headerStyle;
+    funnelSheet.getRow(1).height = 30;
+
+    funnelSheet.mergeCells('A2:G2');
+    funnelSheet.getCell('A2').value =
+      'Numbers are grouped by their very first delivery attempt result code. ' +
+      '"Delivered @ Attempt N" = the Nth attempt was the first successful delivery for that number. ' +
+      '"Never Delivered (in range)" = no successful delivery found within this dataset\'s date range. ' +
+      'Only numbers with 2+ attempts are included.';
+    funnelSheet.getCell('A2').font = { italic: true, size: 10, color: { argb: '555555' } };
+    funnelSheet.getCell('A2').alignment = { wrapText: true };
+    funnelSheet.getRow(2).height = 42;
+
+    const funnelHeaders = [
+      'Initial Result Code', 'Multi-Touch Total',
+      'Delivered @ Attempt 1', 'Delivered @ Attempt 2',
+      'Delivered @ Attempt 3', 'Delivered @ Attempt 4+', 'Never Delivered (in range)'
+    ];
+
+    // % table
+    funnelSheet.mergeCells('A4:G4');
+    funnelSheet.getCell('A4').value = 'Percentage Breakdown';
+    funnelSheet.getCell('A4').style = sectionHeaderStyle;
+
+    funnelSheet.getRow(5).values = funnelHeaders;
+    funnelSheet.getRow(5).eachCell((c, col) => { if (col <= 7) c.style = tableHeaderStyle; });
+
+    let fRow = 6;
+    for (const fc of RA_CODES) {
+      const f = funnelByCode[fc];
+      const total = f.total || 0;
+      const pct = n => total > 0 ? `${(n / total * 100).toFixed(1)}%` : '—';
+      funnelSheet.getRow(fRow).values = [
+        CODE_LABEL[fc] || fc, total > 0 ? total.toLocaleString() : '—',
+        pct(f.at1), pct(f.at2), pct(f.at3), pct(f.at4plus), pct(f.neverDelivered)
+      ];
+      funnelSheet.getCell(`A${fRow}`).font = { bold: true, size: 11 };
+      // Green for high at1 pct
+      if (total > 0 && f.at1 / total >= 0.5) {
+        funnelSheet.getCell(fRow, 3).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'C6EFCE' } };
+        funnelSheet.getCell(fRow, 3).font = { size: 11, color: { argb: '375623' } };
+      }
+      // Red for high neverDelivered pct
+      if (total > 0 && f.neverDelivered / total >= 0.4) {
+        funnelSheet.getCell(fRow, 7).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FDECEA' } };
+        funnelSheet.getCell(fRow, 7).font = { size: 11, color: { argb: 'C0392B' } };
+      }
+      altFill(funnelSheet, fRow);
+      fRow++;
+    }
+    fRow++;
+
+    // Raw count table
+    funnelSheet.mergeCells(`A${fRow}:G${fRow}`);
+    funnelSheet.getCell(`A${fRow}`).value = 'Raw Counts';
+    funnelSheet.getCell(`A${fRow}`).style = sectionHeaderStyle;
+    fRow++;
+
+    funnelSheet.getRow(fRow).values = funnelHeaders;
+    funnelSheet.getRow(fRow).eachCell((c, col) => { if (col <= 7) c.style = tableHeaderStyle; });
+    fRow++;
+
+    for (const fc of RA_CODES) {
+      const f = funnelByCode[fc];
+      funnelSheet.getRow(fRow).values = [
+        CODE_LABEL[fc] || fc, f.total, f.at1, f.at2, f.at3, f.at4plus, f.neverDelivered
+      ];
+      funnelSheet.getCell(`A${fRow}`).font = { bold: true, size: 11 };
+      altFill(funnelSheet, fRow);
+      fRow++;
+    }
+
+    // ── Tab 4: Retry Timing Analysis ─────────────────────────────────────────
+    log('Creating Retry Timing Analysis tab...');
+    const timingSheet = workbook.addWorksheet('Retry Timing Analysis', {
+      properties: { tabColor: { argb: VOAPPS_PURPLE_LIGHT } }
+    });
+    timingSheet.getColumn(1).width = 28;
+    timingSheet.getColumn(2).width = 24;
+    timingSheet.getColumn(3).width = 18;
+    timingSheet.getColumn(4).width = 22;
+    timingSheet.getColumn(5).width = 14;
+
+    timingSheet.mergeCells('A1:E1');
+    timingSheet.getCell('A1').value = 'Retry Timing Analysis — Interval Between Attempts vs. Next-Attempt Success Rate';
+    timingSheet.getCell('A1').style = headerStyle;
+    timingSheet.getRow(1).height = 30;
+
+    timingSheet.mergeCells('A2:E2');
+    timingSheet.getCell('A2').value =
+      'For each "From" result code and time gap between consecutive attempts, shows how often the next attempt succeeded. ' +
+      'The 3–7 day window typically yields the best marginal success rate. ' +
+      'Same-day and next-day re-attempts to numbers with 200 on the prior attempt are rarely productive.';
+    timingSheet.getCell('A2').font = { italic: true, size: 10, color: { argb: '555555' } };
+    timingSheet.getCell('A2').alignment = { wrapText: true };
+    timingSheet.getRow(2).height = 42;
+
+    timingSheet.getRow(4).values = ['From Result Code', 'Time Gap', 'Attempt Pairs', 'Next Attempt Successful', '% Success'];
+    timingSheet.getRow(4).eachCell((c, col) => { if (col <= 5) c.style = tableHeaderStyle; });
+
+    let tRow = 5;
+    for (const fc of RA_CODES) {
+      let firstRowForCode = true;
+      let anyData = false;
+      for (const bucket of RA_BUCKETS) {
+        const d = timingMatrix[fc][bucket];
+        if (d.total === 0) continue;
+        anyData = true;
+        const pct = d.total > 0 ? (d.nextSuccess / d.total * 100).toFixed(1) : '0.0';
+        timingSheet.getRow(tRow).values = [
+          firstRowForCode ? (CODE_LABEL[fc] || fc) : '',
+          BUCKET_LABELS[bucket],
+          d.total,
+          d.nextSuccess,
+          `${pct}%`
+        ];
+        if (firstRowForCode) {
+          timingSheet.getCell(`A${tRow}`).font = { bold: true, size: 11 };
+          firstRowForCode = false;
+        } else {
+          timingSheet.getCell(`A${tRow}`).font = { size: 11 };
+        }
+        timingSheet.getCell(`B${tRow}`).font = { size: 11 };
+        timingSheet.getCell(`C${tRow}`).font = { size: 11 };
+        timingSheet.getCell(`D${tRow}`).font = { size: 11 };
+
+        // Color % success cell
+        const pctNum = parseFloat(pct);
+        const pctCell = timingSheet.getCell(`E${tRow}`);
+        pctCell.font = { size: 11 };
+        if (bucket === 'day2to3' || bucket === 'day4to7') {
+          pctCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'C6EFCE' } };
+          pctCell.font = { size: 11, color: { argb: '375623' } };
+        } else if (bucket === 'sameDay' || bucket === 'day1to2') {
+          pctCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3CD' } };
+          pctCell.font = { size: 11, color: { argb: '856404' } };
+        }
+        tRow++;
+      }
+      if (anyData) tRow++; // blank row between groups
+    }
+  }
+
   // ========================================
   // TAB 11: GLOSSARY
   // ========================================
@@ -3056,7 +3632,8 @@ Use the data to set retry limits: when success probability drops below ~15–20%
       pptxPath,
       null,
       fs.existsSync(squareLogo) ? squareLogo : null,
-      fs.existsSync(circleLogo) ? circleLogo : null
+      fs.existsSync(circleLogo) ? circleLogo : null,
+      pptxOptions
     );
     log(`Business review slides saved: ${path.basename(pptxPath)}`);
   } catch (slideErr) {

@@ -195,7 +195,14 @@ function metricBox(slide, x, y, w, h, label, value, subtext, accentColor, valueF
  * @param {string} squareLogo - Square logo for slide headers (pink square icon)
  * @param {string} circleLogo - Circle logo for the title slide
  */
-async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareLogo, circleLogo) {
+async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareLogo, circleLogo, options = {}) {
+  const {
+    includeSlideDecayCurve       = false,
+    includeSlideReAttemptCadence = true,
+    includeSlideOpportunities    = true,
+    overviewCards                = null
+  } = options;
+
   // Resolve which logo to use for each context
   const headerLogo = squareLogo || logoPath;
   const titleLogo  = circleLogo || logoPath;
@@ -311,12 +318,12 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   });
 
   // ────────────────────────────────────────────────────────────────────────────
-  // SLIDE 2 — Campaign Overview
+  // SLIDE 2 — High-Level Overview
   // 2-row × 3-col metric cards on cream background
   // ────────────────────────────────────────────────────────────────────────────
   const s2 = pptx.addSlide();
   s2.background = { color: CREAM };
-  const s2HdrH = headerBar(pptx, s2, 'Campaign Overview', headerLogo, dateRangeStr);
+  const s2HdrH = headerBar(pptx, s2, 'High-Level Overview', headerLogo, dateRangeStr);
 
   const bW   = 4.0;
   const bH   = 1.62;
@@ -333,42 +340,45 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   const healthyPct = uniqueNumbers > 0 ? ((healthyCount / uniqueNumbers) * 100) : 0;
   const healthyAccent = healthyPct >= 80 ? BLUE : healthyPct >= 60 ? BLUE_LIGHT : PURPLE_LIGHT;
 
-  metricBox(s2, c1, row1Y, bW, bH,
-    'UNIQUE PHONE NUMBERS',
-    uniqueNumbers.toLocaleString(),
-    'Phone numbers analyzed in this report',
-    PINK);
+  // ── Card registry — all possible metric cards ─────────────────────────────
+  // firstAttemptSuccessRate uses decayCurve[0] if available
+  const firstAttemptRate = (decayCurve && decayCurve.length > 0)
+    ? `${(decayCurve[0].probability * 100).toFixed(1)}%`
+    : `${overallSuccessRate.toFixed(1)}%`;
 
-  metricBox(s2, c2, row1Y, bW, bH,
-    'TOTAL DDVM ATTEMPTS',
-    totalAttempts.toLocaleString(),
-    'Delivery attempts recorded across all campaigns',
-    NAVY);
+  const ALL_CARDS = {
+    uniquePhoneNumbers:    { label: 'UNIQUE PHONE NUMBERS',      value: uniqueNumbers.toLocaleString(),                              sub: 'Phone numbers analyzed in this report',                               accent: PINK },
+    totalAttempts:         { label: 'TOTAL DDVM ATTEMPTS',       value: totalAttempts.toLocaleString(),                             sub: 'Delivery attempts recorded across all campaigns',                     accent: NAVY },
+    overallSuccessRate:    { label: 'OVERALL SUCCESS RATE',      value: `${overallSuccessRate.toFixed(1)}%`,                        sub: `${totalSuccess.toLocaleString()} voicemails successfully delivered`,  accent: successAccent },
+    successfulDeliveries:  { label: 'SUCCESSFUL DELIVERIES',     value: totalSuccess.toLocaleString(),                              sub: `${overallSuccessRate.toFixed(1)}% of all attempts — voicemails delivered to consumers`, accent: BLUE },
+    numbersConnectingWell: { label: 'NUMBERS CONNECTING WELL',   value: healthyCount.toLocaleString(),                              sub: `${healthyPct.toFixed(0)}% of the list maintaining good delivery performance`, accent: healthyAccent },
+    dateSpan:              { label: 'DATE SPAN',                 value: daySpan > 0 ? `${daySpan} Days` : dateRangeStr,            sub: daySpan > 0 ? dateRangeStr : '',                                       accent: PINK_LIGHT, fontSize: 28 },
+    agentHoursSaved:       { label: 'AGENT HOURS SAVED (EST.)',  value: agentHoursSaved > 0 ? `${agentHoursSaved.toLocaleString()} hrs` : '—', sub: `Based on ${totalSuccess.toLocaleString()} deliveries × 3 min avg handle time`, accent: PURPLE },
+    unsuccessfulAttempts:  { label: 'UNSUCCESSFUL ATTEMPTS',     value: (totalAttempts - totalSuccess).toLocaleString(),           sub: `${(100 - overallSuccessRate).toFixed(1)}% of all attempts`,           accent: CHARCOAL },
+    firstAttemptSuccessRate: { label: 'FIRST ATTEMPT SUCCESS RATE', value: firstAttemptRate,                                       sub: 'Success rate on the very first delivery attempt to each number',      accent: BLUE_LIGHT },
+    avgAttemptsPerNumber:  { label: 'AVG ATTEMPTS PER NUMBER',   value: uniqueNumbers > 0 ? (totalAttempts / uniqueNumbers).toFixed(1) : '—', sub: 'Average total delivery attempts per unique phone number',    accent: PURPLE_LIGHT },
+    nonDeliverableNumbers: { label: 'NON-DELIVERABLE NUMBERS',   value: ((toxicCount || 0) + (neverDeliveredCount || 0)).toLocaleString(), sub: 'Numbers unlikely or unable to receive successful delivery', accent: CHARCOAL }
+  };
 
-  metricBox(s2, c3, row1Y, bW, bH,
-    'OVERALL SUCCESS RATE',
-    `${overallSuccessRate.toFixed(1)}%`,
-    `${totalSuccess.toLocaleString()} voicemails successfully delivered`,
-    successAccent);
+  const DEFAULT_CARDS = [
+    'uniquePhoneNumbers', 'totalAttempts', 'overallSuccessRate',
+    'successfulDeliveries', 'numbersConnectingWell', 'dateSpan'
+  ];
+  const cardKeys = (Array.isArray(overviewCards) && overviewCards.length > 0)
+    ? overviewCards.slice(0, 6)
+    : DEFAULT_CARDS;
 
-  metricBox(s2, c1, row2Y, bW, bH,
-    'SUCCESSFUL DELIVERIES',
-    totalSuccess.toLocaleString(),
-    `${overallSuccessRate.toFixed(1)}% of all attempts — voicemails delivered to consumers`,
-    BLUE);
+  const cardPositions = [
+    [c1, row1Y], [c2, row1Y], [c3, row1Y],
+    [c1, row2Y], [c2, row2Y], [c3, row2Y]
+  ];
 
-  metricBox(s2, c2, row2Y, bW, bH,
-    'NUMBERS CONNECTING WELL',
-    healthyCount.toLocaleString(),
-    `${healthyPct.toFixed(0)}% of the list maintaining good delivery performance`,
-    healthyAccent);
-
-  // Date span — big day count, date range as subtext
-  metricBox(s2, c3, row2Y, bW, bH,
-    'DATE SPAN',
-    daySpan > 0 ? `${daySpan} Days` : dateRangeStr,
-    daySpan > 0 ? dateRangeStr : '',
-    PINK_LIGHT, 32);
+  cardKeys.forEach((key, i) => {
+    const card = ALL_CARDS[key];
+    const pos  = cardPositions[i];
+    if (!card || !pos) return;
+    metricBox(s2, pos[0], pos[1], bW, bH, card.label, card.value, card.sub, card.accent, card.fontSize || 32);
+  });
 
   // ── Single-touch opportunity callout strip ────────────────────────────────
   const cadenceTotalNumbers = (cadence.cadenceSingleTouch || 0) + (cadence.cadenceMultiTouchCount || 0);
@@ -411,7 +421,8 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   }
 
   // ── Agent Hours Saved — full-width purple card below callout strip ──────────
-  if (agentHoursSaved > 0) {
+  // Only render as banner if it's not already shown as one of the 6 metric cards
+  if (agentHoursSaved > 0 && !cardKeys.includes('agentHoursSaved')) {
     const ahCardH  = 1.14;
     const ahCardW  = 3 * bW + 2 * bGap; // 12.32 — aligns with card grid right edge
     const ahStripBottom = row2Y + bH + 0.20 + 0.68; // stripY + stripH
@@ -464,8 +475,9 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   slideFooter(s2);
 
   // ────────────────────────────────────────────────────────────────────────────
-  // SLIDE 3 — Success Probability by Attempt
+  // SLIDE 3 — Success Probability by Attempt (optional)
   // ────────────────────────────────────────────────────────────────────────────
+  if (includeSlideDecayCurve) {
   const s3 = pptx.addSlide();
   s3.background = { color: CREAM };
   const s3HdrH = headerBar(pptx, s3, 'Success Probability by Attempt', headerLogo, dateRangeStr);
@@ -532,10 +544,12 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     }
   );
   slideFooter(s3);
+  } // end includeSlideDecayCurve
 
   // ────────────────────────────────────────────────────────────────────────────
-  // SLIDE 4 — Delivery Re-Attempt Cadence
+  // SLIDE 4 — Delivery Re-Attempt Cadence (optional)
   // ────────────────────────────────────────────────────────────────────────────
+  if (includeSlideReAttemptCadence) {
   const s4 = pptx.addSlide();
   s4.background = { color: CREAM };
   const s4HdrH = headerBar(pptx, s4, 'Delivery Re-Attempt Cadence', headerLogo, dateRangeStr);
@@ -546,7 +560,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   const s4SinglePct = s4TotalNumbers > 0 ? (cadence.cadenceSingleTouch / s4TotalNumbers * 100).toFixed(1) : '0.0';
   const s4MultiPct  = s4TotalNumbers > 0 ? (cadence.cadenceMultiTouchCount / s4TotalNumbers * 100).toFixed(1) : '0.0';
   s4.addText(
-    `${cadence.cadenceMultiTouchCount.toLocaleString()} numbers (${s4MultiPct}%) had 2+ delivery attempts. ${cadence.cadenceSingleTouch.toLocaleString()} numbers (${s4SinglePct}%) were contacted only once — each a potential opportunity for an additional touch. Breakdown by median interval between consecutive attempts:`,
+    `${cadence.cadenceMultiTouchCount.toLocaleString()} numbers (${s4MultiPct}%) had 2+ delivery attempts — across all result types (successfully delivered, unsuccessful, voicemail not setup, voicemail full, and not in service). ${cadence.cadenceSingleTouch.toLocaleString()} numbers (${s4SinglePct}%) were contacted only once — each a potential opportunity for an additional touch. Breakdown by median interval between consecutive attempts:`,
     {
       x: 0.4, y: s4CY + 0.08,
       w: SLIDE_W - 0.8, h: 0.44,
@@ -629,11 +643,13 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     });
   }
   slideFooter(s4);
+  } // end includeSlideReAttemptCadence
 
   // ────────────────────────────────────────────────────────────────────────────
-  // SLIDE 5 — Recommended Actions
+  // SLIDE 5 — Recommended Actions (optional)
   // Cards with navy left accent bar (matches VoApps brand purple/pink motif)
   // ────────────────────────────────────────────────────────────────────────────
+  if (includeSlideOpportunities) {
   const s5 = pptx.addSlide();
   s5.background = { color: CREAM };
   const s5HdrH = headerBar(pptx, s5, 'Opportunities to Maximize Performance', headerLogo, dateRangeStr);
@@ -720,6 +736,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     }
   }
   slideFooter(s5);
+  } // end includeSlideOpportunities
 
   // ────────────────────────────────────────────────────────────────────────────
   await pptx.writeFile({ fileName: outputPath });

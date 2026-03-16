@@ -2,7 +2,7 @@
 // VoApps Tools Version Management
 //
 // Notes:
-// - Current version reflects the newest release (4.2.3).
+// - Current version reflects the newest release (4.2.4).
 // - Keeps feature flags + author from the original "DuckDB Edition" file.
 // - Changelog is unified so each version can include: changes/features, fixes, and breaking changes.
 
@@ -10,9 +10,9 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '4.2.3',
-  VERSION_NAME: 'Call Center Intelligence',
-  RELEASE_DATE: '2026-03-13',
+  VERSION: '4.2.4',
+  VERSION_NAME: 'Re-attempt Intelligence',
+  RELEASE_DATE: '2026-03-16',
   AUTHOR: 'Brett Menzie',
 
   // -----------------------------
@@ -50,6 +50,32 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '4.2.4': {
+      date: '2026-03-16',
+      title: 'Re-attempt Intelligence',
+      changes: [
+        'New Re-attempt Analysis Excel tabs (optional, in Report Output → Analysis Tabs): Re-attempt Summary, Outcome Transition Matrix, Attempt Funnel by Code, Retry Timing Analysis — surfaces actionable retry patterns across all delivery result codes',
+        'Outcome Transition Matrix: 5×5 heatmap showing From→To result code transitions with color-coded cells (green for →Delivered, red for →Not in Service, amber for high →Unsuccessful); most actionable tab for evaluating whether retrying a specific code is worth it',
+        'Attempt Funnel by Code: for multi-touch numbers, shows at which attempt number first successful delivery occurred (or never) grouped by initial result code — both % and raw count tables',
+        'Retry Timing Analysis: gap-to-success correlation across 5 time buckets (same day through 8+ days) grouped by From code; green highlighting for 2–7 day sweet spot',
+        'Re-attempt Summary: multi-touch funnel overview, eventually-delivered rate by initial code, avg attempts and span to delivery, Code Persistence Score (how often a code repeats on multi-attempt never-delivered numbers)',
+        'Business Review Slides control panel added to Report Output drawer (third tab): select which PPTX slides to include and which metric cards appear on the High-Level Overview slide',
+        'High-Level Overview metric card selection: 11 available cards, up to 6 selectable — Unique Phone Numbers, Total DDVM Attempts, Overall Success Rate, Successful Deliveries, Numbers Connecting Well, Date Span (default 6); plus Agent Hours Saved, Unsuccessful Attempts, First Attempt Success Rate, Avg Attempts per Number, Non-Deliverable Numbers (optional)',
+        'Optional PPTX slides: Success Probability by Attempt (default off), Delivery Re-Attempt Cadence (default on), Opportunities to Maximize Performance (default on)',
+        'PPTX slide 2 renamed Campaign Overview → High-Level Overview',
+        'Delivery Re-Attempt Cadence slide clarified to cover all result types — intro text now states coverage includes successful deliveries, unsuccessful, voicemail not setup, voicemail full, and not in service',
+        'All Report Output settings (including new Business Review Slides and Re-attempt tabs) persist via localStorage'
+      ],
+      features: [
+        'Re-attempt Analysis: 4 optional Excel tabs surfacing retry pattern intelligence',
+        'Outcome Transition Matrix: heatmap with inline cell color-coding for immediate pattern recognition',
+        'Business Review Slides control panel: per-slide and per-card selection with live counter',
+        'High-Level Overview metric card registry: dynamic selection of up to 6 cards from 11 options'
+      ],
+      fixes: [
+        'Date Span metric card font size corrected from 32pt to 28pt on High-Level Overview slide'
+      ]
+    },
     '4.2.3': {
       date: '2026-03-13',
       title: 'Call Center Intelligence',
