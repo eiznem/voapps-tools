@@ -5,7 +5,7 @@ const { workerData, parentPort } = require('worker_threads');
 const { generateTrendAnalysis } = require('./trendAnalyzer');
 
 async function run() {
-  const { inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel, includeDetailTabs = false, transcriptMap = {}, includeReAttemptTabs = false, pptxOptions = {} } = workerData;
+  const { inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel, includeDetailTabs = false, transcriptMap = {}, includeReAttemptTabs = false, pptxOptions = {}, includeSuppressionCandidates = true } = workerData;
 
   try {
     await generateTrendAnalysis(
@@ -21,6 +21,7 @@ async function run() {
       includeDetailTabs,
       transcriptMap,
       includeReAttemptTabs,
+      includeSuppressionCandidates,
       pptxOptions
     );
     parentPort.postMessage({ ok: true });

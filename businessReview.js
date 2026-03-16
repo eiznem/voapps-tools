@@ -200,8 +200,17 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     includeSlideDecayCurve       = false,
     includeSlideReAttemptCadence = true,
     includeSlideOpportunities    = true,
-    overviewCards                = null
+    overviewCards                = null,
+    reAttemptData                = null
   } = options;
+
+  // ── Helper: strip Excel tab cross-references from slide text, return separately ──
+  const TAB_REF_RE = /\s*(?:See\s+[""]?[^."]+[""]?\s+(?:tab\s+)?for[^.]*\.|The\s+[^.]+?\s+tab\s+has[^.]*\.)/gi;
+  function separateTabRefs(text) {
+    const notesList = [...text.matchAll(new RegExp(TAB_REF_RE.source, 'gi'))].map(m => m[0].trim());
+    const visible = text.replace(new RegExp(TAB_REF_RE.source, 'gi'), '').trim();
+    return { visible, notes: notesList };
+  }
 
   // Resolve which logo to use for each context
   const headerLogo = squareLogo || logoPath;
@@ -377,7 +386,26 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     const card = ALL_CARDS[key];
     const pos  = cardPositions[i];
     if (!card || !pos) return;
-    metricBox(s2, pos[0], pos[1], bW, bH, card.label, card.value, card.sub, card.accent, card.fontSize || 32);
+    if (key === 'overallSuccessRate') {
+      // Special rendering: card with horizontal progress bar
+      const [cx, cy] = pos;
+      s2.addShape(RECT, { x: cx, y: cy, w: bW, h: bH, fill: { color: CREAM }, line: { color: PINK_PALE, pt: 1 } });
+      s2.addShape(RECT, { x: cx, y: cy, w: bW, h: 0.06, fill: { color: card.accent }, line: { color: card.accent } });
+      s2.addText(card.label, { x: cx + 0.16, y: cy + 0.16, w: bW - 0.32, h: 0.26,
+        fontSize: 11, color: TEXT_SOFT, bold: false, fontFace: 'Aktiv Grotesk VF Medium', charSpacing: 1.5 });
+      s2.addText(card.value, { x: cx + 0.16, y: cy + 0.42, w: bW - 0.32, h: 0.56,
+        fontSize: 28, bold: true, color: NAVY, fontFace: 'IvyPresto Text', align: 'left', valign: 'top', shrinkText: true });
+      // Progress bar track
+      const pbX = cx + 0.16, pbY = cy + 1.02, pbW2 = bW - 0.32, pbH = 0.14;
+      s2.addShape(RECT, { x: pbX, y: pbY, w: pbW2, h: pbH, fill: { color: 'DDD9EF' }, line: { color: 'DDD9EF' } });
+      // Progress bar fill
+      const fillW = Math.max(0.04, pbW2 * (overallSuccessRate / 100));
+      s2.addShape(RECT, { x: pbX, y: pbY, w: fillW, h: pbH, fill: { color: card.accent }, line: { color: card.accent } });
+      s2.addText(card.sub, { x: cx + 0.16, y: cy + 1.20, w: bW - 0.32, h: 0.30,
+        fontSize: 10, color: TEXT_SOFT, fontFace: 'Aktiv Grotesk VF Medium' });
+    } else {
+      metricBox(s2, pos[0], pos[1], bW, bH, card.label, card.value, card.sub, card.accent, card.fontSize || 32);
+    }
   });
 
   // ── Single-touch opportunity callout strip ────────────────────────────────
@@ -534,15 +562,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     border: { type: 'solid', color: PINK_PALE, pt: 0.75 }
   });
 
-  s3.addText(
-    'Numbers with 4–6+ consecutive failures and low success rates are listed in the Suppression Candidates tab of the report.',
-    {
-      x: 0.4, y: SLIDE_H - 0.78,
-      w: SLIDE_W - 0.8, h: 0.36,
-      fontSize: 8.5, color: TEXT_SOFT, italic: true, align: 'center',
-      fontFace: 'Aktiv Grotesk VF Medium'
-    }
-  );
+  s3.addNotes('For your reference: Numbers with 4–6+ consecutive failures and low success rates are listed in the Suppression Candidates tab of the Delivery Intelligence Excel report.');
   slideFooter(s3);
   } // end includeSlideDecayCurve
 
@@ -687,11 +707,16 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     const itemH    = Math.min(0.82, availH / Math.max(maxItems, 1));
     let ay = bnaY + bnaH + 0.12;
 
+    const slideNotes = [];
     for (let i = 0; i < maxItems; i++) {
       const raw      = actions[i];
       const colonIdx = raw.indexOf(':');
       const prefix   = colonIdx > -1 ? raw.substring(0, colonIdx + 1) : '';
-      const body     = colonIdx > -1 ? raw.substring(colonIdx + 1).trim() : raw;
+      const rawBody  = colonIdx > -1 ? raw.substring(colonIdx + 1).trim() : raw;
+
+      // Strip Excel tab cross-references from visible card text
+      const { visible: body, notes: tabNotes } = separateTabRefs(rawBody);
+      if (tabNotes.length) slideNotes.push(...tabNotes.map(n => `${prefix ? prefix + ' ' : ''}${n}`));
 
       const cardH = itemH - 0.08;
 
@@ -727,16 +752,110 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     }
 
     if (actions.length > maxItems) {
-      s5.addText(`+ ${actions.length - maxItems} more — see the Recommended Actions section in the Executive Summary tab.`, {
-        x: 0.4, y: SLIDE_H - 0.6,
-        w: SLIDE_W - 0.8, h: 0.35,
-        fontSize: 9, color: TEXT_SOFT, italic: true, align: 'center',
-        fontFace: 'Aktiv Grotesk VF Medium'
-      });
+      slideNotes.push(`+ ${actions.length - maxItems} additional recommendation(s) — see the Recommended Actions section in the Executive Summary tab of the Delivery Intelligence Excel report.`);
+    }
+    if (slideNotes.length) {
+      s5.addNotes('Speaker notes — Excel report references:\n' + slideNotes.map((n, i) => `${i + 1}. ${n}`).join('\n'));
     }
   }
   slideFooter(s5);
   } // end includeSlideOpportunities
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // SLIDE 6 — Multi-Touch Delivery Funnel (when re-attempt data is available)
+  // ────────────────────────────────────────────────────────────────────────────
+  const rf = reAttemptData && reAttemptData.retentionFunnel;
+  if (rf && rf.length >= 2) {
+    const sfun = pptx.addSlide();
+    sfun.background = { color: CREAM };
+    const sfunHdrH = headerBar(pptx, sfun, 'Multi-Touch Delivery Funnel', headerLogo, dateRangeStr);
+
+    const maxCount = rf[0].count;
+    const maxBarW  = 9.0;
+    const barH     = 0.72;
+    const barGap   = 0.22;
+    const levels   = Math.min(rf.length, 5);
+    const totalH   = levels * barH + (levels - 1) * barGap;
+    const startY   = sfunHdrH + (SLIDE_H - sfunHdrH - 0.35 - totalH) / 2;
+    const labelW   = 2.0;
+    const barX     = 0.3 + labelW + 0.10;
+
+    // Sub-headline
+    const multiPct = maxCount > 0 ? ((rf[1] ? rf[1].count : 0) / maxCount * 100).toFixed(0) : 0;
+    sfun.addText(
+      `${rf[1] ? rf[1].count.toLocaleString() : 0} of ${maxCount.toLocaleString()} numbers (${multiPct}%) received more than one delivery attempt`,
+      {
+        x: 0.3, y: sfunHdrH + 0.14, w: SLIDE_W - 0.6, h: 0.30,
+        fontSize: 11, color: TEXT_SOFT, italic: true, align: 'center',
+        fontFace: 'Aktiv Grotesk VF Medium'
+      }
+    );
+
+    for (let i = 0; i < levels; i++) {
+      const level = rf[i];
+      const barW  = maxBarW * (level.count / maxCount);
+      const bx    = barX + (maxBarW - barW) / 2; // center-aligned
+      const by    = startY + i * (barH + barGap);
+      const delivW = barW > 0 ? barW * (level.delivered / level.count) : 0;
+
+      // Alternating purple shades for funnel depth effect
+      const barColor  = i === 0 ? PURPLE       : i === 1 ? PURPLE_LIGHT
+                      : i === 2 ? '9B94D4'     : i === 3 ? 'B2ACE2' : 'C8C3EC';
+      const delivColor = i === 0 ? '0D053F'    : i === 1 ? PURPLE       : i === 2 ? PURPLE_LIGHT : '9B94D4';
+
+      // Background track (full-width ghost bar for context)
+      sfun.addShape(RECT, {
+        x: barX, y: by, w: maxBarW, h: barH,
+        fill: { color: 'EDE9F7' }, line: { color: 'DDD9EF', pt: 0.5 }
+      });
+
+      // Main bar (count at this attempt level)
+      sfun.addShape(RECT, {
+        x: bx, y: by, w: Math.max(0.04, barW), h: barH,
+        fill: { color: barColor }, line: { color: barColor }
+      });
+
+      // Delivered portion overlay (darker shade)
+      if (delivW > 0.04) {
+        sfun.addShape(RECT, {
+          x: bx, y: by, w: delivW, h: barH * 0.28,
+          fill: { color: delivColor }, line: { color: delivColor }
+        });
+      }
+
+      // Left label: "1+ Attempts" etc.
+      sfun.addText(i === 0 ? '1st Attempt' : `${level.n}+ Attempts`, {
+        x: 0.3, y: by, w: labelW, h: barH,
+        fontSize: 12, bold: true, color: NAVY,
+        fontFace: 'Aktiv Grotesk VF Medium', valign: 'middle', align: 'right'
+      });
+
+      // Count + delivered rate inside/beside bar
+      const pctDel = level.count > 0 ? (level.delivered / level.count * 100).toFixed(0) : 0;
+      sfun.addText(
+        `${level.count.toLocaleString()}  ·  ${pctDel}% eventually delivered`,
+        {
+          x: bx + 0.14, y: by, w: Math.max(barW - 0.28, 2.0), h: barH,
+          fontSize: 10.5, bold: false, color: i === 0 ? WHITE : WHITE,
+          fontFace: 'Aktiv Grotesk VF Medium', valign: 'middle', align: 'left'
+        }
+      );
+    }
+
+    // Legend
+    const legY = startY + levels * (barH + barGap) + 0.08;
+    sfun.addShape(RECT, { x: barX, y: legY, w: 0.22, h: 0.16, fill: { color: PURPLE }, line: { color: PURPLE } });
+    sfun.addText('Count at this attempt level', { x: barX + 0.28, y: legY - 0.01, w: 2.8, h: 0.18,
+      fontSize: 9, color: TEXT_SOFT, fontFace: 'Aktiv Grotesk VF Medium' });
+    sfun.addShape(RECT, { x: barX + 3.2, y: legY, w: 0.22, h: 0.16, fill: { color: NAVY }, line: { color: NAVY } });
+    sfun.addText('Eventually delivered (200)', { x: barX + 3.48, y: legY - 0.01, w: 2.8, h: 0.18,
+      fontSize: 9, color: TEXT_SOFT, fontFace: 'Aktiv Grotesk VF Medium' });
+
+    sfun.addNotes('Data source: Attempt Funnel by Code tab in the Delivery Intelligence Excel report.\n' +
+      '• Bar width shows how many numbers reached that attempt level (narrowing = fewer numbers retried that many times).\n' +
+      '• "Eventually delivered" = had at least one successful drop (200) at any point.');
+    slideFooter(sfun);
+  }
 
   // ────────────────────────────────────────────────────────────────────────────
   await pptx.writeFile({ fileName: outputPath });

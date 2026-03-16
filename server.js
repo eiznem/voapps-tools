@@ -1412,10 +1412,10 @@ function detectUrlMention(transcript) {
 /**
  * Run generateTrendAnalysis in a worker thread so the main/UI thread stays responsive.
  */
-function runAnalysisInWorker(inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel, includeDetailTabs = true, transcriptMap = {}, includeReAttemptTabs = false, pptxOptions = {}) {
+function runAnalysisInWorker(inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel, includeDetailTabs = true, transcriptMap = {}, includeReAttemptTabs = false, pptxOptions = {}, includeSuppressionCandidates = true) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(path.join(__dirname, 'analysisWorker.js'), {
-      workerData: { inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel, includeDetailTabs, transcriptMap, includeReAttemptTabs, pptxOptions },
+      workerData: { inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel, includeDetailTabs, transcriptMap, includeReAttemptTabs, pptxOptions, includeSuppressionCandidates },
       // Allow up to 6GB heap for large dataset analysis
       resourceLimits: { maxOldGenerationSizeMb: 6144 }
     });
@@ -3707,6 +3707,7 @@ async function runCombineCampaigns(config) {
     min_consec_unsuccessful = 4,
     min_run_span_days = 30,
     include_detail_tabs = false, // TN Health, Variability Analysis, Number Summary tabs
+    include_suppression_candidates = true,
     include_re_attempt_tabs = false,
     pptx_include_slide_decay_curve = false,
     pptx_include_slide_cadence = true,
@@ -4119,7 +4120,8 @@ async function runCombineCampaigns(config) {
         include_detail_tabs,
         transcriptMap,
         include_re_attempt_tabs,
-        pptxOptions
+        pptxOptions,
+        include_suppression_candidates
       );
 
       lastArtifacts.analysisPath = analysisPath;
@@ -5014,6 +5016,7 @@ function createHttpServer() {
           min_consec_unsuccessful: body.min_consec_unsuccessful,
           min_run_span_days: body.min_run_span_days,
           include_detail_tabs: !!body.include_detail_tabs,
+          include_suppression_candidates: body.include_suppression_candidates !== false,
           include_re_attempt_tabs: !!body.include_re_attempt_tabs,
           pptx_include_slide_decay_curve: !!body.pptx_include_slide_decay_curve,
           pptx_include_slide_cadence: body.pptx_include_slide_cadence !== false,
@@ -5107,6 +5110,7 @@ function createHttpServer() {
         let csvAiEnabled = false;
         let csvAiTranscriptionMode = 'local';
         let csvAiIntentMode = 'local';
+        let csvIncludeSuppressionCandidates = true;
         let csvIncludeReAttemptTabs = false;
         let csvPptxIncludeSlideDecayCurve = false;
         let csvPptxIncludeSlideCadence = true;
@@ -5142,6 +5146,8 @@ function createHttpServer() {
             csvAiTranscriptionMode = bodyBuf.slice(contentStart, contentEnd).toString().trim() || 'local';
           } else if (header.includes('name="ai_intent_mode"')) {
             csvAiIntentMode = bodyBuf.slice(contentStart, contentEnd).toString().trim() || 'local';
+          } else if (header.includes('name="include_suppression_candidates"')) {
+            csvIncludeSuppressionCandidates = bodyBuf.slice(contentStart, contentEnd).toString().trim() !== 'false';
           } else if (header.includes('name="include_re_attempt_tabs"')) {
             csvIncludeReAttemptTabs = bodyBuf.slice(contentStart, contentEnd).toString().trim() === 'true';
           } else if (header.includes('name="pptx_include_slide_decay_curve"')) {
@@ -5286,7 +5292,7 @@ function createHttpServer() {
           const tempCsvPath = path.join(outDir, `UploadedCSV_${suffix}.csv`);
           const csvResult = await writeCsv(tempCsvPath, allRows, headers, null, dynamicRowLimit);
 
-          await runAnalysisInWorker(csvResult.files, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel, false, csvTranscriptMap, csvIncludeReAttemptTabs, csvPptxOptions);
+          await runAnalysisInWorker(csvResult.files, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel, false, csvTranscriptMap, csvIncludeReAttemptTabs, csvPptxOptions, csvIncludeSuppressionCandidates);
 
           lastArtifacts.analysisPath = analysisPath;
           const pptxPath1 = analysisPath.replace(/\.xlsx$/i, '_Business_Review.pptx');
@@ -5300,7 +5306,7 @@ function createHttpServer() {
           });
         }
 
-        await runAnalysisInWorker(allRows, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel, false, csvTranscriptMap, csvIncludeReAttemptTabs, csvPptxOptions);
+        await runAnalysisInWorker(allRows, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel, false, csvTranscriptMap, csvIncludeReAttemptTabs, csvPptxOptions, csvIncludeSuppressionCandidates);
 
         lastArtifacts.analysisPath = analysisPath;
         const pptxPath2 = analysisPath.replace(/\.xlsx$/i, '_Business_Review.pptx');
@@ -5329,6 +5335,7 @@ function createHttpServer() {
           min_run_span_days = 30,
           client_prefix = "",
           include_detail_tabs = false,
+          include_suppression_candidates: dbIncludeSuppressionCandidates = true,
           include_re_attempt_tabs: dbIncludeReAttemptTabs = false,
           pptx_include_slide_decay_curve: dbPptxIncludeSlideDecayCurve = false,
           pptx_include_slide_cadence: dbPptxIncludeSlideCadence = true,
@@ -5563,7 +5570,8 @@ function createHttpServer() {
           include_detail_tabs,
           dbTranscriptMap,
           dbIncludeReAttemptTabs,
-          dbPptxOptions
+          dbPptxOptions,
+          dbIncludeSuppressionCandidates
         );
 
         // Clean up temp CSV files

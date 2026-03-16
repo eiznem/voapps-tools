@@ -2350,6 +2350,9 @@
               <label class="checkbox-label">
                 <input type="checkbox" id="includeTabNumberSummary"> Number Summary
               </label>
+              <label class="checkbox-label">
+                <input type="checkbox" id="includeTabSuppressionCandidates" checked> Suppression Candidates
+              </label>
 
               <!-- Re-attempt Analysis section -->
               <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #e0e0e0;">
@@ -4764,6 +4767,7 @@
         payload.min_consec_unsuccessful = parseInt($('minConsecUnsuccessful').value) || 4;
         payload.min_run_span_days = parseInt($('minRunSpanDays').value) || 30;
         payload.include_detail_tabs = $('includeTabTnHealth')?.checked || $('includeTabVariability')?.checked || $('includeTabNumberSummary')?.checked || false;
+        payload.include_suppression_candidates = $('includeTabSuppressionCandidates')?.checked ?? true;
         payload.include_re_attempt_tabs = $('includeTabReAttemptSummary')?.checked || $('includeTabReAttemptMatrix')?.checked || $('includeTabReAttemptFunnel')?.checked || $('includeTabReAttemptTiming')?.checked || false;
         payload.pptx_include_slide_decay_curve = $('slideDdecayCurve')?.checked ?? false;
         payload.pptx_include_slide_cadence = $('slideReAttemptCadence')?.checked ?? true;
@@ -5600,9 +5604,10 @@
         if (s.minConsecUnsuccessful) $('minConsecUnsuccessful').value = s.minConsecUnsuccessful;
         if (s.minRunSpanDays) $('minRunSpanDays').value = s.minRunSpanDays;
 
-        if ($('includeTabTnHealth'))      $('includeTabTnHealth').checked      = s.includeTabTnHealth      || false;
-        if ($('includeTabVariability'))   $('includeTabVariability').checked   = s.includeTabVariability   || false;
-        if ($('includeTabNumberSummary')) $('includeTabNumberSummary').checked = s.includeTabNumberSummary || false;
+        if ($('includeTabTnHealth'))              $('includeTabTnHealth').checked              = s.includeTabTnHealth              || false;
+        if ($('includeTabVariability'))           $('includeTabVariability').checked           = s.includeTabVariability           || false;
+        if ($('includeTabNumberSummary'))         $('includeTabNumberSummary').checked         = s.includeTabNumberSummary         || false;
+        if ($('includeTabSuppressionCandidates')) $('includeTabSuppressionCandidates').checked = s.includeTabSuppressionCandidates ?? true;
 
         if ($('includeTabReAttemptSummary')) $('includeTabReAttemptSummary').checked = s.includeTabReAttemptSummary || false;
         if ($('includeTabReAttemptMatrix'))  $('includeTabReAttemptMatrix').checked  = s.includeTabReAttemptMatrix  || false;
@@ -5655,6 +5660,7 @@
         includeTabTnHealth: $('includeTabTnHealth')?.checked || false,
         includeTabVariability: $('includeTabVariability')?.checked || false,
         includeTabNumberSummary: $('includeTabNumberSummary')?.checked || false,
+        includeTabSuppressionCandidates: $('includeTabSuppressionCandidates')?.checked ?? true,
         includeTabReAttemptSummary: $('includeTabReAttemptSummary')?.checked || false,
         includeTabReAttemptMatrix: $('includeTabReAttemptMatrix')?.checked || false,
         includeTabReAttemptFunnel: $('includeTabReAttemptFunnel')?.checked || false,

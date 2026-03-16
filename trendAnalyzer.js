@@ -626,6 +626,7 @@ async function generateTrendAnalysis(
   includeDetailTabs = false,
   transcriptMap = {},
   includeReAttemptTabs = false,
+  includeSuppressionCandidates = true,
   pptxOptions = {}
 ) {
   log(`Starting Delivery Intelligence Analysis (v${VERSION})`);
@@ -1310,14 +1311,6 @@ async function generateTrendAnalysis(
     const eventuallyDelivered = {};
     for (const fc of RE_ATTEMPT_CODES) eventuallyDelivered[fc] = { delivered: 0, total: 0 };
 
-    // Code persistence: for multi-attempt never-delivered numbers
-    const persistenceData = {};
-    for (const fc of RE_ATTEMPT_CODES) {
-      if (fc !== 'successfully delivered') {
-        persistenceData[fc] = { multiAttemptNeverDelivered: 0, alwaysSameCode: 0 };
-      }
-    }
-
     // Multi-attempt delivery stats
     let totalMultiAttemptNumbers = 0;
     let sumAttemptsToDelivery = 0; // for non-first-attempt successes
@@ -1372,16 +1365,6 @@ async function generateTrendAnalysis(
         else                            funnelByCode[firstResult].at4plus++;
       }
 
-      // Code persistence (for never-delivered multi-attempt numbers)
-      if (!everDelivered && atts.length >= 2) {
-        const firstCode = atts[0].result;
-        if (firstCode && persistenceData[firstCode]) {
-          persistenceData[firstCode].multiAttemptNeverDelivered++;
-          const allSame = atts.every(a => a.result === firstCode);
-          if (allSame) persistenceData[firstCode].alwaysSameCode++;
-        }
-      }
-
       // Transition matrix + timing
       for (let i = 0; i < atts.length - 1; i++) {
         const from = atts[i].result;
@@ -1404,9 +1387,23 @@ async function generateTrendAnalysis(
       }
     }
 
+    // Retention funnel for PPTX visual: count of numbers with at least N attempts
+    const retentionFunnel = [];
+    for (let n = 1; n <= 6; n++) {
+      let count = 0, delivered = 0;
+      for (const nd of Object.values(numberData)) {
+        if (nd.attempts.length >= n) {
+          count++;
+          if (nd.attempts.some(a => a.isSuccess)) delivered++;
+        }
+      }
+      if (count === 0) break;
+      retentionFunnel.push({ n, count, delivered });
+    }
+
     reAttemptData = {
       transMatrix, transRowTotals, funnelByCode, timingMatrix,
-      eventuallyDelivered, persistenceData,
+      eventuallyDelivered, retentionFunnel,
       totalMultiAttemptNumbers,
       avgAttemptsToDelivery: countNonFirstAttemptDeliveries > 0
         ? sumAttemptsToDelivery / countNonFirstAttemptDeliveries : null,
@@ -2818,6 +2815,7 @@ async function generateTrendAnalysis(
   // TAB 9: CONSECUTIVE UNSUCCESSFUL
   // ========================================
 
+  if (includeSuppressionCandidates) {
   log('Creating Suppression Candidates tab...');
 
   const consecSheet = workbook.addWorksheet('Suppression Candidates', {
@@ -2850,6 +2848,7 @@ async function generateTrendAnalysis(
   log(`  Suppression Candidates: ${suppressionRuns.length.toLocaleString()} rows`);
 
   autoFitColumns(consecSheet, 12, 50);
+  } // end includeSuppressionCandidates
 
   // ========================================
   // TAB 10: DELIVERY TREND
@@ -3066,9 +3065,8 @@ async function generateTrendAnalysis(
     raSum.getCell('A2').value =
       'Analyzes what happened across multiple delivery attempts to the same phone number. ' +
       'All numbers with 2+ attempts in this dataset are included. ' +
-      'Result codes used: 200 = successfully delivered, 400 = unsuccessful, 405 = not in service, ' +
-      '406 = voicemail not setup, 407 = voicemail full. Note: 401 (not a wireless number) is excluded — ' +
-      'those numbers never enter the delivery attempt pool.';
+      'Result codes used: 200 = successfully delivered, 400 = unsuccessful, ' +
+      '405 = not in service, 406 = voicemail not setup, 407 = voicemail full.';
     raSum.getCell('A2').font = { italic: true, size: 10, color: { argb: '555555' } };
     raSum.getCell('A2').alignment = { wrapText: true, vertical: 'top' };
     raSum.getRow(2).height = 50;
@@ -3154,42 +3152,6 @@ async function generateTrendAnalysis(
         altFill(raSum, raRow);
         raRow++;
       }
-      raRow++;
-    }
-
-    // Section 4: Code Persistence Score
-    raSum.mergeCells(`A${raRow}:D${raRow}`);
-    raSum.getCell(`A${raRow}`).value = 'Code Persistence Score — Multi-Attempt Numbers That Never Delivered';
-    raSum.getCell(`A${raRow}`).style = sectionHeaderStyle;
-    raRow++;
-
-    raSum.mergeCells(`A${raRow}:D${raRow}`);
-    raSum.getCell(`A${raRow}`).value =
-      'High persistence suggests a structural issue (e.g., consistently full mailbox, out-of-service number) rather than random noise. ' +
-      'Low persistence suggests the issue may vary by time of day, day of week, or other retry conditions.';
-    raSum.getCell(`A${raRow}`).font = { italic: true, size: 10, color: { argb: '555555' } };
-    raSum.getCell(`A${raRow}`).alignment = { wrapText: true };
-    raSum.getRow(raRow).height = 35;
-    raRow++;
-
-    raSum.getRow(raRow).values = ['Result Code', 'Multi-Attempt Never-Delivered', 'Always Same Code', 'Persistence Rate'];
-    raSum.getRow(raRow).eachCell((c, col) => { if (col <= 4) c.style = tableHeaderStyle; });
-    raRow++;
-
-    for (const fc of RA_CODES) {
-      if (fc === 'successfully delivered') continue;
-      const pd = persistenceData[fc];
-      const rate = pd.multiAttemptNeverDelivered > 0
-        ? `${(pd.alwaysSameCode / pd.multiAttemptNeverDelivered * 100).toFixed(1)}%`
-        : '—';
-      raSum.getRow(raRow).values = [
-        CODE_LABEL[fc] || fc,
-        pd.multiAttemptNeverDelivered.toLocaleString(),
-        pd.alwaysSameCode.toLocaleString(),
-        rate
-      ];
-      raSum.getCell(`A${raRow}`).font = { size: 11 };
-      altFill(raSum, raRow);
       raRow++;
     }
 
@@ -3633,7 +3595,7 @@ Use the data to set retry limits: when success probability drops below ~15–20%
       null,
       fs.existsSync(squareLogo) ? squareLogo : null,
       fs.existsSync(circleLogo) ? circleLogo : null,
-      pptxOptions
+      { ...pptxOptions, reAttemptData: includeReAttemptTabs ? reAttemptData : null }
     );
     log(`Business review slides saved: ${path.basename(pptxPath)}`);
   } catch (slideErr) {
