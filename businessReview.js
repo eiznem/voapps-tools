@@ -530,7 +530,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   const successAccent = overallSuccessRate >= 75 ? BLUE
     : overallSuccessRate >= 50 ? PURPLE_LIGHT
     : CHARCOAL;
-  const healthyPct = uniqueNumbers > 0 ? ((healthyCount / uniqueNumbers) * 100) : 0;
+  // healthyPct already declared above for the thermometer section
   const healthyAccent = healthyPct >= 80 ? BLUE : healthyPct >= 60 ? BLUE_LIGHT : PURPLE_LIGHT;
 
   // ── Card registry – all possible metric cards ─────────────────────────────
