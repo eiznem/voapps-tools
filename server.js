@@ -208,17 +208,19 @@ async function getXenovaMod(log, fallbackEntryPath = null) {
   }
 }
 
-const AI_MODEL_STATUS = { stt: { downloaded: false }, intent: { downloaded: false } };
+const AI_MODEL_STATUS = { stt: { downloaded: false }, sttSmall: { downloaded: false }, intent: { downloaded: false } };
 
 function getAiModelStatus() {
   // Check the @xenova/transformers FileCache directory for downloaded model folders.
   // The FileCache stores files as: <cacheDir>/Xenova/<model-name>/<files>
   // (NOT the Python HuggingFace Hub format at ~/.cache/huggingface/hub/models--...)
   const cacheRoot = xenovaCacheDir();
-  const sttModelDir    = path.join(cacheRoot, 'Xenova', 'whisper-base');
-  const intentModelDir = path.join(cacheRoot, 'Xenova', 'nli-deberta-v3-small');
-  AI_MODEL_STATUS.stt.downloaded    = fs.existsSync(sttModelDir);
-  AI_MODEL_STATUS.intent.downloaded = fs.existsSync(intentModelDir);
+  const sttModelDir      = path.join(cacheRoot, 'Xenova', 'whisper-base');
+  const sttSmallModelDir = path.join(cacheRoot, 'Xenova', 'whisper-small');
+  const intentModelDir   = path.join(cacheRoot, 'Xenova', 'nli-deberta-v3-small');
+  AI_MODEL_STATUS.stt.downloaded      = fs.existsSync(sttModelDir);
+  AI_MODEL_STATUS.sttSmall.downloaded = fs.existsSync(sttSmallModelDir);
+  AI_MODEL_STATUS.intent.downloaded   = fs.existsSync(intentModelDir);
   return AI_MODEL_STATUS;
 }
 
@@ -302,9 +304,28 @@ function installXenovaTransformers(log) {
   });
 }
 
-async function downloadAiModelBackground(type, log = (msg, isError = false) => isError ? console.error(msg) : console.log(msg)) {
-  const label = type === 'stt' ? 'Whisper (STT)' : 'Intent (nli-deberta-v3-small)';
-  const modelId = type === 'stt' ? 'Xenova/whisper-base' : 'Xenova/nli-deberta-v3-small';
+async function downloadModelFromGitHub(type, variant = 'base', log = (msg, isError = false) => isError ? console.error(msg) : console.log(msg)) {
+  const modelKey = type === 'stt' ? `whisper-${variant}` : 'nli-deberta-v3-small';
+  const url = `https://github.com/eiznem/voapps-tools/releases/latest/download/${modelKey}.zip`;
+  const targetDir = xenovaCacheDir();
+  log(`[AI] Downloading ${modelKey}.zip from GitHub Releases…`);
+  log(`[AI] URL: ${url}`);
+  const response = await crossPlatformFetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status} — check that ${modelKey}.zip exists in the latest release`);
+  const unzipper = require('unzipper');
+  const { Readable } = require('stream');
+  log(`[AI] Extracting ${modelKey}.zip to ${targetDir}…`);
+  await new Promise((resolve, reject) => {
+    const src = Readable.fromWeb ? Readable.fromWeb(response.body) : response.body;
+    src.pipe(unzipper.Extract({ path: targetDir })).on('close', resolve).on('error', reject);
+  });
+  log(`[AI] ✅ ${modelKey} extracted to ${targetDir}`);
+}
+
+async function downloadAiModelBackground(type, log = (msg, isError = false) => isError ? console.error(msg) : console.log(msg), variant = 'base') {
+  const variantLabel = type === 'stt' ? (variant === 'small' ? 'Whisper Standard (whisper-small)' : 'Whisper Lite (whisper-base)') : 'Intent (nli-deberta-v3-small)';
+  const label = type === 'stt' ? variantLabel : 'Intent (nli-deberta-v3-small)';
+  const modelId = type === 'stt' ? `Xenova/whisper-${variant}` : 'Xenova/nli-deberta-v3-small';
   log(`[AI] Starting ${label} model download: ${modelId}`);
 
   // Import @xenova/transformers — auto-install if missing.
@@ -386,7 +407,8 @@ async function downloadAiModelBackground(type, log = (msg, isError = false) => i
     };
 
     if (type === 'stt') {
-      log('[AI] Loading Whisper base model (~142 MB)…');
+      const sizeLabel = variant === 'small' ? '~244 MB' : '~142 MB';
+      log(`[AI] Loading ${variantLabel} model (${sizeLabel})…`);
       await pipeline('automatic-speech-recognition', modelId, { progress_callback });
     } else {
       log('[AI] Loading nli-deberta-v3-small model (~85 MB)…');
@@ -409,8 +431,9 @@ async function downloadAiModelBackground(type, log = (msg, isError = false) => i
     if (isNetworkMasked || isFetchFailed) {
       log(`[AI] ❌ Failed to download ${label} model: could not reach huggingface.co`, true);
       log(`[AI]    Likely cause: the network is blocking huggingface.co (firewall, proxy, or no internet).`, true);
-      log(`[AI]    Option 1: switch Transcription and Intent modes to "OpenAI" in Settings.`, true);
-      log(`[AI]    Option 2: download VoApps-Tools-Models.zip from GitHub Releases and extract to:`, true);
+      log(`[AI]    Option 1: use the "Download via GitHub (VPN-friendly)" button in AI Message Analysis settings.`, true);
+      log(`[AI]    Option 2: switch Transcription and Intent modes to "OpenAI" in Settings.`, true);
+      log(`[AI]    Option 3: download the model ZIP from GitHub Releases and extract to:`, true);
       if (process.platform === 'win32') {
         log(`[AI]       %APPDATA%\\voapps-tools\\models\\`, true);
       } else {
@@ -522,7 +545,7 @@ async function transcribeAndAnalyzeMessages(messageInfo, aiSettings, log, onProg
         if (transcript === '__QUOTA_EXCEEDED__') transcript = '';
       } else {
         // transcribeWithLocalWhisper returns { transcript, durationSec }
-        ({ transcript, durationSec } = await transcribeWithLocalWhisper(tmpFile, log));
+        ({ transcript, durationSec } = await transcribeWithLocalWhisper(tmpFile, log, aiSettings.localSttModel || 'base'));
       }
 
       // Clean up temp file
@@ -980,7 +1003,7 @@ function stitchTranscriptSegments(texts) {
   return result.trim();
 }
 
-async function transcribeWithLocalWhisper(audioPath, log) {
+async function transcribeWithLocalWhisper(audioPath, log, variant = 'base') {
   try {
     // Import @xenova/transformers — auto-install if missing, file-URL fallback if specifier
     // cache is stale (e.g. package was just installed in this session).
@@ -1056,7 +1079,10 @@ async function transcribeWithLocalWhisper(audioPath, log) {
     const audioDurationSec = audioData.length / 16000;
     log(`[AI]   🔍 Audio duration: ${audioDurationSec.toFixed(1)}s (${audioData.length} samples @ 16kHz)`);
 
-    const transcriber = await pipelineFn('automatic-speech-recognition', 'Xenova/whisper-base');
+    const sttModelId = `Xenova/whisper-${variant}`;
+    const sttModelLabel = variant === 'small' ? 'whisper-small (Standard)' : 'whisper-base (Lite)';
+    log(`[AI]   Using ${sttModelLabel}`);
+    const transcriber = await pipelineFn('automatic-speech-recognition', sttModelId);
     // Pass the Float32Array directly — @xenova/transformers v2.x WhisperFeatureExtractor
     // requires a raw Float32Array, not a { data, sampling_rate } wrapper object.
     //
@@ -2543,7 +2569,8 @@ function getAiSettings() {
     enabled: settings.enableAiAnalysis || false,
     transcriptionMode: settings.aiTranscriptionMode || 'local',
     intentMode: settings.aiIntentMode || 'local',
-    openaiApiKey: settings.openaiApiKey || ''
+    openaiApiKey: settings.openaiApiKey || '',
+    localSttModel: settings.aiLocalSttModel || 'base'
   };
 }
 
@@ -2553,6 +2580,7 @@ function setAiSettings(updates) {
   if (updates.transcriptionMode !== undefined) settings.aiTranscriptionMode = updates.transcriptionMode;
   if (updates.intentMode !== undefined) settings.aiIntentMode = updates.intentMode;
   if (updates.openaiApiKey !== undefined) settings.openaiApiKey = updates.openaiApiKey;
+  if (updates.localSttModel !== undefined) settings.aiLocalSttModel = updates.localSttModel;
   return saveSettings(settings);
 }
 
@@ -3728,7 +3756,8 @@ async function runCombineCampaigns(config) {
     // getAiSettings() reads from disk and never sees the UI toggle state.
     ai_enabled = false,
     ai_transcription_mode = 'local',
-    ai_intent_mode = 'local'
+    ai_intent_mode = 'local',
+    local_stt_model = 'base'
   } = config;
 
   // Build filename prefix
@@ -4031,6 +4060,7 @@ async function runCombineCampaigns(config) {
         enabled: ai_enabled,
         transcriptionMode: ai_transcription_mode,
         intentMode: ai_intent_mode,
+        localSttModel: local_stt_model || getAiSettings().localSttModel || 'base',
         openaiApiKey: getAiSettings().openaiApiKey,
         notify: (message, actionLabel, url) => sendNotify(jobId, message, actionLabel, url)
       };
@@ -4605,7 +4635,7 @@ function createHttpServer() {
     if (req.method === "POST" && pathname === "/api/ai/download-model") {
       try {
         const body = await readJson(req);
-        const { type, job_id } = body; // 'stt' or 'intent'
+        const { type, job_id, variant = 'base', source = 'huggingface' } = body; // 'stt' or 'intent'
         if (type !== 'stt' && type !== 'intent') {
           return sendJson(res, 400, { ok: false, error: 'type must be stt or intent' });
         }
@@ -4621,14 +4651,19 @@ function createHttpServer() {
         };
 
         // Fire-and-forget — logs stream live via SSE; on finish signal complete/error
-        downloadAiModelBackground(type, log).then(() => {
+        const downloadFn = source === 'github'
+          ? downloadModelFromGitHub(type, variant, log)
+          : downloadAiModelBackground(type, log, variant);
+
+        downloadFn.then(() => {
           sendProgress(jobId, { status: 'complete', progress: 100 });
         }).catch(e => {
           sendLog(jobId, `[AI] Unexpected error: ${e.message}`, true);
           sendProgress(jobId, { status: 'error', progress: 0 });
         });
 
-        return sendJson(res, 200, { ok: true, job_id: jobId, message: `${type === 'stt' ? 'Whisper' : 'Intent'} model download started.` });
+        const srcLabel = source === 'github' ? 'GitHub' : 'HuggingFace';
+        return sendJson(res, 200, { ok: true, job_id: jobId, message: `${type === 'stt' ? 'Whisper' : 'Intent'} model download started (${srcLabel}).` });
       } catch (e) {
         return sendJson(res, 500, { ok: false, error: e.message });
       }
@@ -5043,7 +5078,8 @@ function createHttpServer() {
           // so getAiSettings() (disk-based) would always return enabled:false.
           ai_enabled: body.ai_enabled === true,
           ai_transcription_mode: body.ai_transcription_mode || 'local',
-          ai_intent_mode: body.ai_intent_mode || 'local'
+          ai_intent_mode: body.ai_intent_mode || 'local',
+          local_stt_model: body.local_stt_model || 'base'
         });
 
         const artifacts = {
@@ -5123,6 +5159,7 @@ function createHttpServer() {
         let csvAiEnabled = false;
         let csvAiTranscriptionMode = 'local';
         let csvAiIntentMode = 'local';
+        let csvLocalSttModel = 'base';
         let csvIncludeSuppressionCandidates = true;
         let csvIncludeReAttemptTabs = false;
         let csvPptxIncludeSlideDecayCurve = false;
@@ -5159,6 +5196,8 @@ function createHttpServer() {
             csvAiTranscriptionMode = bodyBuf.slice(contentStart, contentEnd).toString().trim() || 'local';
           } else if (header.includes('name="ai_intent_mode"')) {
             csvAiIntentMode = bodyBuf.slice(contentStart, contentEnd).toString().trim() || 'local';
+          } else if (header.includes('name="local_stt_model"')) {
+            csvLocalSttModel = bodyBuf.slice(contentStart, contentEnd).toString().trim() || 'base';
           } else if (header.includes('name="include_suppression_candidates"')) {
             csvIncludeSuppressionCandidates = bodyBuf.slice(contentStart, contentEnd).toString().trim() !== 'false';
           } else if (header.includes('name="include_re_attempt_tabs"')) {
@@ -5272,6 +5311,7 @@ function createHttpServer() {
                     enabled: true,
                     transcriptionMode: csvAiTranscriptionMode,
                     intentMode: csvAiIntentMode,
+                    localSttModel: csvLocalSttModel || getAiSettings().localSttModel || 'base',
                     openaiApiKey: getAiSettings().openaiApiKey,
                   };
                   const newTranscripts = await transcribeAndAnalyzeMessages(aiMessageInfo, aiSettings, csvLog);
@@ -5357,7 +5397,8 @@ function createHttpServer() {
           api_key: dbApiKey = '',
           ai_enabled: dbAiEnabled = false,
           ai_transcription_mode: dbAiTranscriptionMode = 'local',
-          ai_intent_mode: dbAiIntentMode = 'local'
+          ai_intent_mode: dbAiIntentMode = 'local',
+          local_stt_model: dbLocalSttModel = 'base'
         } = body;
 
         if (!dbReady) {
@@ -5546,6 +5587,7 @@ function createHttpServer() {
                   enabled: true,
                   transcriptionMode: dbAiTranscriptionMode,
                   intentMode: dbAiIntentMode,
+                  localSttModel: dbLocalSttModel || getAiSettings().localSttModel || 'base',
                   openaiApiKey: getAiSettings().openaiApiKey,
                 };
                 const newTranscripts = await transcribeAndAnalyzeMessages(aiMessageInfo, aiSettings, dbLog);

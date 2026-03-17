@@ -508,10 +508,46 @@ function offsetToIANA(offset) {
 }
 
 /**
+ * DST helpers for timezone mismatch detection
+ */
+function nthWeekday(year, month, weekday, n) {
+  // Returns the Date (UTC) of the nth occurrence of weekday (0=Sun) in month (0-indexed) of year
+  let count = 0;
+  const d = new Date(Date.UTC(year, month, 1));
+  while (true) {
+    if (d.getUTCDay() === weekday) { count++; if (count === n) return new Date(d); }
+    d.setUTCDate(d.getUTCDate() + 1);
+    if (d.getUTCMonth() !== month) break;
+  }
+  return null;
+}
+
+function isDstTransitionSpan(minDate, maxDate) {
+  // Returns true if the date range straddles a US DST boundary
+  // (second Sunday of March = spring forward; first Sunday of November = fall back)
+  if (!minDate || !maxDate) return false;
+  const y1 = minDate.getUTCFullYear(), y2 = maxDate.getUTCFullYear();
+  for (let y = y1; y <= y2; y++) {
+    const springFwd = nthWeekday(y, 2, 0, 2);  // March, Sunday, 2nd
+    const fallBack  = nthWeekday(y, 10, 0, 1); // November, Sunday, 1st
+    if ((springFwd && minDate <= springFwd && springFwd <= maxDate) ||
+        (fallBack  && minDate <= fallBack  && fallBack  <= maxDate)) return true;
+  }
+  return false;
+}
+
+function parseOffsetToMinutes(offset) {
+  if (!offset) return 0;
+  const m = offset.match(/([+-])(\d{2}):(\d{2})/);
+  if (!m) return 0;
+  return (m[1] === '-' ? -1 : 1) * (parseInt(m[2]) * 60 + parseInt(m[3]));
+}
+
+/**
  * Check for timezone discrepancies between account settings and results
  * Returns array of discrepancies with recommendations
  */
-function detectTimezoneDiscrepancies(accountTimezones, accountResultTimezones) {
+function detectTimezoneDiscrepancies(accountTimezones, accountResultTimezones, minDate, maxDate) {
   const discrepancies = [];
 
   // Compare each account's configured timezone with what appears in results
@@ -535,6 +571,17 @@ function detectTimezoneDiscrepancies(accountTimezones, accountResultTimezones) {
     const expectedOffsets = ianaToExpectedOffset[configuredTz] || [];
 
     if (expectedOffsets.length > 0 && !expectedOffsets.includes(resultsOffset)) {
+      // DST guard: if the configured timezone is a raw offset string (not an IANA name),
+      // it only has one entry in expectedOffsets. During a DST transition the detected
+      // offset will differ by exactly 60 minutes — suppress this as a false positive.
+      const detectedOffset = resultsOffset;
+      const configuredOffset = expectedOffsets[0]; // raw offset string has only one entry
+      if (expectedOffsets.length === 1) {
+        const hourDiff = Math.abs(parseOffsetToMinutes(detectedOffset) - parseOffsetToMinutes(configuredOffset));
+        if (hourDiff === 60 && isDstTransitionSpan(minDate, maxDate)) {
+          continue; // DST transition — not a real mismatch
+        }
+      }
       discrepancies.push({
         accountId,
         configuredTimezone: configuredTz,
@@ -949,7 +996,7 @@ async function generateTrendAnalysis(
     for (const [off, cnt] of Object.entries(timezoneCounts)) { if (cnt > maxTzCnt) { maxTzCnt = cnt; bestOffset = off; } }
     detectedTimezone = bestOffset ? getTimezoneDisplayName({ offset: bestOffset }) : 'Unknown (timestamps may be UTC)';
     log(`Detected timezone: ${detectedTimezone} (from ${maxTzCnt.toLocaleString()} timestamps)`);
-    timezoneDiscrepancies = detectTimezoneDiscrepancies(accountTimezones, accountMostCommonOffset);
+    timezoneDiscrepancies = detectTimezoneDiscrepancies(accountTimezones, accountMostCommonOffset, minDate, maxDate);
     if (timezoneDiscrepancies.length > 0) log(`⚠️  Found ${timezoneDiscrepancies.length} timezone discrepancy(ies) between account settings and results`);
     fourteenDaysAgo = maxDate ? new Date(maxDate.getTime() - 14 * 24 * 60 * 60 * 1000) : null;
 
@@ -1015,7 +1062,7 @@ async function generateTrendAnalysis(
     for (const [off, cnt] of Object.entries(timezoneCounts)) { if (cnt > maxTzCnt2) { maxTzCnt2 = cnt; bestOffset2 = off; } }
     detectedTimezone = bestOffset2 ? getTimezoneDisplayName({ offset: bestOffset2 }) : 'Unknown (timestamps may be UTC)';
     log(`Detected timezone: ${detectedTimezone} (from ${maxTzCnt2.toLocaleString()} timestamps)`);
-    timezoneDiscrepancies = detectTimezoneDiscrepancies(accountTimezones, accountMostCommonOffset);
+    timezoneDiscrepancies = detectTimezoneDiscrepancies(accountTimezones, accountMostCommonOffset, minDate, maxDate);
     if (timezoneDiscrepancies.length > 0) log(`⚠️  Found ${timezoneDiscrepancies.length} timezone discrepancy(ies) between account settings and results`);
 
     // Enrich, sort, and process in as few passes as possible to keep peak memory low.

@@ -2,7 +2,7 @@
 // VoApps Tools Version Management
 //
 // Notes:
-// - Current version reflects the newest release (4.2.4).
+// - Current version reflects the newest release (4.3.0).
 // - Keeps feature flags + author from the original "DuckDB Edition" file.
 // - Changelog is unified so each version can include: changes/features, fixes, and breaking changes.
 
@@ -10,8 +10,8 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '4.2.4',
-  VERSION_NAME: 'Re-attempt Intelligence',
+  VERSION: '4.3.0',
+  VERSION_NAME: 'Delivery Intelligence Suite',
   RELEASE_DATE: '2026-03-16',
   AUTHOR: 'Brett Menzie',
 
@@ -50,6 +50,33 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '4.3.0': {
+      date: '2026-03-16',
+      title: 'Delivery Intelligence Suite',
+      changes: [
+        'Report Output drawer restructured: Analysis Tabs and Business Review Slides tabs merged into a new "Delivery Intelligence" tab with Number Analysis (Excel) and Business Review (PowerPoint) sub-tabs — cleaner two-tab layout alongside CSV Columns',
+        'Hover tooltips added to every checkbox in the Report Output drawer (both Number Analysis and Business Review sub-tabs) — hover any option to see a plain-language explanation of what it adds to the report',
+        'Whisper quality tiers: choose Lite (whisper-base, ~142 MB) or Standard (whisper-small, ~244 MB, higher accuracy) with inline per-variant download buttons in AI Message Analysis',
+        'GitHub Releases download fallback for AI models — "Download via GitHub (VPN-friendly)" button bypasses huggingface.co for users where the primary download fails due to VPN/firewall restrictions',
+        'OpenAI API key moved out of AI Message Analysis panel and into a unified API Keys drawer — both VoApps and OpenAI keys are now shown at equal visual weight with matching input/save/toggle controls',
+        'API Keys drawer renamed from "API Key" to "API Keys"; VoApps key section updated with label, description, and "Get API key ↗" link; OpenAI section added with "Get API key ↗" linking to platform.openai.com/api-keys',
+        'AI Message Analysis enable toggle subtitle updated to: "Transcribes DDVM recordings and classifies message intent. Results appear in the Delivery Intelligence Report (Number Analysis tab)."',
+        'Combine Campaigns search type description updated to describe the full Delivery Intelligence Report output (Excel Analysis + PowerPoint Business Review)',
+        'Home page Generate From section clarified: Combine Campaigns uses Search Type data; Uploaded CSV and Local Database are ad-hoc; link added to open Report Output settings',
+        'CSV Columns tab subtitle updated to clarify it applies only to Combine Campaigns and Phone Number Search types',
+        'DST-aware timezone mismatch detection: timezone warning suppressed when the offset difference is exactly 60 minutes and the dataset spans a US DST boundary (second Sunday of March or first Sunday of November) — eliminates false-positive warnings for accounts using raw UTC offset strings during DST transitions'
+      ],
+      features: [
+        'Delivery Intelligence tab with Number Analysis / Business Review sub-tabs in Report Output drawer',
+        'Whisper Standard tier (whisper-small, ~244 MB) with per-variant inline download buttons',
+        'GitHub Releases fallback download for all AI models (VPN-friendly)',
+        'Unified API Keys drawer with VoApps and OpenAI keys at equal visual weight',
+        'DST-aware timezone mismatch suppression in trendAnalyzer.js'
+      ],
+      fixes: [
+        'DST false-positive timezone mismatch warning: accounts configured with raw UTC offset strings (e.g. -08:00) no longer trigger a warning when dataset spans a spring-forward or fall-back boundary'
+      ]
+    },
     '4.2.4': {
       date: '2026-03-16',
       title: 'Re-attempt Intelligence',
