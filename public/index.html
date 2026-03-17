@@ -2482,9 +2482,9 @@
                   <div class="column-group">
                     <div class="column-group-title">
                       Metric Cards
-                      <span style="font-weight:normal; font-size:10px; color:#888;" id="cardSelectionCount"> — 6 / 6 selected</span>
+                      <span style="font-weight:normal; font-size:10px; color:#888;" id="cardSelectionCount"> — 6 / 12 selected</span>
                       <div class="col-group-actions">
-                        <span onclick="[...document.querySelectorAll('#metricCardsBox .card-check')].forEach((c,i)=>{c.checked=i<6;});updateCardCount();">all</span>
+                        <span onclick="[...document.querySelectorAll('#metricCardsBox .card-check')].forEach((c,i)=>{c.checked=i<12;});updateCardCount();">all</span>
                         <span onclick="document.querySelectorAll('#metricCardsBox .card-check').forEach(c=>{c.checked=false;updateCardCount();})">clear</span>
                       </div>
                     </div>
@@ -2522,7 +2522,14 @@
                       <label class="checkbox-label" title="Numbers meeting suppression criteria – repeated failures over an extended span">
                         <input type="checkbox" class="card-check" id="card_nonDeliverableNumbers" value="nonDeliverableNumbers" onchange="updateCardCount()"> Likely Non-Deliverable
                       </label>
+                      <label class="checkbox-label" title="Numbers that received a successful delivery and were not re-attempted within one cadence window — likely removed from the list (suppressed) after delivery">
+                        <input type="checkbox" class="card-check" id="card_impliedRemovedNumbers" value="impliedRemovedNumbers" onchange="updateCardCount()"> Implied Removed After Delivery
+                      </label>
+                      <label class="checkbox-label" title="Ratio of implied-removed numbers to total successful deliveries — estimates how many deliveries may have generated an inbound callback">
+                        <input type="checkbox" class="card-check" id="card_impliedCallbackOppty" value="impliedCallbackOppty" onchange="updateCardCount()"> Implied Callback Rate
+                      </label>
                     </div>
+                    <p style="font-size:10px; color:#aaa; margin:4px 0 0; line-height:1.4;">Up to 12 cards — 6 per slide. Extra cards appear on a second overview page.</p>
                   </div>
                   <!-- Right: Other Slides -->
                   <div class="column-group">
@@ -4857,15 +4864,16 @@
     window.updateCardCount = () => {
       const allBoxes = [...document.querySelectorAll('.card-check')];
       let checked = allBoxes.filter(c => c.checked);
-      // Enforce hard cap — uncheck any extras beyond 6
-      if (checked.length > 6) {
-        checked.slice(6).forEach(cb => { cb.checked = false; });
-        checked = checked.slice(0, 6);
+      // Enforce hard cap — uncheck any extras beyond 12 (2 slides × 6)
+      if (checked.length > 12) {
+        checked.slice(12).forEach(cb => { cb.checked = false; });
+        checked = checked.slice(0, 12);
       }
       const count = checked.length;
       const display = document.getElementById('cardSelectionCount');
-      if (display) display.textContent = ` — ${count} / 6 selected`;
-      if (count >= 6) {
+      const pageNote = count > 6 ? ` (2 slides)` : '';
+      if (display) display.textContent = ` — ${count} / 12 selected${pageNote}`;
+      if (count >= 12) {
         allBoxes.filter(c => !c.checked).forEach(cb => { cb.disabled = true; });
       } else {
         allBoxes.forEach(cb => { cb.disabled = false; });

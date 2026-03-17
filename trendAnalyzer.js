@@ -1826,8 +1826,15 @@ async function generateTrendAnalysis(
   let _backToBackIssueCount = 0, _lowDayVarietyCount = 0, _flaggedCount = 0;
   let _streak2 = 0, _streak3 = 0, _streak4 = 0, _streak5plus = 0;
   let _staleWarmCount = 0;
+  let _impliedRemovedCount = 0;
   const _maxMs = maxDate ? maxDate.getTime() : null;
   const _thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+  // Implied-removal window: use the median cadence so the bar is "one normal retry interval".
+  // Fall back to 7 days if cadence data isn't available (single-touch-only dataset).
+  const _cadWinMs = cadenceOverallMedian
+    ? cadenceOverallMedian * 24 * 60 * 60 * 1000
+    : 7 * 24 * 60 * 60 * 1000;
+
   for (const ns of numberSummaryArray) {
     _totalAttempts        += ns.totalAttempts;
     _totalSuccess         += ns.successful;   // stored as 'successful' in the push, not 'successCount'
@@ -1847,8 +1854,23 @@ async function generateTrendAnalysis(
         (_maxMs - ns.lastAttemptMs) >= _thirtyDaysMs) {
       _staleWarmCount++;
     }
+    // Implied removed after delivery: number had a successful delivery, no attempt was made
+    // more than 18 hours after that last success (i.e. the delivery appears to have been the
+    // final contact — consistent with suppression/list removal), AND enough time has elapsed
+    // since that delivery for a re-attempt to have occurred naturally (≥ 1 cadence window).
+    // These are the numbers most likely to have generated an inbound callback.
+    if (
+      ns.successful > 0 &&
+      ns.lastSuccessTimestamp &&
+      ns.lastAttemptMs !== null &&
+      ns.lastAttemptMs <= ns.lastSuccessTimestamp + 18 * 60 * 60 * 1000 &&
+      _maxMs && (_maxMs - ns.lastSuccessTimestamp) >= _cadWinMs
+    ) {
+      _impliedRemovedCount++;
+    }
   }
-  const staleWarmCount = _staleWarmCount;
+  const staleWarmCount      = _staleWarmCount;
+  const impliedRemovedCount = _impliedRemovedCount;
   const streak2 = _streak2, streak3 = _streak3, streak4 = _streak4, streak5plus = _streak5plus;
   const totalAttempts      = _totalAttempts;
   const avgVariability     = totalUniqueInSummary > 0 ? _sumVariability / totalUniqueInSummary : 0;
@@ -3660,6 +3682,7 @@ Use the data to set retry limits: when success probability drops below ~15–20%
         bestNextAction,
         agentHoursSaved,
         staleWarmCount,
+        impliedRemovedCount,
         minDate,
         maxDate,
         accountIds: slideAccountIds

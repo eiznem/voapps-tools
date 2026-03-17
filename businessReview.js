@@ -331,10 +331,17 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     bestNextAction,
     agentHoursSaved,
     staleWarmCount,
+    impliedRemovedCount = 0,
     minDate,
     maxDate,
     accountIds
   } = stats;
+
+  // Implied callbacks: numbers delivered then not re-attempted within one cadence window.
+  // These are the most likely source of inbound callbacks after a campaign.
+  const impliedCallbackRate = totalSuccess > 0
+    ? (impliedRemovedCount / totalSuccess * 100)
+    : 0;
 
   const pptx = new pptxgen();
   pptx.layout  = 'LAYOUT_WIDE';
@@ -543,15 +550,18 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     unsuccessfulAttempts:  { label: 'UNSUCCESSFUL ATTEMPTS',     value: (totalAttempts - totalSuccess).toLocaleString(),           sub: `${(100 - overallSuccessRate).toFixed(1)}% of all attempts`,           accent: CHARCOAL },
     firstAttemptSuccessRate: { label: 'FIRST ATTEMPT SUCCESS RATE', value: firstAttemptRate,                                       sub: 'Success rate on the very first delivery attempt to each number',      accent: BLUE_LIGHT },
     avgAttemptsPerNumber:  { label: 'AVG ATTEMPTS PER NUMBER',   value: uniqueNumbers > 0 ? (totalAttempts / uniqueNumbers).toFixed(1) : '—', sub: 'Average total delivery attempts per unique phone number',    accent: PURPLE_LIGHT },
-    nonDeliverableNumbers: { label: 'LIKELY NON-DELIVERABLE',    value: (suppressionCandidateCount || 0).toLocaleString(), sub: 'Numbers meeting suppression criteria – repeated failures over an extended span', accent: CHARCOAL }
+    nonDeliverableNumbers:   { label: 'LIKELY NON-DELIVERABLE',      value: (suppressionCandidateCount || 0).toLocaleString(),         sub: 'Numbers meeting suppression criteria – repeated failures over an extended span',         accent: CHARCOAL },
+    impliedRemovedNumbers:   { label: 'IMPLIED REMOVED AFTER DELIVERY', value: impliedRemovedCount.toLocaleString(),                    sub: 'Delivered numbers not re-attempted after one cadence window – likely suppressed/removed from list', accent: PURPLE },
+    impliedCallbackOppty:    { label: 'IMPLIED CALLBACK RATE',         value: `${impliedCallbackRate.toFixed(1)}%`,                     sub: `${impliedRemovedCount.toLocaleString()} delivered numbers appear removed – each is a potential inbound callback`, accent: BLUE_LIGHT }
   };
 
   const DEFAULT_CARDS = [
     'uniquePhoneNumbers', 'totalAttempts', 'overallSuccessRate',
     'successfulDeliveries', 'numbersConnectingWell', 'dateSpan'
   ];
+  // Allow up to 12 cards across two overview slides (6 per slide)
   const cardKeys = (Array.isArray(overviewCards) && overviewCards.length > 0)
-    ? overviewCards.slice(0, 6)
+    ? overviewCards.slice(0, 12)
     : DEFAULT_CARDS;
 
   const cardPositions = [
@@ -559,125 +569,108 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     [c1, row2Y], [c2, row2Y], [c3, row2Y]
   ];
 
-  cardKeys.forEach((key, i) => {
-    const card = ALL_CARDS[key];
-    const pos  = cardPositions[i];
-    if (!card || !pos) return;
-    if (key === 'overallSuccessRate') {
-      // Special rendering: card with horizontal progress bar
-      const [cx, cy] = pos;
-      s2.addShape(RECT, { x: cx, y: cy, w: bW, h: bH, fill: { color: CREAM }, line: { color: PINK_PALE, pt: 1 } });
-      s2.addShape(RECT, { x: cx, y: cy, w: bW, h: 0.06, fill: { color: card.accent }, line: { color: card.accent } });
-      s2.addText(card.label, { x: cx + 0.16, y: cy + 0.16, w: bW - 0.32, h: 0.26,
-        fontSize: 11, color: TEXT_SOFT, bold: false, fontFace: 'Aktiv Grotesk VF Medium', charSpacing: 1.5 });
-      s2.addText(card.value, { x: cx + 0.16, y: cy + 0.42, w: bW - 0.32, h: 0.56,
-        fontSize: 28, bold: true, color: NAVY, fontFace: 'IvyPresto Text', align: 'left', valign: 'top', shrinkText: true });
-      // Progress bar track
-      const pbX = cx + 0.16, pbY = cy + 1.02, pbW2 = bW - 0.32, pbH = 0.14;
-      s2.addShape(RECT, { x: pbX, y: pbY, w: pbW2, h: pbH, fill: { color: 'DDD9EF' }, line: { color: 'DDD9EF' } });
-      // Progress bar fill
-      const fillW = Math.max(0.04, pbW2 * (overallSuccessRate / 100));
-      s2.addShape(RECT, { x: pbX, y: pbY, w: fillW, h: pbH, fill: { color: card.accent }, line: { color: card.accent } });
-      s2.addText(card.sub, { x: cx + 0.16, y: cy + 1.20, w: bW - 0.32, h: 0.30,
-        fontSize: 10, color: TEXT_SOFT, fontFace: 'Aktiv Grotesk VF Medium' });
-    } else {
-      metricBox(s2, pos[0], pos[1], bW, bH, card.label, card.value, card.sub, card.accent, card.fontSize || 32);
-    }
-  });
+  // Helper: render a page of up to 6 cards onto a slide
+  function renderCardPage(slide, pageKeys) {
+    pageKeys.forEach((key, i) => {
+      const card = ALL_CARDS[key];
+      const pos  = cardPositions[i];
+      if (!card || !pos) return;
+      if (key === 'overallSuccessRate') {
+        const [cx, cy] = pos;
+        slide.addShape(RECT, { x: cx, y: cy, w: bW, h: bH, fill: { color: CREAM }, line: { color: PINK_PALE, pt: 1 } });
+        slide.addShape(RECT, { x: cx, y: cy, w: bW, h: 0.06, fill: { color: card.accent }, line: { color: card.accent } });
+        slide.addText(card.label, { x: cx + 0.16, y: cy + 0.16, w: bW - 0.32, h: 0.26,
+          fontSize: 11, color: TEXT_SOFT, bold: false, fontFace: 'Aktiv Grotesk VF Medium', charSpacing: 1.5 });
+        slide.addText(card.value, { x: cx + 0.16, y: cy + 0.42, w: bW - 0.32, h: 0.56,
+          fontSize: 28, bold: true, color: NAVY, fontFace: 'IvyPresto Text', align: 'left', valign: 'top', shrinkText: true });
+        const pbX = cx + 0.16, pbY = cy + 1.02, pbW2 = bW - 0.32, pbH = 0.14;
+        slide.addShape(RECT, { x: pbX, y: pbY, w: pbW2, h: pbH, fill: { color: 'DDD9EF' }, line: { color: 'DDD9EF' } });
+        const fillW = Math.max(0.04, pbW2 * (overallSuccessRate / 100));
+        slide.addShape(RECT, { x: pbX, y: pbY, w: fillW, h: pbH, fill: { color: card.accent }, line: { color: card.accent } });
+        slide.addText(card.sub, { x: cx + 0.16, y: cy + 1.20, w: bW - 0.32, h: 0.30,
+          fontSize: 10, color: TEXT_SOFT, fontFace: 'Aktiv Grotesk VF Medium' });
+      } else {
+        metricBox(slide, pos[0], pos[1], bW, bH, card.label, card.value, card.sub, card.accent, card.fontSize || 32);
+      }
+    });
+  }
 
-  // ── Single-touch opportunity callout strip ────────────────────────────────
+  // Page 1 (always exists)
+  renderCardPage(s2, cardKeys.slice(0, 6));
+
+  // Page 2 (only if there are more than 6 selected cards)
+  let s2b = null;
+  if (cardKeys.length > 6) {
+    s2b = pptx.addSlide();
+    s2b.background = { color: CREAM };
+    headerBar(pptx, s2b, 'High-Level Overview (cont.)', headerLogo, dateRangeStr);
+    renderCardPage(s2b, cardKeys.slice(6, 12));
+  }
+
+  // ── Single-touch opportunity callout strip (on last overview slide) ─────────
+  const lastOverviewSlide = s2b || s2;
   const cadenceTotalNumbers = (cadence.cadenceSingleTouch || 0) + (cadence.cadenceMultiTouchCount || 0);
   if (cadenceTotalNumbers > 0) {
     const stPct = (cadence.cadenceSingleTouch / cadenceTotalNumbers * 100).toFixed(1);
     const stripY = row2Y + bH + 0.20;
     const stripH = 0.68;
     const stripX = c1;
-    const stripW = 3 * bW + 2 * bGap; // 12.32 – matches Agent Hours card width
+    const stripW = 3 * bW + 2 * bGap;
 
-    // Cream card with pink left accent bar
-    s2.addShape(RECT, { x: stripX, y: stripY, w: stripW, h: stripH,
+    lastOverviewSlide.addShape(RECT, { x: stripX, y: stripY, w: stripW, h: stripH,
       fill: { color: WHITE }, line: { color: PINK_PALE, pt: 1 } });
-    s2.addShape(RECT, { x: stripX, y: stripY, w: 0.07, h: stripH,
+    lastOverviewSlide.addShape(RECT, { x: stripX, y: stripY, w: 0.07, h: stripH,
       fill: { color: PINK }, line: { color: PINK } });
 
-    // Bold stat left
-    s2.addText(
+    lastOverviewSlide.addText(
       `${cadence.cadenceSingleTouch.toLocaleString()} numbers (${stPct}%) received only one DDVM attempt this period.`,
-      {
-        x: stripX + 0.18, y: stripY + 0.10,
-        w: stripW - 0.26, h: 0.28,
-        fontSize: 12, bold: true, color: NAVY,
-        fontFace: 'Aktiv Grotesk VF Medium', valign: 'middle'
-      }
+      { x: stripX + 0.18, y: stripY + 0.10, w: stripW - 0.26, h: 0.28,
+        fontSize: 12, bold: true, color: NAVY, fontFace: 'Aktiv Grotesk VF Medium', valign: 'middle' }
     );
-    // Supporting text – blend single-touch + stale warm into one insight line
-    const staleNote = (staleWarmCount > 0)
+    const staleNote = staleWarmCount > 0
       ? ` Additionally, ${staleWarmCount.toLocaleString()} numbers with prior successful deliveries haven't been contacted in 30+ days – confirmed-reachable low-hanging fruit for re-engagement.`
       : '';
-    s2.addText(
-      `Consumers often need 2\u20133 touches before taking action. A follow-up campaign at a 3\u201310 day interval can produce meaningful incremental results from this same list.${staleNote}`,
-      {
-        x: stripX + 0.18, y: stripY + 0.29,
-        w: stripW - 0.26, h: 0.28,
-        fontSize: 10, color: TEXT_SOFT, italic: true,
-        fontFace: 'Aktiv Grotesk VF Medium', valign: 'middle'
-      }
+    const impliedNote = impliedRemovedCount > 0
+      ? ` ~${impliedRemovedCount.toLocaleString()} numbers appear to have been removed after their last successful delivery – a potential inbound callback opportunity.`
+      : '';
+    lastOverviewSlide.addText(
+      `Consumers often need 2\u20133 touches before taking action. A follow-up campaign at a 3\u201310 day interval can produce meaningful incremental results from this same list.${staleNote}${impliedNote}`,
+      { x: stripX + 0.18, y: stripY + 0.29, w: stripW - 0.26, h: 0.28,
+        fontSize: 10, color: TEXT_SOFT, italic: true, fontFace: 'Aktiv Grotesk VF Medium', valign: 'middle' }
     );
   }
 
   // ── Agent Hours Saved – full-width purple card below callout strip ──────────
-  // Only render as banner if it's not already shown as one of the 6 metric cards
+  // Only render as banner if it's not already shown as one of the metric cards
   if (agentHoursSaved > 0 && !cardKeys.includes('agentHoursSaved')) {
     const ahCardH  = 1.14;
-    const ahCardW  = 3 * bW + 2 * bGap; // 12.32 – aligns with card grid right edge
-    const ahStripBottom = row2Y + bH + 0.20 + 0.68; // stripY + stripH
+    const ahCardW  = 3 * bW + 2 * bGap;
+    const ahStripBottom = row2Y + bH + 0.20 + 0.68;
     const ahY = cadenceTotalNumbers > 0
       ? ahStripBottom + 0.10
       : row2Y + bH + 0.22;
 
-    const PURPLE_BG    = 'EBE9F7'; // very light lavender – card background
-    const PURPLE_STRIP = '3F2FB8'; // darker purple – accent strip
+    const PURPLE_BG    = 'EBE9F7';
+    const PURPLE_STRIP = '3F2FB8';
 
-    // Purple card background
-    s2.addShape(RECT, {
-      x: c1, y: ahY, w: ahCardW, h: ahCardH,
-      fill: { color: PURPLE_BG }, line: { color: PURPLE_BG }
+    lastOverviewSlide.addShape(RECT, { x: c1, y: ahY, w: ahCardW, h: ahCardH, fill: { color: PURPLE_BG }, line: { color: PURPLE_BG } });
+    lastOverviewSlide.addShape(RECT, { x: c1, y: ahY, w: ahCardW, h: 0.05, fill: { color: PURPLE_STRIP }, line: { color: PURPLE_STRIP } });
+    lastOverviewSlide.addText('AGENT HOURS SAVED (EST.)', {
+      x: c1 + 0.16, y: ahY + 0.127, w: ahCardW - 0.32, h: 0.28,
+      fontSize: 11, color: TEXT_SOFT, bold: false, fontFace: 'Aktiv Grotesk VF Medium', align: 'left', charSpacing: 1.5
     });
-    // Dark purple top accent strip
-    s2.addShape(RECT, {
-      x: c1, y: ahY, w: ahCardW, h: 0.05,
-      fill: { color: PURPLE_STRIP }, line: { color: PURPLE_STRIP }
+    lastOverviewSlide.addText(`${agentHoursSaved.toLocaleString()} hrs`, {
+      x: c1 + 0.16, y: ahY + 0.308, w: ahCardW - 0.32, h: 0.44,
+      fontSize: 32, bold: true, color: NAVY, fontFace: 'IvyPresto Text', align: 'left', valign: 'top', shrinkText: true
     });
-    // Label
-    s2.addText('AGENT HOURS SAVED (EST.)', {
-      x: c1 + 0.16, y: ahY + 0.127,
-      w: ahCardW - 0.32, h: 0.28,
-      fontSize: 11, color: TEXT_SOFT, bold: false,
-      fontFace: 'Aktiv Grotesk VF Medium',
-      align: 'left', charSpacing: 1.5
-    });
-    // Big value
-    s2.addText(`${agentHoursSaved.toLocaleString()} hrs`, {
-      x: c1 + 0.16, y: ahY + 0.308,
-      w: ahCardW - 0.32, h: 0.44,
-      fontSize: 32, bold: true, color: NAVY,
-      fontFace: 'IvyPresto Text',
-      align: 'left', valign: 'top',
-      shrinkText: true
-    });
-    // Sub-label
-    s2.addText(
+    lastOverviewSlide.addText(
       `Based on ${totalSuccess.toLocaleString()} successful deliveries \u00d7 3 min avg manual voicemail handle time \u2014 capacity your agents didn\u2019t need to spend on outreach`,
-      {
-        x: c1 + 0.16, y: ahY + 0.784,
-        w: ahCardW - 0.32, h: 0.3,
-        fontSize: 10, color: TEXT_SOFT, italic: false,
-        fontFace: 'Aktiv Grotesk VF Medium', align: 'left'
-      }
+      { x: c1 + 0.16, y: ahY + 0.784, w: ahCardW - 0.32, h: 0.3, fontSize: 10, color: TEXT_SOFT, fontFace: 'Aktiv Grotesk VF Medium', align: 'left' }
     );
   }
 
   slideFooter(s2);
+  if (s2b) slideFooter(s2b);
 
   // ────────────────────────────────────────────────────────────────────────────
   // SLIDE 3 – Success Probability by Attempt (optional)
