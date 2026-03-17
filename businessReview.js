@@ -540,8 +540,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   // Explanation label below thermometer title
   const thBulbR = thTubeW * 0.9;
   const thLabelY = thTopY + thTubeH + thBulbR * 2 + 0.22;
-  sGauge.addText('Of all DDVM delivery attempts,
-the % that reached voicemail', {
+  sGauge.addText('Of all DDVM delivery attempts, the % that reached voicemail', {
     x: colCenters[0] - 1.55, y: thLabelY + 0.34, w: 3.1, h: 0.44,
     fontSize: 8.5, color: '8A8298', italic: true,
     align: 'center', fontFace: 'Aktiv Grotesk VF Medium'
@@ -577,8 +576,7 @@ the % that reached voicemail', {
     fontSize: 10, bold: true, color: TEXT_MID,
     align: 'center', charSpacing: 0.3, fontFace: 'Aktiv Grotesk VF Medium'
   });
-  sGauge.addText('Numbers with consistent delivery performance,
-not in consecutive failure patterns', {
+  sGauge.addText('Numbers with consistent delivery performance — not in consecutive failure patterns', {
     x: colCenters[1] - 2.0, y: donutLabelY + 0.28, w: 4.0, h: 0.44,
     fontSize: 8.5, color: '8A8298', italic: true,
     align: 'center', fontFace: 'Aktiv Grotesk VF Medium'
