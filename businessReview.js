@@ -744,6 +744,20 @@ not in consecutive failure patterns', {
     s2b.background = { color: CREAM };
     headerBar(pptx, s2b, 'High-Level Overview (cont.)', headerLogo, dateRangeStr);
     renderCardPage(s2b, cardKeys.slice(6, 12));
+    s2b.addNotes([
+      'HIGH-LEVEL OVERVIEW (continued) — Speaker notes',
+      '',
+      'This slide continues the metric card overview when more than 6 cards are selected.',
+      'Cards on this page represent supplemental performance indicators — deeper cuts beyond the primary six.',
+      '',
+      'NOTABLE METRICS ON THIS PAGE (if selected):',
+      '• Unsuccessful Attempts: the inverse of deliveries — useful for framing list quality conversations.',
+      '• First Attempt Success Rate: baseline reachability before any selection bias from multi-touch; compare this to overall rate to see how much multi-touch adds.',
+      '• Avg Attempts per Number: higher values indicate a persistent campaign. Pair with the cadence slide to assess timing strategy.',
+      '• Likely Non-Deliverable: numbers meeting the suppression criteria. Removing these from future drops directly raises delivery rate.',
+      '• Implied Removed After Delivery: numbers whose last contact was a successful delivery, not re-attempted since. Each represents a potential inbound callback already in progress.',
+      '• Implied Callback Rate: the share of successful deliveries that appear to have prompted list removal — a proxy for callback conversion.'
+    ].join('\n'));
   }
 
   // ── Single-touch opportunity callout strip (on last overview slide) ─────────
@@ -886,7 +900,22 @@ not in consecutive failure patterns', {
     border: { type: 'solid', color: PINK_PALE, pt: 0.75 }
   });
 
-  s3.addNotes('For your reference: Numbers with 4–6+ consecutive failures and low success rates are listed in the Suppression Candidates tab of the Delivery Intelligence Excel report.');
+  s3.addNotes([
+    'SUCCESS PROBABILITY BY ATTEMPT — Speaker notes',
+    '',
+    'HOW TO READ THIS TABLE:',
+    'Each row represents all phone numbers in the dataset at a specific attempt count. As attempt index increases, the pool naturally shifts toward harder-to-reach numbers — so declining success rates are expected and normal.',
+    '',
+    'KEY TALKING POINTS:',
+    '• Attempt 1 is always the cleanest signal — it reflects the baseline reachability of the list without any selection bias.',
+    '• Where does the rate drop below 25%? That is typically the point of diminishing returns — continued attempts produce fewer and fewer new deliveries per drop.',
+    '• "Declining – Monitor" rows (25–49%) are still worth retrying if the cadence interval is appropriate (3–10 days).',
+    '• Rows marked "Low – Review" or with empty insight labels signal that this portion of the list may benefit from suppression.',
+    '',
+    'EXCEL REFERENCE:',
+    'Numbers with 4–6+ consecutive failures and low success rates are listed in the Suppression Candidates tab of the Delivery Intelligence Excel report.',
+    'The Re-Attempt Summary and Outcome Transition Matrix tabs (if included) provide additional granularity on retry ROI.'
+  ].join('\n'));
   slideFooter(s3);
   } // end includeSlideDecayCurve
 
@@ -986,6 +1015,24 @@ not in consecutive failure patterns', {
       fontFace: 'Aktiv Grotesk VF Medium'
     });
   }
+  s4.addNotes([
+    'DELIVERY RE-ATTEMPT CADENCE — Speaker notes',
+    '',
+    'HOW TO READ THIS SLIDE:',
+    'Shows the distribution of time gaps between consecutive delivery attempts on the same number. The "ideal" window (3–10 days) balances consumer recall (short enough to stay relevant) with respecting their decision time (long enough to avoid appearing aggressive).',
+    '',
+    'KEY TALKING POINTS:',
+    '• Same-day re-attempts typically signal automated retry systems with no cadence control. These rarely convert and can contribute to carrier friction.',
+    '• 1–2 day gaps are too soon for most consumers to have processed the first message. Treat these similarly to same-day.',
+    '• 3–10 days is the proven sweet spot. Leads in this window convert at the highest incremental rate.',
+    '• 11–15 days is acceptable but starts to lose the context of the first touch. Worth monitoring.',
+    '• 16+ day gaps risk the consumer having forgotten about the first message entirely. Consider treating these as cold re-engagements.',
+    '',
+    'SINGLE-TOUCH OPPORTUNITY:',
+    'Numbers that received only one attempt have never been retried. Even a modest re-attempt rate on this pool — at the right interval — can produce meaningful incremental deliveries from the same list investment.',
+    '',
+    'EXCEL REFERENCE: Retry Timing Analysis tab shows how gap length correlates with next-attempt success rate for this specific dataset.'
+  ].join('\n'));
   slideFooter(s4);
   } // end includeSlideReAttemptCadence
 
@@ -1078,8 +1125,23 @@ not in consecutive failure patterns', {
     if (actions.length > maxItems) {
       slideNotes.push(`+ ${actions.length - maxItems} additional recommendation(s) – see the Recommended Actions section in the Executive Summary tab of the Delivery Intelligence Excel report.`);
     }
+    const s5Preamble = [
+      'OPPORTUNITIES TO MAXIMIZE PERFORMANCE — Speaker notes',
+      '',
+      'PURPOSE OF THIS SLIDE:',
+      'Surfaces the highest-leverage actions identified from the data. Each card is generated automatically from campaign metrics and is specific to this dataset — not generic advice.',
+      '',
+      'HOW TO PRESENT:',
+      '• Walk through each recommendation in priority order (the most impactful action appears first).',
+      '• Quantify where possible — e.g. "X numbers are single-touch; even a 20% re-attempt delivery rate adds Y successful deliveries."',
+      '• Frame each recommendation as a business outcome, not a technical observation.',
+      '',
+      'EXCEL REPORT REFERENCES (for deeper analysis):'
+    ].join('\n');
     if (slideNotes.length) {
-      s5.addNotes('Speaker notes – Excel report references:\n' + slideNotes.map((n, i) => `${i + 1}. ${n}`).join('\n'));
+      s5.addNotes(s5Preamble + '\n' + slideNotes.map((n, i) => `${i + 1}. ${n}`).join('\n'));
+    } else {
+      s5.addNotes(s5Preamble);
     }
   }
   slideFooter(s5);
@@ -1175,9 +1237,22 @@ not in consecutive failure patterns', {
     sfun.addText('Eventually delivered (200)', { x: barX + 3.48, y: legY - 0.01, w: 2.8, h: 0.18,
       fontSize: 9, color: TEXT_SOFT, fontFace: 'Aktiv Grotesk VF Medium' });
 
-    sfun.addNotes('Data source: Attempt Funnel by Code tab in the Delivery Intelligence Excel report.\n' +
-      '• Bar width shows how many numbers reached that attempt level (narrowing = fewer numbers retried that many times).\n' +
-      '• "Eventually delivered" = had at least one successful drop (200) at any point.');
+    sfun.addNotes([
+      'MULTI-TOUCH DELIVERY FUNNEL — Speaker notes',
+      '',
+      'HOW TO READ THIS CHART:',
+      'Each bar represents the pool of numbers that reached at least that many attempts. The taller/wider the bar, the more numbers reached that attempt level.',
+      '"Eventually delivered" means at least one successful DDVM drop (result code 200) at any point — not necessarily on that specific attempt number.',
+      'The darker segment of each bar shows how many of those numbers eventually delivered.',
+      '',
+      'KEY TALKING POINTS:',
+      '• The gap between attempt 1 delivered % and later attempts quantifies the incremental value of re-attempts.',
+      '• Diminishing returns typically set in around attempt 4–6. Numbers that have not delivered by then are candidates for suppression.',
+      '• A large jump in eventual delivery rate between attempt 1 and 2 is a clear, quantifiable argument for multi-touch campaigns.',
+      '',
+      'EXCEL REFERENCE:',
+      'The Attempt Funnel by Code tab in the Delivery Intelligence Excel report breaks this down by initial result code — showing which non-delivery outcomes are most worth retrying.'
+    ].join('\n'));
     slideFooter(sfun);
   }
 
@@ -1256,6 +1331,23 @@ not in consecutive failure patterns', {
   });
 
   // ────────────────────────────────────────────────────────────────────────────
+  sDx.addNotes([
+    "LET'S TALK — Speaker notes",
+    '',
+    'PURPOSE OF THIS SLIDE:',
+    'Close the review with forward-looking, value-oriented discussion questions. The goal is to transition from data review into an action-planning conversation.',
+    '',
+    'FACILITATION TIPS:',
+    '• Lead with the question most relevant to the largest opportunity surfaced in the data (single-touch gap, stale warm numbers, or list quality).',
+    '• Avoid framing these as problems — frame them as quantified opportunities with known ROI.',
+    '• The agent hours saved figure is a useful anchor for ROI conversations — it demonstrates value already delivered, making the case for continued or expanded investment.',
+    '',
+    'FOLLOW-UP ACTIONS TO SUGGEST:',
+    '• Schedule a follow-up cadence campaign targeting single-touch numbers (if applicable).',
+    '• Initiate list refresh or suppression of flagged numbers to raise baseline delivery rates.',
+    '• Review re-attempt intervals with the operations team if cadence data shows significant same-day or very-short-gap retry patterns.'
+  ].join('\n'));
+
   await pptx.writeFile({ fileName: outputPath });
 }
 
