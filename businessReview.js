@@ -184,6 +184,105 @@ function metricBox(slide, x, y, w, h, label, value, subtext, accentColor, valueF
   }
 }
 
+/**
+ * Draw a thermometer shape centred at (cx) with the tube top at tubeTopY.
+ *
+ * @param {object} slide       - pptxgenjs slide object
+ * @param {number} cx          - horizontal centre of the thermometer (inches)
+ * @param {number} tubeTopY    - Y of the very top of the tube (inches)
+ * @param {number} tubeH       - height of the tube (inches)
+ * @param {number} tubeW       - outer width of the tube (inches)
+ * @param {number} pct         - fill level 0–100
+ * @param {string} fillColor   - hex fill colour (no #)
+ * @param {string} title       - label shown below the bulb
+ * @param {string} valueTxt    - text shown inside the bulb (e.g. "78%")
+ */
+function drawThermometer(slide, cx, tubeTopY, tubeH, tubeW, pct, fillColor, title, valueTxt) {
+  const pad    = 0.055;              // inner padding on each side
+  const innerW = tubeW - pad * 2;
+  const tubeX  = cx - tubeW / 2;
+  const innerX = tubeX + pad;
+  const bulbR  = tubeW * 0.9;       // bulb radius — larger than tube for visual pop
+
+  // ── Outer tube shell (light gray capsule) ────────────────────────────────
+  slide.addShape('roundRect', {
+    x: tubeX, y: tubeTopY, w: tubeW, h: tubeH,
+    fill: { color: 'E4E0EB' },
+    line: { color: 'CECCDA', pt: 1 },
+    rectRadius: tubeW / 2              // fully rounded ends = capsule
+  });
+
+  // ── Coloured fill (bottom-aligned, extends into bulb) ────────────────────
+  const clampPct = Math.max(0, Math.min(100, pct));
+  const usableH  = tubeH - pad * 2;
+  const fillH    = usableH * (clampPct / 100) + pad;  // +pad bridges fill→bulb gap
+  if (clampPct > 0) {
+    const fillY = tubeTopY + pad + (usableH - usableH * (clampPct / 100));
+    slide.addShape('roundRect', {
+      x: innerX, y: fillY, w: innerW, h: fillH,
+      fill: { color: fillColor },
+      line: { color: fillColor },
+      rectRadius: innerW / 2
+    });
+  }
+
+  // ── Bulb ─────────────────────────────────────────────────────────────────
+  const bulbCy = tubeTopY + tubeH + bulbR * 0.35;  // overlaps tube bottom a little
+
+  // Outer ring (shell)
+  slide.addShape('ellipse', {
+    x: cx - bulbR - 0.04, y: bulbCy - bulbR - 0.04,
+    w: (bulbR + 0.04) * 2, h: (bulbR + 0.04) * 2,
+    fill: { color: 'E4E0EB' },
+    line: { color: 'CECCDA', pt: 1 }
+  });
+
+  // Coloured fill circle
+  slide.addShape('ellipse', {
+    x: cx - bulbR, y: bulbCy - bulbR,
+    w: bulbR * 2, h: bulbR * 2,
+    fill: { color: fillColor },
+    line: { color: fillColor }
+  });
+
+  // ── Scale ticks on right of tube ─────────────────────────────────────────
+  const tickX = tubeX + tubeW + 0.04;
+  [0, 25, 50, 75, 100].forEach(m => {
+    const isMajor = m % 50 === 0;
+    const tickLen = isMajor ? 0.16 : 0.09;
+    const tickY   = tubeTopY + pad + usableH * (1 - m / 100) - 0.01;
+    slide.addShape(RECT, {
+      x: tickX, y: tickY, w: tickLen, h: 0.02,
+      fill: { color: isMajor ? 'A09AB0' : 'C0BAD0' },
+      line: { color: isMajor ? 'A09AB0' : 'C0BAD0' }
+    });
+    if (isMajor) {
+      slide.addText(`${m}%`, {
+        x: tickX + tickLen + 0.04, y: tickY - 0.10, w: 0.42, h: 0.22,
+        fontSize: 7, color: 'A09AB0', align: 'left', valign: 'middle',
+        fontFace: 'Aktiv Grotesk VF Medium'
+      });
+    }
+  });
+
+  // ── Value inside bulb ────────────────────────────────────────────────────
+  slide.addText(valueTxt, {
+    x: cx - 0.72, y: bulbCy - 0.22, w: 1.44, h: 0.44,
+    fontSize: 13, bold: true, color: WHITE,
+    align: 'center', valign: 'middle',
+    fontFace: 'Aktiv Grotesk VF Medium'
+  });
+
+  // ── Label below bulb ─────────────────────────────────────────────────────
+  const labelY = bulbCy + bulbR + 0.16;
+  slide.addText(title, {
+    x: cx - 1.4, y: labelY, w: 2.8, h: 0.32,
+    fontSize: 10, bold: true, color: TEXT_MID,
+    align: 'center', charSpacing: 0.3,
+    fontFace: 'Aktiv Grotesk VF Medium'
+  });
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 /**
@@ -335,55 +434,47 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   sGauge.background = { color: CREAM };
   const sGaugeHdrH = headerBar(pptx, sGauge, 'Delivery Performance Snapshot', headerLogo, dateRangeStr);
 
-  const gaugeAccent = overallSuccessRate >= 75 ? PINK
-    : overallSuccessRate >= 50 ? PURPLE
-    : CHARCOAL;
+  // ── Three thermometers ───────────────────────────────────────────────────
+  // Metric 1: Overall delivery rate (pink)
+  // Metric 2: Healthy numbers % of total unique (purple/blue)
+  // Metric 3: Clean list % = numbers NOT flagged as suppression candidates (amber→green)
+  const healthyPct      = uniqueNumbers > 0 ? (healthyCount      / uniqueNumbers) * 100 : 0;
+  const cleanPct        = uniqueNumbers > 0 ? ((uniqueNumbers - suppressionCandidateCount) / uniqueNumbers) * 100 : 100;
 
-  // Half-donut gauge: [delivered%, not-delivered%, invisible-bottom 100]
-  // Total = 200 so top semicircle maps to 0–100% delivery rate;
-  // third slice (cream) hides the bottom half behind the slide background.
-  const gaugeChartData = [{
-    name: 'Delivery',
-    labels: ['Delivered', 'Not Delivered', ''],
-    values: [overallSuccessRate, 100 - overallSuccessRate, 100]
-  }];
+  const delivColor = overallSuccessRate >= 75 ? PINK   : overallSuccessRate >= 50 ? PURPLE : CHARCOAL;
+  const healthColor = healthyPct >= 60 ? '2D8A60' : healthyPct >= 40 ? PURPLE : CHARCOAL;
+  const cleanColor  = cleanPct  >= 75 ? '2D8A60' : cleanPct  >= 50 ? 'C97A20' : RED;
 
-  const gcX = 1.83, gcY = sGaugeHdrH + 0.05, gcW = 9.66, gcH = 4.5;
-  sGauge.addChart('doughnut', gaugeChartData, {
-    x: gcX, y: gcY, w: gcW, h: gcH,
-    holeSize: 72,
-    firstSliceAng: 270,
-    showLegend: false,
-    showTitle: false,
-    showDataLabels: false,
-    chartColors: [gaugeAccent, 'DEDEDE', CREAM],
-  });
+  const thTubeH = 3.1;
+  const thTubeW = 0.52;
+  const thTopY  = sGaugeHdrH + 0.35;
+  const colCenters = [SLIDE_W * (1/6), SLIDE_W * (3/6), SLIDE_W * (5/6)];
 
-  // Center of chart rectangle – the donut hole center
-  const gcCenterX = gcX + gcW / 2;
-  const gcCenterY = gcY + gcH / 2;  // visible semicircle occupies top half; text sits inside the hole
+  drawThermometer(sGauge, colCenters[0], thTopY, thTubeH, thTubeW,
+    overallSuccessRate, delivColor,
+    'DELIVERY RATE', `${overallSuccessRate.toFixed(1)}%`);
 
-  // Large percentage – inside the donut hole
-  sGauge.addText(`${overallSuccessRate.toFixed(1)}%`, {
-    x: gcCenterX - 2.6, y: gcCenterY - 1.25, w: 5.2, h: 1.1,
-    fontSize: 64, bold: true, color: gaugeAccent,
-    fontFace: 'IvyPresto Text', align: 'center', valign: 'middle'
-  });
+  drawThermometer(sGauge, colCenters[1], thTopY, thTubeH, thTubeW,
+    healthyPct, healthColor,
+    'NUMBERS WITH A DELIVERY', `${healthyPct.toFixed(1)}%`);
 
-  sGauge.addText('of messages successfully delivered', {
-    x: gcCenterX - 2.8, y: gcCenterY - 0.22, w: 5.6, h: 0.36,
-    fontSize: 11, color: TEXT_SOFT, align: 'center',
-    fontFace: 'Aktiv Grotesk VF Medium'
-  });
+  drawThermometer(sGauge, colCenters[2], thTopY, thTubeH, thTubeW,
+    cleanPct, cleanColor,
+    'CLEAN LIST (NOT FLAGGED)', `${cleanPct.toFixed(1)}%`);
 
-  // Thin divider line
-  const statY = gcY + gcH + 0.12;
+  // ── Stats row ────────────────────────────────────────────────────────────
+  const gcX  = 0.5;
+  const gcW  = SLIDE_W - 1.0;
+  // Place stats row below the thermometer bulbs
+  const bulbBottomY = thTopY + thTubeH + thTubeW * 0.9 * 2 + 0.18;
+  const statY = Math.max(bulbBottomY + 0.55, SLIDE_H - 1.45);
+
   sGauge.addShape(RECT, {
     x: gcX, y: statY - 0.04, w: gcW, h: 0.02,
     fill: { color: 'E0DCEA' }, line: { color: 'E0DCEA' }
   });
 
-  // Three key stats in a row below the gauge
+  // Three key stats in a row below the thermometers
   const gaugeStats = [
     { value: totalAttempts.toLocaleString(),              label: 'TOTAL ATTEMPTS'  },
     { value: totalSuccess.toLocaleString(),               label: 'DELIVERED'       },
