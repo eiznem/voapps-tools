@@ -1055,151 +1055,60 @@ function stitchTranscriptSegments(texts) {
   return result.trim();
 }
 
+/**
+ * Run Whisper inference in an isolated child_process (aiTranscribeChild.js).
+ *
+ * ONNX Runtime can crash with a SIGTRAP or OOM when loaded inside Electron's
+ * main process.  By forking a separate process, a crash in ONNX only kills
+ * the child — Electron itself keeps running and we return a graceful error.
+ */
 async function transcribeWithLocalWhisper(audioPath, log, variant = 'base') {
-  try {
-    // Import @xenova/transformers — auto-install if missing, file-URL fallback if specifier
-    // cache is stale (e.g. package was just installed in this session).
-    // getXenovaMod() also configures ONNX log severity to suppress optimizer noise.
-    let pipelineFn;
-    try {
-      ({ pipeline: pipelineFn } = await getXenovaMod(log));
-    } catch (e) {
-      const isNotFound = e.code === 'ERR_MODULE_NOT_FOUND' || e.message?.includes('Cannot find package');
-      const pkgDir = xenovaPkgDir();
-      const alreadyOnDisk = fs.existsSync(path.join(pkgDir, 'package.json'));
+  return new Promise((resolve) => {
+    const { fork } = require('child_process');
+    const childPath = path.join(__dirname, 'aiTranscribeChild.js');
+    const child = fork(childPath, [], {
+      // Give the child its own Node.js heap — ONNX needs headroom
+      execArgv: ['--max-old-space-size=2048'],
+      stdio: ['ignore', 'ignore', 'inherit', 'ipc']
+    });
 
-      if (!isNotFound) {
-        log(`[AI]   ⚠️  @xenova/transformers init error: ${e.message}`, true);
-        if (e.stack) log(`[AI]      ${e.stack.split('\n').slice(1, 4).join(' | ')}`, true);
-      } else if (!alreadyOnDisk) {
-        log('[AI]   Installing @xenova/transformers…');
-        await installXenovaTransformers(log);
+    let settled = false;
+    const done = (result) => {
+      if (settled) return;
+      settled = true;
+      try { child.kill(); } catch (_) {}
+      resolve(result);
+    };
+
+    child.on('message', (msg) => {
+      if (msg.log) {
+        log(msg.log);
+      } else if (msg.ok === true) {
+        done({ transcript: msg.transcript, durationSec: msg.durationSec });
+      } else {
+        log(`[AI]   ⚠️  Local Whisper failed: ${msg.error}`);
+        done({ transcript: '', durationSec: null });
       }
-      // File-URL import bypasses the ESM specifier cache — also sets ONNX log severity.
-      try {
-        const { pathToFileURL } = require('url');
-        const pkgJson = JSON.parse(await fsp.readFile(path.join(pkgDir, 'package.json'), 'utf8'));
-        const exp = pkgJson.exports?.['.'];
-        const mainFile = (typeof exp === 'string' ? exp
-          : exp?.import || exp?.default || exp?.require
-            || pkgJson.module || pkgJson.main
-            || 'src/transformers.js');
-        const entryPath = path.join(pkgDir, mainFile.replace(/^\.\//, ''));
-        ({ pipeline: pipelineFn } = await getXenovaMod(log, pathToFileURL(entryPath).href));
-      } catch (retryErr) {
-        log(`[AI]   ❌ File-URL import also failed: ${retryErr.message}`, true);
-        return { transcript: '', durationSec: null };
+    });
+
+    child.on('exit', (code, signal) => {
+      if (!settled) {
+        if (signal) {
+          log(`[AI]   ⚠️  Whisper process terminated unexpectedly (signal: ${signal}) — skipping message`);
+        } else if (code !== 0) {
+          log(`[AI]   ⚠️  Whisper process exited with code ${code} — skipping message`);
+        }
+        done({ transcript: '', durationSec: null });
       }
-    }
+    });
 
-    // Node.js / Electron main process has no AudioContext — passing a file path to the
-    // pipeline would fail with "Unable to load audio … AudioContext is not available".
-    // Instead: decode the MP3 ourselves to a 16 kHz mono Float32Array and pass that directly.
-    const audioData = await decodeMp3File(audioPath, log);
+    child.on('error', (err) => {
+      log(`[AI]   ⚠️  Failed to spawn Whisper process: ${err.message}`);
+      done({ transcript: '', durationSec: null });
+    });
 
-    // --- Amplitude checks on the FULL resampled audio --------------------------------
-    // The earlier diagnostic only covers the first 1000 samples (≈62 ms), which is often
-    // silence/intro.  We need the full-file peak for two reasons:
-    //
-    //   1. Some MP3 encoders / decoders produce values outside [-1, 1].  Whisper's
-    //      WhisperFeatureExtractor computes a log-mel spectrogram that is calibrated for
-    //      audio in that range.  Amplitude 10× too large shifts every log-mel bin by
-    //      log₁₀(10) = 1, producing feature vectors completely outside the training
-    //      distribution → the model hallucinates "(chiming)" / "(whistling)" etc.
-    //
-    //   2. Genuinely silent files (blank templates, unrecorded placeholders) should be
-    //      skipped rather than wasting Whisper time producing noise-hallucinations.
-    // ---------------------------------------------------------------------------------
-    let peakAmp = 0;
-    for (let i = 0; i < audioData.length; i++) {
-      const abs = Math.abs(audioData[i]);
-      if (abs > peakAmp) peakAmp = abs;
-    }
-    log(`[AI]   🔍 Peak amplitude (full resampled audio): ${peakAmp.toFixed(4)}`);
-
-    if (peakAmp < 0.001) {
-      log('[AI]   ⚠️  Audio is silent — no transcription');
-      return { transcript: '', durationSec: audioDurationSec };
-    }
-    if (peakAmp > 1.0) {
-      // Peak-normalize: bring the loudest sample to exactly ±1.0
-      for (let i = 0; i < audioData.length; i++) audioData[i] /= peakAmp;
-      log(`[AI]   🔍 Normalized amplitude from ${peakAmp.toFixed(4)} → 1.0`);
-    }
-
-    // Log audio duration for diagnostics
-    const audioDurationSec = audioData.length / 16000;
-    log(`[AI]   🔍 Audio duration: ${audioDurationSec.toFixed(1)}s (${audioData.length} samples @ 16kHz)`);
-
-    const sttModelId = `Xenova/whisper-${variant}`;
-    const sttModelLabels = { base: 'whisper-base (Base)', small: 'whisper-small (Small)', medium: 'whisper-medium (Medium)', large: 'whisper-large (Large)' };
-    const sttModelLabel = sttModelLabels[variant] || `whisper-${variant}`;
-    log(`[AI]   Using ${sttModelLabel}`);
-    const transcriber = await pipelineFn('automatic-speech-recognition', sttModelId);
-    // Pass the Float32Array directly — @xenova/transformers v2.x WhisperFeatureExtractor
-    // requires a raw Float32Array, not a { data, sampling_rate } wrapper object.
-    //
-    // no_repeat_ngram_size: 3 — prevents Whisper's decoder from entering a repetition loop
-    // (e.g. "registros" → "rosrosros...") that silently truncates the transcript.
-    //
-    // For audio > 30s we do NOT use the library's built-in chunk_length_s/stride_length_s.
-    // That creates a very short final chunk (audio_len − 30s) padded with lots of silence,
-    // which destabilises the decoder and causes the repetition loop even with no_repeat_ngram.
-    // Instead we split manually with a generous 8s overlap so every segment is ≥ 18s of real
-    // audio (well within Whisper-base's sweet spot), then stitch the segments at the text level.
-    const WHISPER_SR      = 16000;
-    const MANUAL_CHUNK_S  = 30;  // each audio segment fed to Whisper
-    const MANUAL_OVERLAP_S = 8;  // overlap between consecutive segments for reliable stitching
-    const passOpts = { no_repeat_ngram_size: 3 };
-
-    let rawText;
-    if (audioDurationSec > 30) {
-      const segTexts = [];
-      let segStart = 0;
-      let segIdx   = 0;
-      while (segStart < audioData.length) {
-        const segEnd   = Math.min(segStart + MANUAL_CHUNK_S * WHISPER_SR, audioData.length);
-        const segAudio = audioData.slice(segStart, segEnd);
-        const segSec   = segAudio.length / WHISPER_SR;
-        const segRes   = await transcriber(segAudio, passOpts);
-        const segText  = (segRes.text || '')
-          .replace(/(\s*\[S\])+/g, '')
-          .replace(/\[BLANK_AUDIO\]/gi, '')
-          .trim();
-        log(`[AI]   🔍 Segment ${++segIdx} (${(segStart/WHISPER_SR)|0}–${(segEnd/WHISPER_SR)|0}s, ${segSec.toFixed(1)}s): ${JSON.stringify(segText.slice(0, 120))}`);
-        segTexts.push(segText);
-        if (segEnd >= audioData.length) break;
-        segStart += (MANUAL_CHUNK_S - MANUAL_OVERLAP_S) * WHISPER_SR;
-      }
-      rawText = stitchTranscriptSegments(segTexts);
-    } else {
-      const result = await transcriber(audioData, passOpts);
-      rawText = result.text || '';
-    }
-    log(`[AI]   🔍 Raw Whisper output: ${JSON.stringify(rawText.slice(0, 200))}`);
-
-    // Strip Whisper silence/padding tokens — [S] appears when a chunk contains silence
-    // after the speech ends (common at chunk boundaries or end of short audio padded to 30s).
-    // Also strip [BLANK_AUDIO] and similar filler tokens that add no transcript value.
-    const cleanText = rawText
-      .replace(/(\s*\[S\])+/g, '')
-      .replace(/\[BLANK_AUDIO\]/gi, '')
-      .trim();
-
-    // Discard hallucination-only output (e.g. "[Music] (chiming) [Music]" with no real words)
-    if (isWhisperHallucination(cleanText)) {
-      log(`[AI]   ⚠️  Whisper produced only non-speech tokens ("${rawText.slice(0, 80).trim()}") — discarding`);
-      return { transcript: '', durationSec: audioDurationSec };
-    }
-    return { transcript: cleanText, durationSec: audioDurationSec };
-  } catch (e) {
-    if (e.code === 'ERR_MODULE_NOT_FOUND' || e.message?.includes('Cannot find')) {
-      log('[AI]   ⚠️  @xenova/transformers not installed. Use OpenAI Whisper mode or download the model first.');
-    } else {
-      log(`[AI]   ⚠️  Local Whisper failed: ${e.message}`);
-    }
-    return { transcript: '', durationSec: null };
-  }
+    child.send({ audioPath, variant });
+  });
 }
 
 // ---------------------------------------------------------------------------
