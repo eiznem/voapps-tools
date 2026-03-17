@@ -2507,9 +2507,6 @@
                       <label class="checkbox-label" title="Calendar range from the first to last campaign in this dataset">
                         <input type="checkbox" class="card-check" id="card_dateSpan" value="dateSpan" checked onchange="updateCardCount()"> Date Span
                       </label>
-                      <label class="checkbox-label" title="Total agent handle time saved by delivering via DDVM instead of live calls — calculated at 3 min per successful delivery">
-                        <input type="checkbox" class="card-check" id="card_agentHoursSaved" value="agentHoursSaved" onchange="updateCardCount()"> Agent Hours Saved
-                      </label>
                       <label class="checkbox-label" title="Total attempts that did not result in a successful delivery">
                         <input type="checkbox" class="card-check" id="card_unsuccessfulAttempts" value="unsuccessfulAttempts" onchange="updateCardCount()"> Unsuccessful Attempts
                       </label>
@@ -2529,7 +2526,7 @@
                         <input type="checkbox" class="card-check" id="card_impliedCallbackOppty" value="impliedCallbackOppty" onchange="updateCardCount()"> Implied Callback Rate
                       </label>
                     </div>
-                    <p style="font-size:10px; color:#aaa; margin:4px 0 0; line-height:1.4;">Up to 13 cards — 6 per slide, up to 3 overview pages.</p>
+                    <p style="font-size:10px; color:#aaa; margin:4px 0 0; line-height:1.4;">Up to 12 cards — 6 per slide. Extra cards appear on a second overview page.</p>
                   </div>
                   <!-- Right: Other Slides -->
                   <div class="column-group">
@@ -4864,16 +4861,16 @@
     window.updateCardCount = () => {
       const allBoxes = [...document.querySelectorAll('.card-check')];
       let checked = allBoxes.filter(c => c.checked);
-      // Enforce hard cap — uncheck any extras beyond 13 (up to 3 slides × 6)
-      if (checked.length > 13) {
-        checked.slice(13).forEach(cb => { cb.checked = false; });
-        checked = checked.slice(0, 13);
+      // Enforce hard cap — uncheck any extras beyond 12 (2 slides × 6)
+      if (checked.length > 12) {
+        checked.slice(12).forEach(cb => { cb.checked = false; });
+        checked = checked.slice(0, 12);
       }
       const count = checked.length;
       const display = document.getElementById('cardSelectionCount');
-      const pageNote = count > 12 ? ` (3 slides)` : count > 6 ? ` (2 slides)` : '';
-      if (display) display.textContent = ` — ${count} / 13 selected${pageNote}`;
-      if (count >= 13) {
+      const pageNote = count > 6 ? ` (2 slides)` : '';
+      if (display) display.textContent = ` — ${count} / 12 selected${pageNote}`;
+      if (count >= 12) {
         allBoxes.filter(c => !c.checked).forEach(cb => { cb.disabled = true; });
       } else {
         allBoxes.forEach(cb => { cb.disabled = false; });
@@ -5998,7 +5995,7 @@
         if ($('slideOpportunities'))    $('slideOpportunities').checked    = s.includeSlideOpportunities     ?? true;
 
         if (s.overviewCards && Array.isArray(s.overviewCards) && s.overviewCards.length > 0) {
-          const allowedCards = s.overviewCards.slice(0, 13);
+          const allowedCards = s.overviewCards.slice(0, 12);
           document.querySelectorAll('.card-check').forEach(cb => { cb.checked = allowedCards.includes(cb.value); });
           if (typeof window.updateCardCount === 'function') window.updateCardCount();
         }

@@ -561,7 +561,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   ];
   // Allow up to 12 cards across two overview slides (6 per slide)
   const cardKeys = (Array.isArray(overviewCards) && overviewCards.length > 0)
-    ? overviewCards.slice(0, 13)
+    ? overviewCards.slice(0, 12)
     : DEFAULT_CARDS;
 
   const cardPositions = [
@@ -607,17 +607,8 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     renderCardPage(s2b, cardKeys.slice(6, 12));
   }
 
-  // Page 3 (only if there are more than 12 selected cards)
-  let s2c = null;
-  if (cardKeys.length > 12) {
-    s2c = pptx.addSlide();
-    s2c.background = { color: CREAM };
-    headerBar(pptx, s2c, 'High-Level Overview (cont.)', headerLogo, dateRangeStr);
-    renderCardPage(s2c, cardKeys.slice(12, 13));
-  }
-
   // ── Single-touch opportunity callout strip (on last overview slide) ─────────
-  const lastOverviewSlide = s2c || s2b || s2;
+  const lastOverviewSlide = s2b || s2;
   const cadenceTotalNumbers = (cadence.cadenceSingleTouch || 0) + (cadence.cadenceMultiTouchCount || 0);
   if (cadenceTotalNumbers > 0) {
     const stPct = (cadence.cadenceSingleTouch / cadenceTotalNumbers * 100).toFixed(1);
@@ -649,9 +640,9 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     );
   }
 
-  // ── Agent Hours Saved – full-width purple card below callout strip ──────────
-  // Only render as banner if it's not already shown as one of the metric cards
-  if (agentHoursSaved > 0 && !cardKeys.includes('agentHoursSaved')) {
+  // ── Agent Hours Saved – full-width purple strip below callout strip ──────────
+  // Always shown as a banner strip (not a selectable metric card)
+  if (agentHoursSaved > 0) {
     const ahCardH  = 1.14;
     const ahCardW  = 3 * bW + 2 * bGap;
     const ahStripBottom = row2Y + bH + 0.20 + 0.68;
