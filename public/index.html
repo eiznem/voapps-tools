@@ -2484,7 +2484,7 @@
                       Metric Cards
                       <span style="font-weight:normal; font-size:10px; color:#888;" id="cardSelectionCount"> — 6 / 6 selected</span>
                       <div class="col-group-actions">
-                        <span onclick="document.querySelectorAll('#metricCardsBox .card-check').forEach(c=>{c.checked=true;updateCardCount();})">all</span>
+                        <span onclick="[...document.querySelectorAll('#metricCardsBox .card-check')].forEach((c,i)=>{c.checked=i<6;});updateCardCount();">all</span>
                         <span onclick="document.querySelectorAll('#metricCardsBox .card-check').forEach(c=>{c.checked=false;updateCardCount();})">clear</span>
                       </div>
                     </div>
@@ -4911,14 +4911,20 @@
     };
 
     window.updateCardCount = () => {
-      const checked = document.querySelectorAll('.card-check:checked');
+      const allBoxes = [...document.querySelectorAll('.card-check')];
+      let checked = allBoxes.filter(c => c.checked);
+      // Enforce hard cap — uncheck any extras beyond 6
+      if (checked.length > 6) {
+        checked.slice(6).forEach(cb => { cb.checked = false; });
+        checked = checked.slice(0, 6);
+      }
       const count = checked.length;
       const display = document.getElementById('cardSelectionCount');
       if (display) display.textContent = ` — ${count} / 6 selected`;
       if (count >= 6) {
-        document.querySelectorAll('.card-check:not(:checked)').forEach(cb => { cb.disabled = true; });
+        allBoxes.filter(c => !c.checked).forEach(cb => { cb.disabled = true; });
       } else {
-        document.querySelectorAll('.card-check').forEach(cb => { cb.disabled = false; });
+        allBoxes.forEach(cb => { cb.disabled = false; });
       }
       saveSettings();
     };
@@ -6066,7 +6072,8 @@
         if ($('slideOpportunities'))    $('slideOpportunities').checked    = s.includeSlideOpportunities     ?? true;
 
         if (s.overviewCards && Array.isArray(s.overviewCards) && s.overviewCards.length > 0) {
-          document.querySelectorAll('.card-check').forEach(cb => { cb.checked = s.overviewCards.includes(cb.value); });
+          const allowedCards = s.overviewCards.slice(0, 6);
+          document.querySelectorAll('.card-check').forEach(cb => { cb.checked = allowedCards.includes(cb.value); });
           if (typeof window.updateCardCount === 'function') window.updateCardCount();
         }
 

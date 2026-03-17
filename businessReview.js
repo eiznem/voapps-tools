@@ -327,7 +327,92 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   });
 
   // ────────────────────────────────────────────────────────────────────────────
-  // SLIDE 2 — High-Level Overview
+  // SLIDE 2 — Delivery Performance Gauge
+  // Half-donut speedometer + three key stats
+  // ────────────────────────────────────────────────────────────────────────────
+  const sGauge = pptx.addSlide();
+  sGauge.background = { color: CREAM };
+  const sGaugeHdrH = headerBar(pptx, sGauge, 'Delivery Performance Snapshot', headerLogo, dateRangeStr);
+
+  const gaugeAccent = overallSuccessRate >= 75 ? PINK
+    : overallSuccessRate >= 50 ? PURPLE
+    : CHARCOAL;
+
+  // Half-donut gauge: [delivered%, not-delivered%, invisible-bottom 100]
+  // Total = 200 so top semicircle maps to 0–100% delivery rate;
+  // third slice (cream) hides the bottom half behind the slide background.
+  const gaugeChartData = [{
+    name: 'Delivery',
+    labels: ['Delivered', 'Not Delivered', ''],
+    values: [overallSuccessRate, 100 - overallSuccessRate, 100]
+  }];
+
+  const gcX = 1.83, gcY = sGaugeHdrH + 0.05, gcW = 9.66, gcH = 4.5;
+  sGauge.addChart('doughnut', gaugeChartData, {
+    x: gcX, y: gcY, w: gcW, h: gcH,
+    holeSize: 72,
+    firstSliceAng: 270,
+    showLegend: false,
+    showTitle: false,
+    showDataLabels: false,
+    chartColors: [gaugeAccent, 'DEDEDE', CREAM],
+  });
+
+  // Center of chart rectangle — the donut hole center
+  const gcCenterX = gcX + gcW / 2;
+  const gcCenterY = gcY + gcH / 2;  // visible semicircle occupies top half; text sits inside the hole
+
+  // Large percentage — inside the donut hole
+  sGauge.addText(`${overallSuccessRate.toFixed(1)}%`, {
+    x: gcCenterX - 2.6, y: gcCenterY - 1.25, w: 5.2, h: 1.1,
+    fontSize: 64, bold: true, color: gaugeAccent,
+    fontFace: 'IvyPresto Text', align: 'center', valign: 'middle'
+  });
+
+  sGauge.addText('of messages successfully delivered', {
+    x: gcCenterX - 2.8, y: gcCenterY - 0.22, w: 5.6, h: 0.36,
+    fontSize: 11, color: TEXT_SOFT, align: 'center',
+    fontFace: 'Aktiv Grotesk VF Medium'
+  });
+
+  // Thin divider line
+  const statY = gcY + gcH + 0.12;
+  sGauge.addShape(RECT, {
+    x: gcX, y: statY - 0.04, w: gcW, h: 0.02,
+    fill: { color: 'E0DCEA' }, line: { color: 'E0DCEA' }
+  });
+
+  // Three key stats in a row below the gauge
+  const gaugeStats = [
+    { value: totalAttempts.toLocaleString(),              label: 'TOTAL ATTEMPTS'  },
+    { value: totalSuccess.toLocaleString(),               label: 'DELIVERED'       },
+    { value: (totalAttempts - totalSuccess).toLocaleString(), label: 'NOT DELIVERED' }
+  ];
+  const statColW = gcW / 3;
+  gaugeStats.forEach((st, i) => {
+    const sx = gcX + i * statColW;
+    if (i > 0) {
+      sGauge.addShape(RECT, {
+        x: sx, y: statY + 0.06, w: 0.02, h: 0.68,
+        fill: { color: 'DEDEDE' }, line: { color: 'DEDEDE' }
+      });
+    }
+    sGauge.addText(st.value, {
+      x: sx, y: statY, w: statColW, h: 0.58,
+      fontSize: 26, bold: true, color: NAVY,
+      fontFace: 'IvyPresto Text', align: 'center'
+    });
+    sGauge.addText(st.label, {
+      x: sx, y: statY + 0.55, w: statColW, h: 0.26,
+      fontSize: 9.5, color: TEXT_SOFT,
+      fontFace: 'Aktiv Grotesk VF Medium', align: 'center', charSpacing: 1
+    });
+  });
+
+  slideFooter(sGauge);
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // SLIDE 3 — High-Level Overview
   // 2-row × 3-col metric cards on cream background
   // ────────────────────────────────────────────────────────────────────────────
   const s2 = pptx.addSlide();
@@ -794,7 +879,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     for (let i = 0; i < levels; i++) {
       const level = rf[i];
       const barW  = maxBarW * (level.count / maxCount);
-      const bx    = barX + (maxBarW - barW) / 2; // center-aligned
+      const bx    = barX; // left-aligned
       const by    = startY + i * (barH + barGap);
       const delivW = barW > 0 ? barW * (level.delivered / level.count) : 0;
 
@@ -815,10 +900,10 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
         fill: { color: barColor }, line: { color: barColor }
       });
 
-      // Delivered portion overlay (darker shade)
+      // Delivered portion overlay (darker shade, full bar height)
       if (delivW > 0.04) {
         sfun.addShape(RECT, {
-          x: bx, y: by, w: delivW, h: barH * 0.28,
+          x: bx, y: by, w: delivW, h: barH,
           fill: { color: delivColor }, line: { color: delivColor }
         });
       }
@@ -856,6 +941,84 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
       '• "Eventually delivered" = had at least one successful drop (200) at any point.');
     slideFooter(sfun);
   }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // CLOSING SLIDE — Let's Talk
+  // Provocative discussion questions to drive client engagement
+  // ────────────────────────────────────────────────────────────────────────────
+  const sDx = pptx.addSlide();
+  sDx.background = { color: NAVY };
+
+  // Pink accent bar across the top
+  sDx.addShape(RECT, {
+    x: 0, y: 0, w: SLIDE_W, h: 0.08,
+    fill: { color: PINK }, line: { color: PINK }
+  });
+  // Pink accent bar across the bottom
+  sDx.addShape(RECT, {
+    x: 0, y: SLIDE_H - 0.08, w: SLIDE_W, h: 0.08,
+    fill: { color: PINK }, line: { color: PINK }
+  });
+
+  // "Let's Talk" headline
+  sDx.addText("Let's Talk", {
+    x: 0.5, y: 0.22, w: SLIDE_W - 1.0, h: 0.78,
+    fontSize: 38, bold: true, color: WHITE,
+    fontFace: 'IvyPresto Text', align: 'center', valign: 'middle'
+  });
+
+  // Thin pink divider below headline
+  sDx.addShape(RECT, {
+    x: SLIDE_W / 2 - 1.5, y: 0.95, w: 3.0, h: 0.04,
+    fill: { color: PINK }, line: { color: PINK }
+  });
+
+  // Build data-driven provocative questions
+  const nonDeliverableTotal = (toxicCount || 0) + (neverDeliveredCount || 0);
+  const cadenceSingleTouch  = cadence?.cadenceSingleTouch || 0;
+  const targetRate          = Math.min(100, Math.round(overallSuccessRate / 5) * 5 + 10);
+
+  const discussionQs = [
+    cadenceSingleTouch > 0
+      ? `${cadenceSingleTouch.toLocaleString()} numbers got exactly one attempt — are you comfortable writing off everyone who didn't answer on the first ring?`
+      : `What's your current re-attempt strategy — and is it actually increasing your pipeline, or just burning through your list faster?`,
+
+    `Your delivery rate is ${overallSuccessRate.toFixed(1)}%. What would closing the gap to ${targetRate}% mean in additional revenue — and what's standing between you and that number right now?`,
+
+    staleWarmCount > 0
+      ? `You have ${staleWarmCount.toLocaleString()} consumers you've successfully reached before who haven't heard from you in 30+ days. Who's calling them — and if it isn't you, it's your competitor.`
+      : `How long do successfully-reached consumers sit idle before your next touch? Because the longer the gap, the colder the lead.`,
+
+    nonDeliverableTotal > 0
+      ? `${nonDeliverableTotal.toLocaleString()} non-deliverable numbers are burning budget every single cycle. When was the last time this list was scrubbed — and who owns that decision?`
+      : `If list quality is the number-one hidden tax on DDVM performance, what does your current list hygiene process actually look like?`,
+
+    agentHoursSaved > 0
+      ? `You've saved an estimated ${agentHoursSaved.toLocaleString()} hours of agent time. What are those agents actually doing with that capacity — and is it generating revenue?`
+      : `If DDVM is freeing up agent capacity, where is that time going — and is the answer "more outreach" or "more admin"?`,
+  ];
+
+  const qStartY  = 1.10;
+  const qH       = (SLIDE_H - qStartY - 0.28) / discussionQs.length;
+
+  discussionQs.forEach((q, i) => {
+    const qy = qStartY + i * qH;
+
+    // Pink bullet diamond
+    sDx.addShape(RECT, {
+      x: 0.42, y: qy + qH / 2 - 0.08, w: 0.12, h: 0.12,
+      fill: { color: PINK }, line: { color: PINK },
+      rotate: 45
+    });
+
+    // Question text
+    sDx.addText(q, {
+      x: 0.70, y: qy, w: SLIDE_W - 1.0, h: qH,
+      fontSize: 11.5, color: PINK_PALE,
+      fontFace: 'Aktiv Grotesk VF Medium',
+      valign: 'middle', wrap: true
+    });
+  });
 
   // ────────────────────────────────────────────────────────────────────────────
   await pptx.writeFile({ fileName: outputPath });
