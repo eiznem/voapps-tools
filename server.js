@@ -208,19 +208,28 @@ async function getXenovaMod(log, fallbackEntryPath = null) {
   }
 }
 
-const AI_MODEL_STATUS = { stt: { downloaded: false }, sttSmall: { downloaded: false }, intent: { downloaded: false } };
+const AI_MODEL_STATUS = {
+  stt:         { downloaded: false }, // whisper-base
+  sttSmall:    { downloaded: false }, // whisper-small
+  sttMedium:   { downloaded: false }, // whisper-medium
+  sttLarge:    { downloaded: false }, // whisper-large
+  intent:      { downloaded: false }, // nli-deberta-v3-small
+  intentBase:  { downloaded: false }, // nli-deberta-v3-base
+  intentLarge: { downloaded: false }, // nli-deberta-v3-large
+};
 
 function getAiModelStatus() {
   // Check the @xenova/transformers FileCache directory for downloaded model folders.
   // The FileCache stores files as: <cacheDir>/Xenova/<model-name>/<files>
   // (NOT the Python HuggingFace Hub format at ~/.cache/huggingface/hub/models--...)
   const cacheRoot = xenovaCacheDir();
-  const sttModelDir      = path.join(cacheRoot, 'Xenova', 'whisper-base');
-  const sttSmallModelDir = path.join(cacheRoot, 'Xenova', 'whisper-small');
-  const intentModelDir   = path.join(cacheRoot, 'Xenova', 'nli-deberta-v3-small');
-  AI_MODEL_STATUS.stt.downloaded      = fs.existsSync(sttModelDir);
-  AI_MODEL_STATUS.sttSmall.downloaded = fs.existsSync(sttSmallModelDir);
-  AI_MODEL_STATUS.intent.downloaded   = fs.existsSync(intentModelDir);
+  AI_MODEL_STATUS.stt.downloaded         = fs.existsSync(path.join(cacheRoot, 'Xenova', 'whisper-base'));
+  AI_MODEL_STATUS.sttSmall.downloaded    = fs.existsSync(path.join(cacheRoot, 'Xenova', 'whisper-small'));
+  AI_MODEL_STATUS.sttMedium.downloaded   = fs.existsSync(path.join(cacheRoot, 'Xenova', 'whisper-medium'));
+  AI_MODEL_STATUS.sttLarge.downloaded    = fs.existsSync(path.join(cacheRoot, 'Xenova', 'whisper-large'));
+  AI_MODEL_STATUS.intent.downloaded      = fs.existsSync(path.join(cacheRoot, 'Xenova', 'nli-deberta-v3-small'));
+  AI_MODEL_STATUS.intentBase.downloaded  = fs.existsSync(path.join(cacheRoot, 'Xenova', 'nli-deberta-v3-base'));
+  AI_MODEL_STATUS.intentLarge.downloaded = fs.existsSync(path.join(cacheRoot, 'Xenova', 'nli-deberta-v3-large'));
   return AI_MODEL_STATUS;
 }
 
@@ -305,7 +314,7 @@ function installXenovaTransformers(log) {
 }
 
 async function downloadModelFromGitHub(type, variant = 'base', log = (msg, isError = false) => isError ? console.error(msg) : console.log(msg)) {
-  const modelKey = type === 'stt' ? `whisper-${variant}` : 'nli-deberta-v3-small';
+  const modelKey = type === 'stt' ? `whisper-${variant}` : variant;
   const url = `https://github.com/eiznem/voapps-tools/releases/latest/download/${modelKey}.zip`;
   const targetDir = xenovaCacheDir();
   log(`[AI] Downloading ${modelKey}.zip from GitHub Releases…`);
@@ -323,9 +332,17 @@ async function downloadModelFromGitHub(type, variant = 'base', log = (msg, isErr
 }
 
 async function downloadAiModelBackground(type, log = (msg, isError = false) => isError ? console.error(msg) : console.log(msg), variant = 'base') {
-  const variantLabel = type === 'stt' ? (variant === 'small' ? 'Whisper Standard (whisper-small)' : 'Whisper Lite (whisper-base)') : 'Intent (nli-deberta-v3-small)';
-  const label = type === 'stt' ? variantLabel : 'Intent (nli-deberta-v3-small)';
-  const modelId = type === 'stt' ? `Xenova/whisper-${variant}` : 'Xenova/nli-deberta-v3-small';
+  const sttVariantNames   = { base: 'Whisper Base', small: 'Whisper Small', medium: 'Whisper Medium', large: 'Whisper Large' };
+  const intentVariantNames = {
+    'nli-deberta-v3-small': 'Intent Small (nli-deberta-v3-small)',
+    'nli-deberta-v3-base':  'Intent Base (nli-deberta-v3-base)',
+    'nli-deberta-v3-large': 'Intent Large (nli-deberta-v3-large)',
+  };
+  const variantLabel = type === 'stt'
+    ? `${sttVariantNames[variant] || `Whisper ${variant}`} (whisper-${variant})`
+    : (intentVariantNames[variant] || `Intent (${variant})`);
+  const label   = variantLabel;
+  const modelId = type === 'stt' ? `Xenova/whisper-${variant}` : `Xenova/${variant}`;
   log(`[AI] Starting ${label} model download: ${modelId}`);
 
   // Import @xenova/transformers — auto-install if missing.
@@ -407,11 +424,14 @@ async function downloadAiModelBackground(type, log = (msg, isError = false) => i
     };
 
     if (type === 'stt') {
-      const sizeLabel = variant === 'small' ? '~244 MB' : '~142 MB';
-      log(`[AI] Loading ${variantLabel} model (${sizeLabel})…`);
+      const sttSizes = { base: '~142 MB', small: '~244 MB', medium: '~769 MB', large: '~1.5 GB' };
+      const sizeLabel = sttSizes[variant] || '';
+      log(`[AI] Loading ${variantLabel} model${sizeLabel ? ` (${sizeLabel})` : ''}…`);
       await pipeline('automatic-speech-recognition', modelId, { progress_callback });
     } else {
-      log('[AI] Loading nli-deberta-v3-small model (~85 MB)…');
+      const intentSizes = { 'nli-deberta-v3-small': '~86 MB', 'nli-deberta-v3-base': '~270 MB', 'nli-deberta-v3-large': '~840 MB' };
+      const sizeLabel = intentSizes[variant] || '';
+      log(`[AI] Loading ${variantLabel} model${sizeLabel ? ` (${sizeLabel})` : ''}…`);
       await pipeline('zero-shot-classification', modelId, { progress_callback });
     }
     log(`[AI] ✅ ${label} model downloaded and cached`);
@@ -454,7 +474,8 @@ async function transcribeAndAnalyzeMessages(messageInfo, aiSettings, log, onProg
   const transcriptMap = {};
   if (!dbReady) log('[AI] Note: Database not ready — transcripts will run but will not be cached this session');
 
-  const { transcriptionMode = 'local', intentMode = 'local', openaiApiKey = '', notify = null } = aiSettings;
+  const { transcriptionMode = 'local', intentMode = 'local', openaiApiKey = '', notify = null,
+          localSttModel = 'base', localIntentModel = 'nli-deberta-v3-small' } = aiSettings;
   let quotaExceeded = false;   // set to true on first 429 — skip remaining messages
 
   // Collect unique messages that have a file_url
@@ -545,7 +566,7 @@ async function transcribeAndAnalyzeMessages(messageInfo, aiSettings, log, onProg
         if (transcript === '__QUOTA_EXCEEDED__') transcript = '';
       } else {
         // transcribeWithLocalWhisper returns { transcript, durationSec }
-        ({ transcript, durationSec } = await transcribeWithLocalWhisper(tmpFile, log, aiSettings.localSttModel || 'base'));
+        ({ transcript, durationSec } = await transcribeWithLocalWhisper(tmpFile, log, localSttModel));
       }
 
       // Clean up temp file
@@ -576,9 +597,9 @@ async function transcribeAndAnalyzeMessages(messageInfo, aiSettings, log, onProg
           intentModelLabel = 'openai-gpt4o-mini';
         }
       } else {
-        const result = await classifyIntentLocal(transcript, log, msgName, durationSec);
+        const result = await classifyIntentLocal(transcript, log, msgName, durationSec, localIntentModel);
         intent = result.intent;
-        intentModelLabel = 'nli-deberta-v3-local';
+        intentModelLabel = `${localIntentModel}-local`;
       }
 
       // Final fallback: if neither AI path returned an intent, derive it from
@@ -1080,7 +1101,8 @@ async function transcribeWithLocalWhisper(audioPath, log, variant = 'base') {
     log(`[AI]   🔍 Audio duration: ${audioDurationSec.toFixed(1)}s (${audioData.length} samples @ 16kHz)`);
 
     const sttModelId = `Xenova/whisper-${variant}`;
-    const sttModelLabel = variant === 'small' ? 'whisper-small (Standard)' : 'whisper-base (Lite)';
+    const sttModelLabels = { base: 'whisper-base (Base)', small: 'whisper-small (Small)', medium: 'whisper-medium (Medium)', large: 'whisper-large (Large)' };
+    const sttModelLabel = sttModelLabels[variant] || `whisper-${variant}`;
     log(`[AI]   Using ${sttModelLabel}`);
     const transcriber = await pipelineFn('automatic-speech-recognition', sttModelId);
     // Pass the Float32Array directly — @xenova/transformers v2.x WhisperFeatureExtractor
@@ -1301,7 +1323,7 @@ Respond with only valid JSON, no markdown.`
   }
 }
 
-async function classifyIntentLocal(transcript, log, messageName = '', durationSec = null) {
+async function classifyIntentLocal(transcript, log, messageName = '', durationSec = null, variant = 'nli-deberta-v3-small') {
   // Pattern-detect before running the model (deterministic, no model needed)
   if (detectLCM(transcript, durationSec))  return { intent: 'LCM' };
   if (detectModifiedZortman(transcript))   return { intent: 'Modified Zortman' };
@@ -1311,7 +1333,7 @@ async function classifyIntentLocal(transcript, log, messageName = '', durationSe
 
   try {
     const { pipeline } = await getXenovaMod(log);
-    const classifier = await pipeline('zero-shot-classification', 'Xenova/nli-deberta-v3-small');
+    const classifier = await pipeline('zero-shot-classification', `Xenova/${variant}`);
     const result = await classifier(normalizeSttText(transcript).slice(0, 500), INTENT_LABELS);
     const topLabel = result.labels?.[0] || '';
     const topScore = result.scores?.[0] || 0;
@@ -2570,17 +2592,19 @@ function getAiSettings() {
     transcriptionMode: settings.aiTranscriptionMode || 'local',
     intentMode: settings.aiIntentMode || 'local',
     openaiApiKey: settings.openaiApiKey || '',
-    localSttModel: settings.aiLocalSttModel || 'base'
+    localSttModel:    settings.aiLocalSttModel    || 'base',
+    localIntentModel: settings.aiLocalIntentModel || 'nli-deberta-v3-small'
   };
 }
 
 function setAiSettings(updates) {
   const settings = loadSettings();
-  if (updates.enabled !== undefined) settings.enableAiAnalysis = updates.enabled;
+  if (updates.enabled !== undefined)          settings.enableAiAnalysis    = updates.enabled;
   if (updates.transcriptionMode !== undefined) settings.aiTranscriptionMode = updates.transcriptionMode;
-  if (updates.intentMode !== undefined) settings.aiIntentMode = updates.intentMode;
-  if (updates.openaiApiKey !== undefined) settings.openaiApiKey = updates.openaiApiKey;
-  if (updates.localSttModel !== undefined) settings.aiLocalSttModel = updates.localSttModel;
+  if (updates.intentMode !== undefined)        settings.aiIntentMode        = updates.intentMode;
+  if (updates.openaiApiKey !== undefined)      settings.openaiApiKey        = updates.openaiApiKey;
+  if (updates.localSttModel !== undefined)     settings.aiLocalSttModel     = updates.localSttModel;
+  if (updates.localIntentModel !== undefined)  settings.aiLocalIntentModel  = updates.localIntentModel;
   return saveSettings(settings);
 }
 
@@ -3757,7 +3781,8 @@ async function runCombineCampaigns(config) {
     ai_enabled = false,
     ai_transcription_mode = 'local',
     ai_intent_mode = 'local',
-    local_stt_model = 'base'
+    local_stt_model = 'base',
+    local_intent_model = 'nli-deberta-v3-small'
   } = config;
 
   // Build filename prefix
@@ -4060,7 +4085,8 @@ async function runCombineCampaigns(config) {
         enabled: ai_enabled,
         transcriptionMode: ai_transcription_mode,
         intentMode: ai_intent_mode,
-        localSttModel: local_stt_model || getAiSettings().localSttModel || 'base',
+        localSttModel:    local_stt_model    || getAiSettings().localSttModel    || 'base',
+        localIntentModel: local_intent_model || getAiSettings().localIntentModel || 'nli-deberta-v3-small',
         openaiApiKey: getAiSettings().openaiApiKey,
         notify: (message, actionLabel, url) => sendNotify(jobId, message, actionLabel, url)
       };
@@ -5079,7 +5105,8 @@ function createHttpServer() {
           ai_enabled: body.ai_enabled === true,
           ai_transcription_mode: body.ai_transcription_mode || 'local',
           ai_intent_mode: body.ai_intent_mode || 'local',
-          local_stt_model: body.local_stt_model || 'base'
+          local_stt_model: body.local_stt_model || 'base',
+          local_intent_model: body.local_intent_model || 'nli-deberta-v3-small'
         });
 
         const artifacts = {
@@ -5160,6 +5187,7 @@ function createHttpServer() {
         let csvAiTranscriptionMode = 'local';
         let csvAiIntentMode = 'local';
         let csvLocalSttModel = 'base';
+        let csvLocalIntentModel = 'nli-deberta-v3-small';
         let csvIncludeSuppressionCandidates = true;
         let csvIncludeReAttemptTabs = false;
         let csvPptxIncludeSlideDecayCurve = false;
@@ -5198,6 +5226,8 @@ function createHttpServer() {
             csvAiIntentMode = bodyBuf.slice(contentStart, contentEnd).toString().trim() || 'local';
           } else if (header.includes('name="local_stt_model"')) {
             csvLocalSttModel = bodyBuf.slice(contentStart, contentEnd).toString().trim() || 'base';
+          } else if (header.includes('name="local_intent_model"')) {
+            csvLocalIntentModel = bodyBuf.slice(contentStart, contentEnd).toString().trim() || 'nli-deberta-v3-small';
           } else if (header.includes('name="include_suppression_candidates"')) {
             csvIncludeSuppressionCandidates = bodyBuf.slice(contentStart, contentEnd).toString().trim() !== 'false';
           } else if (header.includes('name="include_re_attempt_tabs"')) {
@@ -5311,7 +5341,8 @@ function createHttpServer() {
                     enabled: true,
                     transcriptionMode: csvAiTranscriptionMode,
                     intentMode: csvAiIntentMode,
-                    localSttModel: csvLocalSttModel || getAiSettings().localSttModel || 'base',
+                    localSttModel:    csvLocalSttModel    || getAiSettings().localSttModel    || 'base',
+                    localIntentModel: csvLocalIntentModel || getAiSettings().localIntentModel || 'nli-deberta-v3-small',
                     openaiApiKey: getAiSettings().openaiApiKey,
                   };
                   const newTranscripts = await transcribeAndAnalyzeMessages(aiMessageInfo, aiSettings, csvLog);
@@ -5398,7 +5429,8 @@ function createHttpServer() {
           ai_enabled: dbAiEnabled = false,
           ai_transcription_mode: dbAiTranscriptionMode = 'local',
           ai_intent_mode: dbAiIntentMode = 'local',
-          local_stt_model: dbLocalSttModel = 'base'
+          local_stt_model: dbLocalSttModel = 'base',
+          local_intent_model: dbLocalIntentModel = 'nli-deberta-v3-small'
         } = body;
 
         if (!dbReady) {
@@ -5587,7 +5619,8 @@ function createHttpServer() {
                   enabled: true,
                   transcriptionMode: dbAiTranscriptionMode,
                   intentMode: dbAiIntentMode,
-                  localSttModel: dbLocalSttModel || getAiSettings().localSttModel || 'base',
+                  localSttModel:    dbLocalSttModel    || getAiSettings().localSttModel    || 'base',
+                  localIntentModel: dbLocalIntentModel || getAiSettings().localIntentModel || 'nli-deberta-v3-small',
                   openaiApiKey: getAiSettings().openaiApiKey,
                 };
                 const newTranscripts = await transcribeAndAnalyzeMessages(aiMessageInfo, aiSettings, dbLog);
