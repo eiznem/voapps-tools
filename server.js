@@ -223,13 +223,16 @@ function getAiModelStatus() {
   // The FileCache stores files as: <cacheDir>/Xenova/<model-name>/<files>
   // (NOT the Python HuggingFace Hub format at ~/.cache/huggingface/hub/models--...)
   const cacheRoot = xenovaCacheDir();
-  AI_MODEL_STATUS.stt.downloaded         = fs.existsSync(path.join(cacheRoot, 'Xenova', 'whisper-base'));
-  AI_MODEL_STATUS.sttSmall.downloaded    = fs.existsSync(path.join(cacheRoot, 'Xenova', 'whisper-small'));
-  AI_MODEL_STATUS.sttMedium.downloaded   = fs.existsSync(path.join(cacheRoot, 'Xenova', 'whisper-medium'));
-  AI_MODEL_STATUS.sttLarge.downloaded    = fs.existsSync(path.join(cacheRoot, 'Xenova', 'whisper-large'));
-  AI_MODEL_STATUS.intent.downloaded      = fs.existsSync(path.join(cacheRoot, 'Xenova', 'nli-deberta-v3-small'));
-  AI_MODEL_STATUS.intentBase.downloaded  = fs.existsSync(path.join(cacheRoot, 'Xenova', 'nli-deberta-v3-base'));
-  AI_MODEL_STATUS.intentLarge.downloaded = fs.existsSync(path.join(cacheRoot, 'Xenova', 'nli-deberta-v3-large'));
+  // Check for the onnx/ subfolder (not just the parent dir) so a partial download
+  // that only fetched config files doesn't falsely report as ready.
+  const hasOnnx = (modelName) => fs.existsSync(path.join(cacheRoot, 'Xenova', modelName, 'onnx'));
+  AI_MODEL_STATUS.stt.downloaded         = hasOnnx('whisper-base');
+  AI_MODEL_STATUS.sttSmall.downloaded    = hasOnnx('whisper-small');
+  AI_MODEL_STATUS.sttMedium.downloaded   = hasOnnx('whisper-medium');
+  AI_MODEL_STATUS.sttLarge.downloaded    = hasOnnx('whisper-large');
+  AI_MODEL_STATUS.intent.downloaded      = hasOnnx('nli-deberta-v3-small');
+  AI_MODEL_STATUS.intentBase.downloaded  = hasOnnx('nli-deberta-v3-base');
+  AI_MODEL_STATUS.intentLarge.downloaded = hasOnnx('nli-deberta-v3-large');
   return AI_MODEL_STATUS;
 }
 
@@ -331,6 +334,116 @@ async function downloadModelFromGitHub(type, variant = 'base', log = (msg, isErr
   log(`[AI] ✅ ${modelKey} extracted to ${targetDir}`);
 }
 
+/**
+ * Stream model files directly from HuggingFace Hub to the local cache directory.
+ * Unlike pipeline(), this never loads weights into memory — it just writes files
+ * to disk — so it works for any model size without crashing.
+ */
+async function streamHuggingFaceModel(modelId, cacheDir, log) {
+  const modelName = modelId.split('/').pop();
+
+  // 1. Get file list from Hub API
+  log(`[AI] Fetching file list from HuggingFace Hub…`);
+  const apiData = await new Promise((resolve, reject) => {
+    const doGet = (url, hops = 0) => {
+      if (hops > 5) return reject(new Error('Too many redirects on Hub API'));
+      https.get(url, { headers: { 'User-Agent': 'voapps-tools/1.0' } }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          res.resume();
+          let next = res.headers.location;
+          try { next = new URL(next, url).href; } catch (e) { return reject(new Error(`Bad Hub API redirect: ${next}`)); }
+          return doGet(next, hops + 1);
+        }
+        if (res.statusCode !== 200) { res.resume(); return reject(new Error(`Hub API HTTP ${res.statusCode}`)); }
+        let d = ''; res.on('data', c => d += c); res.on('end', () => resolve(d));
+      }).on('error', reject);
+    };
+    doGet(`https://huggingface.co/api/models/${modelId}`);
+  });
+
+  const info = JSON.parse(apiData);
+  const files = (info.siblings || [])
+    .map(s => s.rfilename)
+    .filter(f => f !== '.gitattributes' && !f.startsWith('.'));
+
+  if (!files.length) throw new Error(`No files found for ${modelId} on HuggingFace Hub`);
+  log(`[AI] ${files.length} file(s) to download for ${modelId}`);
+
+  const modelDir = path.join(cacheDir, 'Xenova', modelName);
+
+  // 2. Stream each file straight to disk — no memory loading, no timeout
+  for (const filename of files) {
+    const targetPath = path.join(modelDir, filename);
+    await fsp.mkdir(path.dirname(targetPath), { recursive: true });
+    log(`[AI] Fetching: ${filename}`);
+
+    await new Promise((resolve, reject) => {
+      const MAX_RETRIES = 8;
+      let attempt = 0;
+
+      const attempt_download = () => {
+        attempt++;
+        // Check how many bytes we already have (for resume)
+        let startByte = 0;
+        try { startByte = fs.statSync(targetPath).size; } catch (_) {}
+
+        const doGet = (url, hops = 0) => {
+          if (hops > 10) return tryRetry(new Error(`Too many redirects for ${filename}`));
+          const reqHeaders = { 'User-Agent': 'voapps-tools/1.0' };
+          if (startByte > 0) reqHeaders['Range'] = `bytes=${startByte}-`;
+          const req = https.get(url, { headers: reqHeaders }, (res) => {
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+              res.resume();
+              let next = res.headers.location;
+              try { next = new URL(next, url).href; } catch (e) { return tryRetry(new Error(`Bad redirect URL for ${filename}: ${next}`)); }
+              return doGet(next, hops + 1);
+            }
+            // 206 = resumed, 200 = fresh start (server ignored Range)
+            if (res.statusCode === 200 && startByte > 0) {
+              // Server sent full file again — truncate and restart from 0
+              startByte = 0;
+            }
+            if (res.statusCode !== 200 && res.statusCode !== 206) {
+              res.resume(); return tryRetry(new Error(`HTTP ${res.statusCode} for ${filename}`));
+            }
+            const contentLen = parseInt(res.headers['content-length'] || '0', 10);
+            const total = contentLen + startByte;
+            let downloaded = startByte, lastPct = startByte > 0 ? Math.round(startByte / (total || 1) * 100) : -1;
+            const out = fs.createWriteStream(targetPath, startByte > 0 ? { flags: 'a' } : {});
+            res.on('data', chunk => {
+              downloaded += chunk.length;
+              if (total > 0) {
+                const pct = Math.round(downloaded / total * 100);
+                if (pct - lastPct >= 5 || pct === 100) { lastPct = pct; log(`[AI] ${filename}: ${pct}%`); }
+              }
+            });
+            res.pipe(out);
+            out.on('finish', () => { log(`[AI] ✅ ${filename} ready`); resolve(); });
+            out.on('error', tryRetry);
+            res.on('error', (err) => { out.destroy(); tryRetry(err); });
+          });
+          req.setTimeout(30000, () => { req.destroy(); tryRetry(new Error(`Timeout on ${filename}`)); });
+          req.on('error', tryRetry);
+        };
+
+        const tryRetry = (err) => {
+          if (attempt < MAX_RETRIES) {
+            const delay = Math.min(2000 * attempt, 15000);
+            log(`[AI] ${filename}: retry ${attempt}/${MAX_RETRIES} in ${delay/1000}s (${err.message})`);
+            setTimeout(attempt_download, delay);
+          } else {
+            reject(err);
+          }
+        };
+
+        doGet(`https://huggingface.co/${modelId}/resolve/main/${filename}`);
+      };
+
+      attempt_download();
+    });
+  }
+}
+
 async function downloadAiModelBackground(type, log = (msg, isError = false) => isError ? console.error(msg) : console.log(msg), variant = 'base') {
   const sttVariantNames   = { base: 'Whisper Base', small: 'Whisper Small', medium: 'Whisper Medium', large: 'Whisper Large' };
   const intentVariantNames = {
@@ -343,112 +456,30 @@ async function downloadAiModelBackground(type, log = (msg, isError = false) => i
     : (intentVariantNames[variant] || `Intent (${variant})`);
   const label   = variantLabel;
   const modelId = type === 'stt' ? `Xenova/whisper-${variant}` : `Xenova/${variant}`;
-  log(`[AI] Starting ${label} model download: ${modelId}`);
 
-  // Import @xenova/transformers — auto-install if missing.
-  // IMPORTANT: After installation we import via explicit file URL rather than the bare specifier,
-  // because Node.js/Electron caches the "not found" result for bare specifiers at startup and
-  // that cache entry persists even after npm installs the package in the same session.
-  // File URL imports have a separate cache key and always resolve fresh from disk.
-  let pipeline;
-
-  const tryBareImport = async () => {
-    try { return (await getXenovaMod(log)).pipeline; }
-    catch (e) {
-      if (e.code === 'ERR_MODULE_NOT_FOUND' || e.message?.includes('Cannot find package')) {
-        return null; // not installed — fall through to auto-install path
-      }
-      // Module found but failed to initialize (e.g. onnxruntime-node DLL issue on Windows).
-      // Log the full stack for diagnosis, then return null so the file-URL fallback is tried.
-      log(`[AI] ⚠️  @xenova/transformers init error: ${e.message}`, true);
-      if (e.stack) log(`[AI]    Stack: ${e.stack}`, true);
-      if (process.platform === 'win32') {
-        log('[AI]    Windows: if this is a DLL error, the app will retry via file-URL import.', true);
-      }
-      return null;
-    }
-  };
-
-  pipeline = await tryBareImport();
-
-  if (!pipeline) {
-    const pkgDir = xenovaPkgDir();
-    const alreadyOnDisk = fs.existsSync(path.join(pkgDir, 'package.json'));
-
-    if (!alreadyOnDisk) {
-      // Package not installed at all — auto-install it
-      try {
-        await installXenovaTransformers(log);
-      } catch (installErr) {
-        log(`[AI] ❌ Install failed: ${installErr.message}`, true);
-        return;
-      }
-    }
-    // Package is on disk (either just installed, or was present but the bare
-    // import failed due to an init error like the sharp stub issue).
-    // Import via file URL to bypass the ESM specifier cache.
-    try {
-      const { pathToFileURL } = require('url');
-      const pkgJson = JSON.parse(await fsp.readFile(path.join(pkgDir, 'package.json'), 'utf8'));
-      const exp = pkgJson.exports?.['.'];
-      const mainFile = (typeof exp === 'string' ? exp
-        : exp?.import || exp?.default || exp?.require
-          || pkgJson.module || pkgJson.main
-          || 'src/transformers.js');
-      const entryPath = path.join(pkgDir, mainFile.replace(/^\.\//, ''));
-      log('[AI] Loading module from disk…');
-      ({ pipeline } = await getXenovaMod(log, pathToFileURL(entryPath).href));
-    } catch (retryErr) {
-      log(`[AI] ❌ Failed to load: ${retryErr.message}`, true);
-      if (!alreadyOnDisk) log('[AI] Please restart VoApps Tools and try again.', true);
-      return;
-    }
-  }
+  const sttSizes    = { base: '~142 MB', small: '~244 MB', medium: '~769 MB', large: '~1.5 GB' };
+  const intentSizes = { 'nli-deberta-v3-small': '~86 MB', 'nli-deberta-v3-base': '~270 MB', 'nli-deberta-v3-large': '~840 MB' };
+  const sizeLabel   = type === 'stt' ? sttSizes[variant] || '' : intentSizes[variant] || '';
+  log(`[AI] Starting ${label} model download${sizeLabel ? ` (${sizeLabel})` : ''}: ${modelId}`);
 
   try {
-    // Track last reported % per file to avoid flooding the log
-    const lastPct = {};
-    const progress_callback = (data) => {
-      if (data.status === 'initiate') {
-        log(`[AI] Fetching: ${data.file}`);
-      } else if (data.status === 'progress' && data.file) {
-        const pct = Math.round(data.progress || 0);
-        const prev = lastPct[data.file] ?? -1;
-        if (pct - prev >= 10 || pct === 100) {
-          lastPct[data.file] = pct;
-          log(`[AI] ${data.file}: ${pct}%`);
-        }
-      } else if (data.status === 'done' && data.file) {
-        log(`[AI] ✅ ${data.file} ready`);
-      }
-    };
+    // Stream files directly to disk — avoids loading model into memory (which crashes on large models)
+    await streamHuggingFaceModel(modelId, xenovaCacheDir(), log);
 
-    if (type === 'stt') {
-      const sttSizes = { base: '~142 MB', small: '~244 MB', medium: '~769 MB', large: '~1.5 GB' };
-      const sizeLabel = sttSizes[variant] || '';
-      log(`[AI] Loading ${variantLabel} model${sizeLabel ? ` (${sizeLabel})` : ''}…`);
-      await pipeline('automatic-speech-recognition', modelId, { progress_callback });
-    } else {
-      const intentSizes = { 'nli-deberta-v3-small': '~86 MB', 'nli-deberta-v3-base': '~270 MB', 'nli-deberta-v3-large': '~840 MB' };
-      const sizeLabel = intentSizes[variant] || '';
-      log(`[AI] Loading ${variantLabel} model${sizeLabel ? ` (${sizeLabel})` : ''}…`);
-      await pipeline('zero-shot-classification', modelId, { progress_callback });
+    // Verify the onnx/ weights folder was written
+    const onnxDir = path.join(xenovaCacheDir(), 'Xenova', modelId.replace('Xenova/', ''), 'onnx');
+    if (!fs.existsSync(onnxDir)) {
+      throw new Error(`Model files incomplete — onnx/ folder missing after download. Try "Download via GitHub (VPN-friendly)" instead.`);
     }
+
     log(`[AI] ✅ ${label} model downloaded and cached`);
   } catch (e) {
-    // "Unsupported model type: whisper" is a misleading error that surfaces on
-    // Windows when the real cause is a network failure.  What actually happens:
-    //   1. AutoModelForSpeechSeq2Seq.from_pretrained() fails → network error
-    //   2. Falls through to AutoModelForCTC.from_pretrained()
-    //   3. AutoModelForCTC has no 'whisper' mapping → throws "Unsupported model type"
-    //   4. The last error wins, hiding the real network error
-    // Similarly, "fetch failed" on any model = huggingface.co is unreachable.
-    const isNetworkMasked = e.message?.includes('Unsupported model type');
-    const isFetchFailed   = e.message?.toLowerCase().includes('fetch failed')
-                         || e.message?.toLowerCase().includes('network')
-                         || e.message?.toLowerCase().includes('enotfound')
-                         || e.message?.toLowerCase().includes('econnrefused');
-    if (isNetworkMasked || isFetchFailed) {
+    const isFetchFailed = e.message?.toLowerCase().includes('fetch failed')
+                       || e.message?.toLowerCase().includes('network')
+                       || e.message?.toLowerCase().includes('enotfound')
+                       || e.message?.toLowerCase().includes('econnrefused')
+                       || e.message?.toLowerCase().includes('hub api http');
+    if (isFetchFailed) {
       log(`[AI] ❌ Failed to download ${label} model: could not reach huggingface.co`, true);
       log(`[AI]    Likely cause: the network is blocking huggingface.co (firewall, proxy, or no internet).`, true);
       log(`[AI]    Option 1: use the "Download via GitHub (VPN-friendly)" button in AI Message Analysis settings.`, true);
