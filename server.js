@@ -4701,6 +4701,29 @@ function createHttpServer() {
       return sendJson(res, 200, { ok: true, ...status });
     }
 
+    // AI - Delete a cached model
+    if (req.method === "POST" && pathname === "/api/ai/delete-model") {
+      try {
+        const body = await readJson(req);
+        const { type, variant } = body;
+        const cacheRoot = xenovaCacheDir();
+        let modelDir;
+        if (type === 'stt') {
+          modelDir = path.join(cacheRoot, 'Xenova', `whisper-${variant}`);
+        } else {
+          modelDir = path.join(cacheRoot, 'Xenova', variant);
+        }
+        if (fs.existsSync(modelDir)) {
+          fs.rmSync(modelDir, { recursive: true, force: true });
+          console.log(`[AI] Deleted model: ${modelDir}`);
+        }
+        getAiModelStatus(); // refresh status
+        return sendJson(res, 200, { ok: true });
+      } catch (e) {
+        return sendJson(res, 500, { ok: false, error: e.message });
+      }
+    }
+
     // AI - Transcript cache stats
     if (req.method === "GET" && pathname === "/api/ai/cache-stats") {
       try {

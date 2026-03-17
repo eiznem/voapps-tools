@@ -1163,8 +1163,8 @@
     }
     .drawer-tab:hover { color: #444; }
     .drawer-tab.active {
-      color: #1a1a1a;
-      border-bottom-color: #E91E8C;
+      color: #FF4B7D;
+      border-bottom-color: #FF4B7D;
     }
     .drawer-tab-panel { padding-top: 8px; }
     .inner-tab-panel { padding-top: 0; }
@@ -1174,14 +1174,31 @@
       font-size: 13px;
       font-weight: 600;
       padding: 10px 14px;
-      color: #333;
+      color: #666;
       letter-spacing: 0.01em;
     }
-    .drawer-tab-outer:hover { color: #111; }
+    .drawer-tab-outer:hover { color: #333; }
     .drawer-tab-outer.active {
-      color: #111;
-      border-bottom: 3px solid #E91E8C;
+      color: #FF4B7D;
+      border-bottom: 3px solid #FF4B7D;
     }
+    /* Pill-style inner sub-tabs (e.g. Number Analysis / Business Review) */
+    .drawer-tab-pill {
+      background: #f0f0f0;
+      border: none;
+      border-bottom: none;
+      border-radius: 20px;
+      padding: 5px 14px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #888;
+      cursor: pointer;
+      margin-bottom: 2px;
+      transition: background 0.15s, color 0.15s;
+      white-space: nowrap;
+    }
+    .drawer-tab-pill:hover:not(.active) { background: #e4e4e4; color: #555; }
+    .drawer-tab-pill.active { background: #FF4B7D; color: #fff; border-bottom: none; }
 
     .settings-section-subtitle {
       font-size: 11px;
@@ -2310,7 +2327,10 @@
           <div class="drawer-content">
             <!-- Section 1: Output Folder -->
             <div class="settings-section">
-              <div class="settings-section-title">Output Folder</div>
+              <div class="settings-section-title">
+                <svg viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px;margin-right:5px;fill:currentColor;"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+                Output Folder
+              </div>
               <div class="settings-section-subtitle">Where output files are saved</div>
 
               <div class="folder-path-display" id="outputFolderPath" style="background: #f5f5f5; padding: 8px 12px; border-radius: 6px; font-family: monospace; font-size: 12px; word-break: break-all; margin-bottom: 8px; border: 1px solid #e0e0e0;">
@@ -2330,7 +2350,10 @@
 
             <!-- Section 2: Timezone -->
             <div class="settings-section" style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #e0e0e0; margin-bottom: 16px;">
-              <div class="settings-section-title">Timezone</div>
+              <div class="settings-section-title">
+                <svg viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px;margin-right:5px;fill:currentColor;"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95c-.32-1.25-.78-2.45-1.38-3.56 1.84.63 3.37 1.91 4.33 3.56zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2 0 .68.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56-1.84-.63-3.37-1.9-4.33-3.56zm2.95-8H5.08c.96-1.66 2.49-2.93 4.33-3.56C8.81 5.55 8.35 6.75 8.03 8zM12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96zM14.34 14H9.66c-.09-.66-.16-1.32-.16-2 0-.68.07-1.35.16-2h4.68c.09.65.16 1.32.16 2 0 .68-.07 1.34-.16 2zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95c-.96 1.65-2.49 2.93-4.33 3.56zM16.36 14c.08-.66.14-1.32.14-2 0-.68-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z"/></svg>
+                Timezone
+              </div>
               <div class="settings-section-subtitle">Timezone for timestamps in reports</div>
 
               <select id="timezoneSelect" class="form-select" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid #e0e0e0; font-size: 12px; margin-top: 8px;">
@@ -2348,17 +2371,29 @@
 
             <!-- Tabbed: Delivery Intelligence / CSV Columns -->
             <div class="drawer-tabs">
-              <button class="drawer-tab drawer-tab-outer active" onclick="switchDrawerTab(this,'reportTab-deliveryIntelligence')">Delivery Intelligence</button>
-              <button class="drawer-tab drawer-tab-outer" onclick="switchDrawerTab(this,'reportTab-csvColumns')">CSV Columns</button>
+              <button class="drawer-tab drawer-tab-outer active" onclick="switchDrawerTab(this,'reportTab-deliveryIntelligence')">
+                <svg class="btn-icon" viewBox="0 0 24 24" style="vertical-align:-3px;margin-right:4px;"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg>
+                Delivery Intelligence
+              </button>
+              <button class="drawer-tab drawer-tab-outer" onclick="switchDrawerTab(this,'reportTab-csvColumns')">
+                <svg class="btn-icon" viewBox="0 0 24 24" style="vertical-align:-3px;margin-right:4px;"><path d="M4 5h3v3H4zm0 4h3v3H4zm0 4h3v3H4zm4-8h12v3H8zm0 4h12v3H8zm0 4h12v3H8z"/></svg>
+                CSV Columns
+              </button>
             </div>
 
             <!-- Tab: Delivery Intelligence (with inner sub-tabs) -->
             <div id="reportTab-deliveryIntelligence" class="drawer-tab-panel">
 
               <!-- Inner sub-tab bar -->
-              <div class="drawer-tabs" style="margin-bottom: 0; border-bottom: 1px solid #e0e0e0;">
-                <button class="drawer-tab active" onclick="switchInnerTab(this,'innerTab-numberAnalysis')">Number Analysis (Excel)</button>
-                <button class="drawer-tab" onclick="switchInnerTab(this,'innerTab-bizReview')">Business Review (PowerPoint)</button>
+              <div class="drawer-tabs" style="margin-bottom: 8px; border-bottom: none; gap: 6px;">
+                <button class="drawer-tab drawer-tab-pill active" onclick="switchInnerTab(this,'innerTab-numberAnalysis')">
+                  <svg class="btn-icon" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:3px;"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+                  Number Analysis (Excel)
+                </button>
+                <button class="drawer-tab drawer-tab-pill" onclick="switchInnerTab(this,'innerTab-bizReview')">
+                  <svg class="btn-icon" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:3px;"><path d="M2 3h20v14H2zm10 17l5 3v-3z"/></svg>
+                  Business Review (PowerPoint)
+                </button>
               </div>
 
               <!-- Inner sub-tab: Number Analysis -->
@@ -2577,13 +2612,22 @@
 
               <!-- Tabbed: Transcription / Intent & Summary -->
               <div class="drawer-tabs">
-                <button class="drawer-tab active" onclick="switchDrawerTab(this,'aiTab-transcription')">Transcription</button>
-                <button class="drawer-tab" onclick="switchDrawerTab(this,'aiTab-intent')">Intent &amp; Summary</button>
+                <button class="drawer-tab active" onclick="switchDrawerTab(this,'aiTab-transcription')">
+                  <svg class="btn-icon" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:4px;"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+                  Transcription
+                </button>
+                <button class="drawer-tab" onclick="switchDrawerTab(this,'aiTab-intent')">
+                  <svg class="btn-icon" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:4px;"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7zm2 12.85V16h-4v-2.15C8.48 12.63 7 10.96 7 9c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.96-1.48 3.63-3 4.85z"/></svg>
+                  Intent &amp; Summary
+                </button>
               </div>
 
               <!-- Tab: Transcription Engine -->
               <div id="aiTab-transcription" class="drawer-tab-panel">
-                <div class="settings-section-subtitle">Convert message audio to text</div>
+                <div class="settings-section-subtitle">
+                  <svg viewBox="0 0 24 24" style="width:11px;height:11px;vertical-align:-1px;margin-right:4px;fill:currentColor;"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+                  Convert message audio to text
+                </div>
                 <div style="margin-top: 8px;">
                   <label class="checkbox-label" style="margin-bottom: 2px;">
                     <input type="radio" name="transcriptionMode" id="transcriptionLocal" value="local" onchange="onAiModeChange()">
@@ -2601,6 +2645,9 @@
                   <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
                     <input type="radio" name="localSttVariant" id="sttVariantBase" value="base" onchange="onSttVariantChange()" checked>
                     <label for="sttVariantBase" style="font-size:11px; flex:1; cursor:pointer;">Base — whisper-base &nbsp;<span style="color:#4caf50; font-weight:600;">~142 MB</span></label>
+                    <button id="deleteSttBaseBtn" class="btn btn-sm" style="display:none; color:#d32f2f; padding:4px 6px;" title="Delete downloaded model" onclick="deleteAiModel('stt','base')">
+                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                    </button>
                     <button id="downloadSttBaseBtn" class="btn btn-sm" onclick="downloadAiModel('stt','huggingface','base')">
                       <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
                       Download
@@ -2610,6 +2657,9 @@
                   <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
                     <input type="radio" name="localSttVariant" id="sttVariantSmall" value="small" onchange="onSttVariantChange()">
                     <label for="sttVariantSmall" style="font-size:11px; flex:1; cursor:pointer;">Small — whisper-small &nbsp;<span style="color:#2196f3; font-weight:600;">~244 MB</span></label>
+                    <button id="deleteSttSmallBtn" class="btn btn-sm" style="display:none; color:#d32f2f; padding:4px 6px;" title="Delete downloaded model" onclick="deleteAiModel('stt','small')">
+                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                    </button>
                     <button id="downloadSttSmallBtn" class="btn btn-sm" onclick="downloadAiModel('stt','huggingface','small')">
                       <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
                       Download
@@ -2619,6 +2669,9 @@
                   <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
                     <input type="radio" name="localSttVariant" id="sttVariantMedium" value="medium" onchange="onSttVariantChange()">
                     <label for="sttVariantMedium" style="font-size:11px; flex:1; cursor:pointer;">Medium — whisper-medium &nbsp;<span style="color:#ff9800; font-weight:600;">~769 MB</span></label>
+                    <button id="deleteSttMediumBtn" class="btn btn-sm" style="display:none; color:#d32f2f; padding:4px 6px;" title="Delete downloaded model" onclick="deleteAiModel('stt','medium')">
+                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                    </button>
                     <button id="downloadSttMediumBtn" class="btn btn-sm" onclick="downloadAiModel('stt','huggingface','medium')">
                       <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
                       Download
@@ -2628,6 +2681,9 @@
                   <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
                     <input type="radio" name="localSttVariant" id="sttVariantLarge" value="large" onchange="onSttVariantChange()">
                     <label for="sttVariantLarge" style="font-size:11px; flex:1; cursor:pointer;">Large — whisper-large &nbsp;<span style="color:#f44336; font-weight:600;">~1.5 GB</span></label>
+                    <button id="deleteSttLargeBtn" class="btn btn-sm" style="display:none; color:#d32f2f; padding:4px 6px;" title="Delete downloaded model" onclick="deleteAiModel('stt','large')">
+                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                    </button>
                     <button id="downloadSttLargeBtn" class="btn btn-sm" onclick="downloadAiModel('stt','huggingface','large')">
                       <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
                       Download
@@ -2645,7 +2701,10 @@
 
               <!-- Tab: Intent & Summary Engine -->
               <div id="aiTab-intent" class="drawer-tab-panel" style="display:none;">
-                <div class="settings-section-subtitle">Classify message intent</div>
+                <div class="settings-section-subtitle">
+                  <svg viewBox="0 0 24 24" style="width:11px;height:11px;vertical-align:-1px;margin-right:4px;fill:currentColor;"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7zm2 12.85V16h-4v-2.15C8.48 12.63 7 10.96 7 9c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.96-1.48 3.63-3 4.85z"/></svg>
+                  Classify message intent
+                </div>
                 <div style="margin-top: 8px;">
                   <label class="checkbox-label" style="margin-bottom: 2px;">
                     <input type="radio" name="intentMode" id="intentLocal" value="local" onchange="onAiModeChange()">
@@ -2659,19 +2718,25 @@
                   <div style="font-size: 11px; color: #777; margin: 1px 0 8px 20px;">~$0.0001/message · higher quality · requires API key</div>
                 </div>
                 <div id="intentLocalControls">
-                  <!-- Small row -->
+                  <!-- Base row (smallest: nli-deberta-v3-small) -->
                   <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
                     <input type="radio" name="localIntentVariant" id="intentVariantSmall" value="nli-deberta-v3-small" onchange="onIntentVariantChange()" checked>
-                    <label for="intentVariantSmall" style="font-size:11px; flex:1; cursor:pointer;">Small — nli-deberta-v3-small &nbsp;<span style="color:#4caf50; font-weight:600;">~86 MB</span></label>
+                    <label for="intentVariantSmall" style="font-size:11px; flex:1; cursor:pointer;">Base — nli-deberta-v3-small &nbsp;<span style="color:#4caf50; font-weight:600;">~86 MB</span></label>
+                    <button id="deleteIntentSmallBtn" class="btn btn-sm" style="display:none; color:#d32f2f; padding:4px 6px;" title="Delete downloaded model" onclick="deleteAiModel('intent','nli-deberta-v3-small')">
+                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                    </button>
                     <button id="downloadIntentSmallBtn" class="btn btn-sm" onclick="downloadAiModel('intent','huggingface','nli-deberta-v3-small')">
                       <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
                       Download
                     </button>
                   </div>
-                  <!-- Base row -->
+                  <!-- Standard row (nli-deberta-v3-base) -->
                   <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
                     <input type="radio" name="localIntentVariant" id="intentVariantBase" value="nli-deberta-v3-base" onchange="onIntentVariantChange()">
-                    <label for="intentVariantBase" style="font-size:11px; flex:1; cursor:pointer;">Base — nli-deberta-v3-base &nbsp;<span style="color:#2196f3; font-weight:600;">~270 MB</span></label>
+                    <label for="intentVariantBase" style="font-size:11px; flex:1; cursor:pointer;">Standard — nli-deberta-v3-base &nbsp;<span style="color:#2196f3; font-weight:600;">~270 MB</span></label>
+                    <button id="deleteIntentBaseBtn" class="btn btn-sm" style="display:none; color:#d32f2f; padding:4px 6px;" title="Delete downloaded model" onclick="deleteAiModel('intent','nli-deberta-v3-base')">
+                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                    </button>
                     <button id="downloadIntentBaseBtn" class="btn btn-sm" onclick="downloadAiModel('intent','huggingface','nli-deberta-v3-base')">
                       <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
                       Download
@@ -2681,6 +2746,9 @@
                   <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
                     <input type="radio" name="localIntentVariant" id="intentVariantLarge" value="nli-deberta-v3-large" onchange="onIntentVariantChange()">
                     <label for="intentVariantLarge" style="font-size:11px; flex:1; cursor:pointer;">Large — nli-deberta-v3-large &nbsp;<span style="color:#f44336; font-weight:600;">~840 MB</span></label>
+                    <button id="deleteIntentLargeBtn" class="btn btn-sm" style="display:none; color:#d32f2f; padding:4px 6px;" title="Delete downloaded model" onclick="deleteAiModel('intent','nli-deberta-v3-large')">
+                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                    </button>
                     <button id="downloadIntentLargeBtn" class="btn btn-sm" onclick="downloadAiModel('intent','huggingface','nli-deberta-v3-large')">
                       <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
                       Download
@@ -2719,8 +2787,14 @@
               <!-- Transcript Cache + Dictionary (tabbed) -->
               <div class="settings-section" style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #e0e0e0;">
                 <div class="drawer-tabs" style="margin-bottom: 10px;">
-                  <button class="drawer-tab active" onclick="switchDrawerTab(this,'aiCachePanel')">Transcript Cache</button>
-                  <button class="drawer-tab" onclick="switchDrawerTab(this,'aiDictPanel')">Transcript Dictionary</button>
+                  <button class="drawer-tab active" onclick="switchDrawerTab(this,'aiCachePanel')">
+                    <svg class="btn-icon" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:4px;"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z"/></svg>
+                    Transcript Cache
+                  </button>
+                  <button class="drawer-tab" onclick="switchDrawerTab(this,'aiDictPanel')">
+                    <svg class="btn-icon" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:4px;"><path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"/></svg>
+                    Transcript Dictionary
+                  </button>
                 </div>
 
                 <!-- Transcript Cache panel -->
@@ -2775,23 +2849,28 @@
           <div class="drawer-content">
             <!-- VoApps API Key -->
             <div class="settings-section">
-              <div class="settings-section-subtitle" style="font-weight: 600; color: #FF4B7D; margin-bottom: 2px;">VoApps API Key</div>
-              <div style="font-size: 11px; color: #888; margin-bottom: 8px;">Required — used to access your campaign data</div>
+              <div style="font-size: 13px; font-weight: 700; color: #FF4B7D; margin-bottom: 2px;">VoApps API Key</div>
+              <div style="font-size: 11px; color: #888; margin-bottom: 10px;">Required — used to access your campaign data</div>
               <!-- Input row: input with inline eyeball + Test button beside it -->
-              <div style="display:flex; gap:8px; margin-bottom:10px; align-items:center;">
-                <div style="position:relative; flex:1;">
-                  <input id="apiKey" type="password" placeholder="Paste your VoApps API key..." style="width:100%; padding-right:36px; box-sizing:border-box;" />
-                  <button id="toggleApiKeyVisibility" title="Show/Hide" style="position:absolute; right:4px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; padding:4px; color:#888; display:flex; align-items:center;">
-                    <svg class="btn-icon" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
-                  </button>
+              <div style="display:flex; gap:8px; margin-bottom:8px; align-items:stretch;">
+                <div style="position:relative; flex:1; display:flex; flex-direction:column;">
+                  <div style="position:relative; flex:1;">
+                    <input id="apiKey" type="password" placeholder="Paste your VoApps API key..." style="width:100%; height:100%; padding-right:36px; box-sizing:border-box; min-height:34px;" />
+                    <button id="toggleApiKeyVisibility" title="Show/Hide" style="position:absolute; right:4px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; padding:4px; color:#888; display:flex; align-items:center;">
+                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                    </button>
+                  </div>
+                  <div style="text-align:right; margin-top:4px;">
+                    <a href="#" onclick="openExternalUrl('https://directdropvoicemail.voapps.com'); return false;" style="font-size: 11px; color: #1976d2; text-decoration: none;">Get API key ↗</a>
+                  </div>
                 </div>
-                <button id="pingBtn" class="btn" title="Test API key">
+                <button id="pingBtn" class="btn" title="Test API key" style="align-self:flex-start; height:34px;">
                   <svg class="btn-icon" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
                   Test
                 </button>
               </div>
               <!-- Save + Clear buttons -->
-              <div style="display:flex; gap:8px; margin-bottom:8px; align-items:center;">
+              <div style="display:flex; gap:8px; align-items:center;">
                 <button id="saveKeyBtn" class="btn">
                   <svg class="btn-icon" viewBox="0 0 24 24"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg>
                   Save
@@ -2801,32 +2880,34 @@
                   Clear
                 </button>
               </div>
-              <div>
-                <a href="#" onclick="if(window.voapps?.openUpdateUrl) window.voapps.openUpdateUrl('https://directdropvoicemail.voapps.com'); else window.open('https://directdropvoicemail.voapps.com','_blank'); return false;" style="font-size: 11px; color: #1976d2; text-decoration: none;">Get API key ↗</a>
-              </div>
             </div>
 
             <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 16px 0;">
 
             <!-- OpenAI API Key -->
             <div class="settings-section">
-              <div class="settings-section-subtitle" style="font-weight: 600; color: #333; margin-bottom: 2px;">OpenAI API Key</div>
-              <div style="font-size: 11px; color: #888; margin-bottom: 8px;">Optional — required only when using OpenAI transcription or intent in AI Message Analysis</div>
+              <div style="font-size: 13px; font-weight: 700; color: #333; margin-bottom: 2px;">OpenAI API Key</div>
+              <div style="font-size: 11px; color: #888; margin-bottom: 10px;">Optional — required only when using OpenAI transcription or intent in AI Message Analysis</div>
               <!-- Input row: input with inline eyeball + Test button beside it -->
-              <div style="display:flex; gap:8px; margin-bottom:10px; align-items:center;">
-                <div style="position:relative; flex:1;">
-                  <input id="openaiApiKey" type="password" placeholder="sk-..." style="width:100%; padding-right:36px; box-sizing:border-box;" />
-                  <button id="toggleOpenaiKeyBtn" title="Show/Hide" style="position:absolute; right:4px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; padding:4px; color:#888; display:flex; align-items:center;">
-                    <svg class="btn-icon" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
-                  </button>
+              <div style="display:flex; gap:8px; margin-bottom:8px; align-items:stretch;">
+                <div style="position:relative; flex:1; display:flex; flex-direction:column;">
+                  <div style="position:relative; flex:1;">
+                    <input id="openaiApiKey" type="password" placeholder="sk-..." style="width:100%; height:100%; padding-right:36px; box-sizing:border-box; min-height:34px;" />
+                    <button id="toggleOpenaiKeyBtn" title="Show/Hide" style="position:absolute; right:4px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; padding:4px; color:#888; display:flex; align-items:center;">
+                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                    </button>
+                  </div>
+                  <div style="text-align:right; margin-top:4px;">
+                    <a href="#" onclick="openExternalUrl('https://platform.openai.com/api-keys'); return false;" style="font-size: 11px; color: #1976d2; text-decoration: none;">Get API key ↗</a>
+                  </div>
                 </div>
-                <button id="testOpenaiKeyBtn" class="btn" title="Test OpenAI API key" onclick="testOpenaiKey()">
+                <button id="testOpenaiKeyBtn" class="btn" title="Test OpenAI API key" onclick="testOpenaiKey()" style="align-self:flex-start; height:34px;">
                   <svg class="btn-icon" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
                   Test
                 </button>
               </div>
               <!-- Save + Clear buttons -->
-              <div style="display:flex; gap:8px; margin-bottom:8px; align-items:center;">
+              <div style="display:flex; gap:8px; align-items:center;">
                 <button id="saveOpenaiKeyBtn" class="btn">
                   <svg class="btn-icon" viewBox="0 0 24 24"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg>
                   Save
@@ -2835,9 +2916,6 @@
                   <svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
                   Clear
                 </button>
-              </div>
-              <div>
-                <a href="#" onclick="if(window.voapps?.openUpdateUrl) window.voapps.openUpdateUrl('https://platform.openai.com/api-keys'); else window.open('https://platform.openai.com/api-keys','_blank'); return false;" style="font-size: 11px; color: #1976d2; text-decoration: none;">Get API key ↗</a>
               </div>
             </div>
           </div>
@@ -3054,30 +3132,31 @@
   <div id="apiKeyModal" class="info-modal" onclick="if(event.target === this) hideInfoModal('apiKey')">
     <div class="info-modal-content">
       <div class="info-modal-header">
-        <div class="info-modal-title">API Key</div>
+        <div class="info-modal-title">🔑 API Keys</div>
         <button class="info-modal-close" onclick="hideInfoModal('apiKey')">×</button>
       </div>
       <div class="info-modal-body" style="font-size: 12px;">
-        <h4 style="margin-top:0;">What is the API Key?</h4>
-        <p>The API key authenticates your requests to the VoApps API. It's required to download campaign data and fetch account information.</p>
-
-        <h4>Getting Your API Key</h4>
-        <p>Contact VoApps support or your account manager to obtain an API key. The key is typically a long alphanumeric string.</p>
-        <p style="margin-top: 8px;">
-          <a href="#" onclick="if(window.voapps?.openUpdateUrl) window.voapps.openUpdateUrl('https://directdropvoicemail.voapps.com/api/index'); else window.open('https://directdropvoicemail.voapps.com/api/index', '_blank'); return false;" style="color: #FF4B7D; text-decoration: none; font-weight: 600;">
-            🔗 VoApps DirectDrop Portal
-          </a>
+        <h4 style="margin-top:0; color:#FF4B7D;">VoApps API Key</h4>
+        <p><strong>Required.</strong> Authenticates requests to the VoApps API. Used to download campaign data and fetch account information.</p>
+        <p style="margin-top: 6px;">
+          <a href="#" onclick="openExternalUrl('https://directdropvoicemail.voapps.com/api/index'); hideInfoModal('apiKey'); return false;" style="color: #FF4B7D; text-decoration: none; font-weight: 600;">🔗 VoApps DirectDrop Portal</a>
         </p>
 
-        <h4>Security</h4>
+        <h4 style="margin-top:16px;">OpenAI API Key</h4>
+        <p><strong>Optional.</strong> Required only when you enable OpenAI transcription (Whisper API) or OpenAI intent classification (GPT-4o-mini) in AI Message Analysis. Not needed if you use local models only.</p>
+        <p style="margin-top: 6px;">
+          <a href="#" onclick="openExternalUrl('https://platform.openai.com/api-keys'); hideInfoModal('apiKey'); return false;" style="color: #1976d2; text-decoration: none; font-weight: 600;">🔗 OpenAI Platform → API Keys</a>
+        </p>
+
+        <h4 style="margin-top:16px;">Security</h4>
         <ul style="margin-left: 16px;">
-          <li>Your API key is stored <strong>locally on your machine only</strong></li>
-          <li>It is never sent to any servers other than VoApps</li>
-          <li>The key is encrypted in local storage</li>
+          <li>Both keys are stored <strong>locally on your machine only</strong></li>
+          <li>VoApps key is never sent to any server other than the VoApps API</li>
+          <li>OpenAI key is never sent to any server other than api.openai.com</li>
         </ul>
 
-        <h4>Testing</h4>
-        <p>After entering your API key, click <strong>Test</strong> to verify it works. A successful test will show your account details.</p>
+        <h4 style="margin-top:16px;">Testing</h4>
+        <p>After entering a key, click <strong>Test</strong> to verify it's valid. VoApps Test returns your account list; OpenAI Test confirms the key authenticates against the OpenAI API.</p>
       </div>
     </div>
   </div>
@@ -3504,9 +3583,9 @@
       const bar = tabEl.closest('.drawer-tabs');
       bar.querySelectorAll('.drawer-tab').forEach(t => t.classList.remove('active'));
       tabEl.classList.add('active');
-      // Show the matching panel, hide siblings (only drawer-tab-panel, not inner-tab-panel)
+      // Hide only DIRECT children that are drawer-tab-panel (avoids hiding nested tab panels)
       const content = bar.parentElement;
-      content.querySelectorAll('.drawer-tab-panel').forEach(p => p.style.display = 'none');
+      Array.from(content.children).filter(c => c.classList.contains('drawer-tab-panel')).forEach(p => p.style.display = 'none');
       const panel = document.getElementById(panelId);
       if (panel) panel.style.display = '';
     }
@@ -3681,6 +3760,11 @@
       const logBtn = $('openLogBtn');
       if (csvBtn) { csvBtn.disabled = true; csvBtn.onclick = null; }
       if (logBtn) { logBtn.disabled = true; logBtn.onclick = null; }
+    }
+
+    function openExternalUrl(url) {
+      if (window.voapps?.openUpdateUrl) window.voapps.openUpdateUrl(url);
+      else window.open(url, '_blank');
     }
 
     function showToast(message, type = 'info', duration = 3000) {
@@ -5308,6 +5392,14 @@
       'nli-deberta-v3-large': 'intentLarge',
     };
 
+    // Delete-button IDs for each STT/intent variant
+    const _sttDeleteBtnMap = { base: 'deleteSttBaseBtn', small: 'deleteSttSmallBtn', medium: 'deleteSttMediumBtn', large: 'deleteSttLargeBtn' };
+    const _intentDeleteBtnMap = {
+      'nli-deberta-v3-small': 'deleteIntentSmallBtn',
+      'nli-deberta-v3-base':  'deleteIntentBaseBtn',
+      'nli-deberta-v3-large': 'deleteIntentLargeBtn',
+    };
+
     function refreshAiModelButtonState(sttMode, intentMode) {
       fetch('/api/ai/model-status')
         .then(r => r.json())
@@ -5317,9 +5409,11 @@
             // Update each STT variant button
             for (const [v, btnId] of Object.entries(_sttVariantBtnMap)) {
               const btn = $(btnId);
+              const delBtn = $(_sttDeleteBtnMap[v]);
               if (btn && !btn.innerHTML.includes('…')) {
                 const ready = d[_sttVariantStatusKey[v]]?.downloaded;
                 btn.innerHTML = `${_downloadSvg} ${ready ? 'Re-download' : 'Download'}`;
+                if (delBtn) delBtn.style.display = ready ? '' : 'none';
               }
             }
             // Status text reflects currently selected variant
@@ -5338,9 +5432,11 @@
             // Update each intent variant button
             for (const [v, btnId] of Object.entries(_intentVariantBtnMap)) {
               const btn = $(btnId);
+              const delBtn = $(_intentDeleteBtnMap[v]);
               if (btn && !btn.innerHTML.includes('…')) {
                 const ready = d[_intentVariantStatusKey[v]]?.downloaded;
                 btn.innerHTML = `${_downloadSvg} ${ready ? 'Re-download' : 'Download'}`;
+                if (delBtn) delBtn.style.display = ready ? '' : 'none';
               }
             }
             // Status text reflects currently selected intent variant
@@ -5356,6 +5452,28 @@
           }
         })
         .catch(() => {});
+    }
+
+    async function deleteAiModel(type, variant) {
+      const label = type === 'stt' ? `whisper-${variant}` : variant;
+      if (!confirm(`Delete downloaded model "${label}"?\n\nThis frees disk space but requires re-downloading before use.`)) return;
+      try {
+        const r = await fetch('/api/ai/delete-model', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type, variant })
+        });
+        if (r.ok) {
+          showToast(`Model "${label}" deleted`, 'success');
+          const sttMode = document.querySelector('input[name="transcriptionMode"]:checked')?.value || 'local';
+          const intentMode = document.querySelector('input[name="intentMode"]:checked')?.value || 'local';
+          refreshAiModelButtonState(sttMode, intentMode);
+        } else {
+          showToast('Failed to delete model', 'error');
+        }
+      } catch (e) {
+        showToast('Failed to delete model', 'error');
+      }
     }
 
     function updateAiCostSummary(sttMode, intentMode) {
