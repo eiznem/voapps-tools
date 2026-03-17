@@ -973,29 +973,27 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     fill: { color: PINK }, line: { color: PINK }
   });
 
-  // Build data-driven provocative questions
-  const nonDeliverableTotal = (toxicCount || 0) + (neverDeliveredCount || 0);
-  const cadenceSingleTouch  = cadence?.cadenceSingleTouch || 0;
-  const targetRate          = Math.min(100, Math.round(overallSuccessRate / 5) * 5 + 10);
+  // Build data-driven, opportunity-focused discussion questions
+  const cadenceSingleTouch = cadence?.cadenceSingleTouch || 0;
+  // targetRate: round current rate to nearest 5, add 10 — a concrete near-term stretch goal
+  const targetRate = Math.min(95, Math.round(overallSuccessRate / 5) * 5 + 10);
 
   const discussionQs = [
     cadenceSingleTouch > 0
-      ? `${cadenceSingleTouch.toLocaleString()} numbers got exactly one attempt — are you comfortable writing off everyone who didn't answer on the first ring?`
-      : `What's your current re-attempt strategy — and is it actually increasing your pipeline, or just burning through your list faster?`,
+      ? `Research shows consumers typically need 2–3 touches before taking action. Of the ${cadenceSingleTouch.toLocaleString()} numbers that received just one attempt this period, how many could convert with a well-timed follow-up?`
+      : `What does your re-attempt strategy look like today — and is there an opportunity to capture more value from the same list with a structured multi-touch cadence?`,
 
-    `Your delivery rate is ${overallSuccessRate.toFixed(1)}%. What would closing the gap to ${targetRate}% mean in additional revenue — and what's standing between you and that number right now?`,
+    `You're at ${overallSuccessRate.toFixed(1)}% delivery today. Getting to ${targetRate}% is within reach — what would that improvement mean to your pipeline, and what's the one change that would get you there?`,
 
     staleWarmCount > 0
-      ? `You have ${staleWarmCount.toLocaleString()} consumers you've successfully reached before who haven't heard from you in 30+ days. Who's calling them — and if it isn't you, it's your competitor.`
-      : `How long do successfully-reached consumers sit idle before your next touch? Because the longer the gap, the colder the lead.`,
+      ? `${staleWarmCount.toLocaleString()} consumers you've already successfully reached haven't been contacted in 30+ days — a pre-warmed audience ready for re-engagement. What's the right message to put in front of them right now?`
+      : `How quickly do you follow up after a successful delivery? A timely second touch to already-engaged consumers tends to see significantly higher conversion rates.`,
 
-    nonDeliverableTotal > 0
-      ? `${nonDeliverableTotal.toLocaleString()} non-deliverable numbers are burning budget every single cycle. When was the last time this list was scrubbed — and who owns that decision?`
-      : `If list quality is the number-one hidden tax on DDVM performance, what does your current list hygiene process actually look like?`,
+    `How recently has your active list been refreshed? Periodic list maintenance is one of the highest-leverage ways to raise delivery rates — what does that process look like for your team today?`,
 
     agentHoursSaved > 0
-      ? `You've saved an estimated ${agentHoursSaved.toLocaleString()} hours of agent time. What are those agents actually doing with that capacity — and is it generating revenue?`
-      : `If DDVM is freeing up agent capacity, where is that time going — and is the answer "more outreach" or "more admin"?`,
+      ? `DDVM freed up an estimated ${agentHoursSaved.toLocaleString()} hours of agent time this period. How is that capacity being put to work — and where would redirecting it create the most impact for your business?`
+      : `As DDVM scales, so does the agent capacity it unlocks. How are you thinking about reinvesting that time into higher-value conversations or expanded outreach?`,
   ];
 
   const qStartY  = 1.10;
