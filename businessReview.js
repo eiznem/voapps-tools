@@ -975,15 +975,11 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
 
   // Build data-driven, opportunity-focused discussion questions
   const cadenceSingleTouch = cadence?.cadenceSingleTouch || 0;
-  // targetRate: round current rate to nearest 5, add 10 — a concrete near-term stretch goal
-  const targetRate = Math.min(95, Math.round(overallSuccessRate / 5) * 5 + 10);
 
   const discussionQs = [
     cadenceSingleTouch > 0
       ? `Research shows consumers typically need 2–3 touches before taking action. Of the ${cadenceSingleTouch.toLocaleString()} numbers that received just one attempt this period, how many could convert with a well-timed follow-up?`
       : `What does your re-attempt strategy look like today — and is there an opportunity to capture more value from the same list with a structured multi-touch cadence?`,
-
-    `You're at ${overallSuccessRate.toFixed(1)}% delivery today. Getting to ${targetRate}% is within reach — what would that improvement mean to your pipeline, and what's the one change that would get you there?`,
 
     staleWarmCount > 0
       ? `${staleWarmCount.toLocaleString()} consumers you've already successfully reached haven't been contacted in 30+ days — a pre-warmed audience ready for re-engagement. What's the right message to put in front of them right now?`
@@ -994,6 +990,8 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     agentHoursSaved > 0
       ? `DDVM freed up an estimated ${agentHoursSaved.toLocaleString()} hours of agent time this period. How is that capacity being put to work — and where would redirecting it create the most impact for your business?`
       : `As DDVM scales, so does the agent capacity it unlocks. How are you thinking about reinvesting that time into higher-value conversations or expanded outreach?`,
+
+    `If you could change one thing about how this program runs today, what would it be — and what's been stopping you from making that change?`,
   ];
 
   const qStartY  = 1.10;
