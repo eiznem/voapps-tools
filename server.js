@@ -4105,13 +4105,13 @@ async function runCombineCampaigns(config) {
         }
       }
 
-      const VALID_CARD_KEYS = new Set(['uniquePhoneNumbers','totalAttempts','overallSuccessRate','successfulDeliveries','numbersConnectingWell','dateSpan','agentHoursSaved','unsuccessfulAttempts','firstAttemptSuccessRate','avgAttemptsPerNumber','nonDeliverableNumbers']);
+      const VALID_CARD_KEYS = new Set(['uniquePhoneNumbers','totalAttempts','overallSuccessRate','successfulDeliveries','numbersConnectingWell','dateSpan','agentHoursSaved','unsuccessfulAttempts','firstAttemptSuccessRate','avgAttemptsPerNumber','nonDeliverableNumbers','impliedRemovedNumbers','impliedCallbackOppty']);
       const pptxOptions = {
         includeSlideDecayCurve: !!pptx_include_slide_decay_curve,
         includeSlideReAttemptCadence: pptx_include_slide_cadence !== false,
         includeSlideOpportunities: pptx_include_slide_opportunities !== false,
         overviewCards: Array.isArray(pptx_overview_cards)
-          ? pptx_overview_cards.filter(k => VALID_CARD_KEYS.has(k)).slice(0, 6)
+          ? pptx_overview_cards.filter(k => VALID_CARD_KEYS.has(k)).slice(0, 12)
           : null,
       };
       if (job_id) sendProgress(job_id, { current: -1, total: 0, message: 'Generating Delivery Intelligence Report...' });
@@ -5325,13 +5325,13 @@ function createHttpServer() {
         const targetBytesPerFile = 50 * 1024 * 1024; // 50MB
         const dynamicRowLimit = Math.max(50000, Math.min(MAX_ROWS_PER_FILE, Math.floor(targetBytesPerFile / avgBytesPerRow)));
 
-        const CSV_VALID_CARD_KEYS = new Set(['uniquePhoneNumbers','totalAttempts','overallSuccessRate','successfulDeliveries','numbersConnectingWell','dateSpan','agentHoursSaved','unsuccessfulAttempts','firstAttemptSuccessRate','avgAttemptsPerNumber','nonDeliverableNumbers']);
+        const CSV_VALID_CARD_KEYS = new Set(['uniquePhoneNumbers','totalAttempts','overallSuccessRate','successfulDeliveries','numbersConnectingWell','dateSpan','agentHoursSaved','unsuccessfulAttempts','firstAttemptSuccessRate','avgAttemptsPerNumber','nonDeliverableNumbers','impliedRemovedNumbers','impliedCallbackOppty']);
         const csvPptxOptions = {
           includeSlideDecayCurve: csvPptxIncludeSlideDecayCurve,
           includeSlideReAttemptCadence: csvPptxIncludeSlideCadence,
           includeSlideOpportunities: csvPptxIncludeSlideOpportunities,
           overviewCards: Array.isArray(csvPptxOverviewCards)
-            ? csvPptxOverviewCards.filter(k => CSV_VALID_CARD_KEYS.has(k)).slice(0, 6)
+            ? csvPptxOverviewCards.filter(k => CSV_VALID_CARD_KEYS.has(k)).slice(0, 12)
             : null,
         };
 
@@ -5599,13 +5599,13 @@ function createHttpServer() {
           console.warn('[AI DB] AI analysis failed (non-fatal):', aiErr.message);
         }
 
-        const DB_VALID_CARD_KEYS = new Set(['uniquePhoneNumbers','totalAttempts','overallSuccessRate','successfulDeliveries','numbersConnectingWell','dateSpan','agentHoursSaved','unsuccessfulAttempts','firstAttemptSuccessRate','avgAttemptsPerNumber','nonDeliverableNumbers']);
+        const DB_VALID_CARD_KEYS = new Set(['uniquePhoneNumbers','totalAttempts','overallSuccessRate','successfulDeliveries','numbersConnectingWell','dateSpan','agentHoursSaved','unsuccessfulAttempts','firstAttemptSuccessRate','avgAttemptsPerNumber','nonDeliverableNumbers','impliedRemovedNumbers','impliedCallbackOppty']);
         const dbPptxOptions = {
           includeSlideDecayCurve: !!dbPptxIncludeSlideDecayCurve,
           includeSlideReAttemptCadence: dbPptxIncludeSlideCadence !== false,
           includeSlideOpportunities: dbPptxIncludeSlideOpportunities !== false,
           overviewCards: Array.isArray(dbPptxOverviewCards)
-            ? dbPptxOverviewCards.filter(k => DB_VALID_CARD_KEYS.has(k)).slice(0, 6)
+            ? dbPptxOverviewCards.filter(k => DB_VALID_CARD_KEYS.has(k)).slice(0, 12)
             : null,
         };
         await runAnalysisInWorker(

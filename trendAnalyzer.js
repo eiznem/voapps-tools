@@ -3664,6 +3664,7 @@ Use the data to set retry limits: when success probability drops below ~15–20%
         healthyCount,
         toxicCount,
         neverDeliveredCount,
+        suppressionCandidateCount: new Set(suppressionRuns.map(r => r.number)).size,
         avgVariability,
         decayCurve,
         cadence: {

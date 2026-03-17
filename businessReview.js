@@ -463,7 +463,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
 
   drawThermometer(sGauge, colCenters[1], thTopY, thTubeH, thTubeW,
     healthyPct, healthColor,
-    'NUMBERS WITH A DELIVERY', `${healthyPct.toFixed(1)}%`);
+    'NUMBERS CONNECTING WELL', `${healthyPct.toFixed(1)}%`);
 
   drawThermometer(sGauge, colCenters[2], thTopY, thTubeH, thTubeW,
     cleanPct, cleanColor,
