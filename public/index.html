@@ -1183,21 +1183,36 @@
       border-bottom: 3px solid #FF4B7D;
     }
     /* Pill-style inner sub-tabs (e.g. Number Analysis / Business Review) */
+    /* Segmented control container — gray bar spanning full width */
+    .drawer-tabs-segmented {
+      display: flex;
+      background: #e8e8e8;
+      border-radius: 8px;
+      padding: 3px;
+      gap: 2px;
+      border-bottom: none !important;
+      margin-left: 0 !important;
+      margin-right: 0 !important;
+      padding-left: 3px !important;
+      padding-right: 3px !important;
+    }
     .drawer-tab-pill {
-      background: #f0f0f0;
+      background: transparent;
       border: none;
       border-bottom: none;
-      border-radius: 20px;
-      padding: 5px 14px;
+      border-radius: 6px;
+      padding: 6px 10px;
       font-size: 11px;
       font-weight: 600;
-      color: #888;
+      color: #777;
       cursor: pointer;
-      margin-bottom: 2px;
+      margin-bottom: 0;
+      flex: 1;
+      text-align: center;
       transition: background 0.15s, color 0.15s;
       white-space: nowrap;
     }
-    .drawer-tab-pill:hover:not(.active) { background: #e4e4e4; color: #555; }
+    .drawer-tab-pill:hover:not(.active) { background: rgba(0,0,0,0.06); color: #444; }
     .drawer-tab-pill.active { background: #FF4B7D; color: #fff; border-bottom: none; }
 
     .settings-section-subtitle {
@@ -2385,7 +2400,7 @@
             <div id="reportTab-deliveryIntelligence" class="drawer-tab-panel">
 
               <!-- Inner sub-tab bar -->
-              <div class="drawer-tabs" style="margin-bottom: 8px; border-bottom: none; gap: 6px;">
+              <div class="drawer-tabs-segmented" style="margin-bottom: 10px;">
                 <button class="drawer-tab drawer-tab-pill active" onclick="switchInnerTab(this,'innerTab-numberAnalysis')">
                   <svg class="btn-icon" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:3px;"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
                   Number Analysis (Excel)
@@ -3591,8 +3606,8 @@
     }
 
     function switchInnerTab(tabEl, panelId) {
-      const bar = tabEl.closest('.drawer-tabs');
-      bar.querySelectorAll('.drawer-tab').forEach(t => t.classList.remove('active'));
+      const bar = tabEl.closest('.drawer-tabs, .drawer-tabs-segmented');
+      bar.querySelectorAll('.drawer-tab, .drawer-tab-pill').forEach(t => t.classList.remove('active'));
       tabEl.classList.add('active');
       // Show matching inner panel, hide other inner panels (scoped to inner-tab-panel class)
       const content = bar.parentElement;
@@ -3607,7 +3622,7 @@
         const outerBtn = document.querySelector(`#drawerReport .drawer-tab[onclick*="${outerPanelId}"]`);
         if (outerBtn) switchDrawerTab(outerBtn, outerPanelId);
         if (innerPanelId) {
-          const innerBtn = document.querySelector(`#${outerPanelId} .drawer-tab[onclick*="${innerPanelId}"]`);
+          const innerBtn = document.querySelector(`#${outerPanelId} .drawer-tab[onclick*="${innerPanelId}"], #${outerPanelId} .drawer-tab-pill[onclick*="${innerPanelId}"]`);
           if (innerBtn) switchInnerTab(innerBtn, innerPanelId);
         }
       }, 0);
