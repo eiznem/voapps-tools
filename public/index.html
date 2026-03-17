@@ -5081,7 +5081,16 @@
           log(`✓ Complete: ${count} results`);
         }
 
-        showToast(`${taskName}: ${summary}`, 'success', 5000);
+        {
+          const _ap = data.artifacts?.analysisPath;
+          const _pp = data.artifacts?.pptxPath;
+          showActionToast(`${taskName} complete — ${summary}`, 'success',
+            _ap ? 'Open Delivery Intelligence' : null,
+            _ap ? async () => { clearAllToasts(); await window.voapps?.openPath(_ap); } : null,
+            _pp ? 'Open Business Review' : null,
+            _pp ? async () => { clearAllToasts(); await window.voapps?.openPath(_pp); } : null
+          );
+        }
 
         if (outputMode === 'database' || outputMode === 'both') {
           await refreshDatabaseStats();

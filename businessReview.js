@@ -286,6 +286,75 @@ function drawThermometer(slide, cx, tubeTopY, tubeH, tubeW, pct, fillColor, titl
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 /**
+ * Horizontal gauge bar — used for the Clean List metric on the gauge slide.
+ * Renders a wide capsule fill-bar with the percentage value centred inside it.
+ * @param {object} slide      - pptxgenjs slide
+ * @param {number} cx         - horizontal centre of the bar
+ * @param {number} midY       - vertical centre of the bar
+ * @param {number} barW       - total width of the bar
+ * @param {number} pct        - fill percentage (0-100)
+ * @param {string} fillColor  - hex fill colour (no #)
+ * @param {string} title      - label shown below the bar
+ * @param {string} valueTxt   - text shown inside the filled portion
+ * @param {string} explanation - one-liner explanation shown below the title
+ */
+function drawHorizontalGauge(slide, cx, midY, barW, pct, fillColor, title, valueTxt, explanation) {
+  const barH  = 0.72;
+  const barX  = cx - barW / 2;
+  const clamp = Math.max(0, Math.min(100, pct));
+  const minFill = barH;  // always at least a circle-width so rounded cap looks right
+
+  // Background track
+  slide.addShape('roundRect', {
+    x: barX, y: midY - barH / 2, w: barW, h: barH,
+    fill: { color: 'E4E0EB' }, line: { color: 'CECCDA', pt: 1 },
+    rectRadius: barH / 2
+  });
+
+  // Coloured fill
+  const fillW = Math.max(minFill, barW * (clamp / 100));
+  slide.addShape('roundRect', {
+    x: barX, y: midY - barH / 2, w: fillW, h: barH,
+    fill: { color: fillColor }, line: { color: fillColor },
+    rectRadius: barH / 2
+  });
+
+  // Value text centred in the filled segment
+  slide.addText(valueTxt, {
+    x: barX, y: midY - barH / 2, w: fillW, h: barH,
+    fontSize: 20, bold: true, color: 'FFFFFF',
+    align: 'center', valign: 'middle',
+    fontFace: 'IvyPresto Text'
+  });
+
+  // Tick marks at 0%, 50%, 100% on the right-hand side of the track
+  [0, 50, 100].forEach(m => {
+    const tickX = barX + barW * (m / 100);
+    const tickTopY = midY - barH / 2 - 0.14;
+    slide.addShape(RECT, { x: tickX - 0.01, y: tickTopY, w: 0.02, h: 0.11,
+      fill: { color: 'A09AB0' }, line: { color: 'A09AB0' } });
+    slide.addText(`${m}%`, { x: tickX - 0.22, y: tickTopY - 0.18, w: 0.44, h: 0.18,
+      fontSize: 7, color: 'A09AB0', align: 'center', fontFace: 'Aktiv Grotesk VF Medium' });
+  });
+
+  // Label
+  const labelY = midY + barH / 2 + 0.18;
+  slide.addText(title, {
+    x: cx - 2.0, y: labelY, w: 4.0, h: 0.26,
+    fontSize: 10, bold: true, color: TEXT_MID,
+    align: 'center', charSpacing: 0.3,
+    fontFace: 'Aktiv Grotesk VF Medium'
+  });
+  if (explanation) {
+    slide.addText(explanation, {
+      x: cx - 2.2, y: labelY + 0.28, w: 4.4, h: 0.42,
+      fontSize: 9, color: '8A8298', italic: true,
+      align: 'center', fontFace: 'Aktiv Grotesk VF Medium'
+    });
+  }
+}
+
+/**
  * Generate a branded business review .pptx alongside the Excel report.
  *
  * @param {Object} stats      - Aggregated stats from generateTrendAnalysis
@@ -433,6 +502,17 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     align: 'center', italic: true
   });
 
+  s1.addNotes([
+    'TITLE SLIDE — Speaker notes',
+    '',
+    'This Delivery Intelligence Report was generated automatically by VoApps Tools from raw campaign data.',
+    'Date range: ' + dateRangeStr,
+    (acctList ? 'Accounts: ' + acctList : ''),
+    '',
+    'Use this slide to orient the audience: what time period are we reviewing, which accounts are included, and what is the purpose of this review.',
+    'The report covers three dimensions: delivery efficiency (how well DDVM drops are connecting), list health (which numbers are still productive), and re-attempt strategy (how much incremental value multi-touch delivers).'
+  ].filter(Boolean).join('\n'));
+
   // ────────────────────────────────────────────────────────────────────────────
   // SLIDE 2 – Delivery Performance Gauge
   // Half-donut speedometer + three key stats
@@ -441,39 +521,81 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   sGauge.background = { color: CREAM };
   const sGaugeHdrH = headerBar(pptx, sGauge, 'Delivery Performance Snapshot', headerLogo, dateRangeStr);
 
-  // ── Three thermometers ───────────────────────────────────────────────────
-  // Metric 1: Overall delivery rate (pink)
-  // Metric 2: Healthy numbers % of total unique (purple/blue)
-  // Metric 3: Clean list % = numbers NOT flagged as suppression candidates (amber→green)
-  const healthyPct      = uniqueNumbers > 0 ? (healthyCount      / uniqueNumbers) * 100 : 0;
-  const cleanPct        = uniqueNumbers > 0 ? ((uniqueNumbers - suppressionCandidateCount) / uniqueNumbers) * 100 : 100;
+  // ── Three distinct metrics with different chart types ──────────────────
+  // 1 (left):   Thermometer — DELIVERY RATE              — brand PINK
+  // 2 (center): Doughnut chart — NUMBERS CONNECTING WELL — brand PURPLE
+  // 3 (right):  Horizontal bar gauge — CLEAN LIST        — brand BLUE
+  const healthyPct = uniqueNumbers > 0 ? (healthyCount / uniqueNumbers) * 100 : 0;
+  const cleanPct   = uniqueNumbers > 0 ? ((uniqueNumbers - suppressionCandidateCount) / uniqueNumbers) * 100 : 100;
 
-  const delivColor = overallSuccessRate >= 75 ? PINK   : overallSuccessRate >= 50 ? PURPLE : CHARCOAL;
-  const healthColor = healthyPct >= 60 ? '2D8A60' : healthyPct >= 40 ? PURPLE : CHARCOAL;
-  const cleanColor  = cleanPct  >= 75 ? '2D8A60' : cleanPct  >= 50 ? 'C97A20' : RED;
-
+  const colCenters = [SLIDE_W * (1/6), SLIDE_W / 2, SLIDE_W * (5/6)];
   const thTubeH = 3.1;
   const thTubeW = 0.52;
   const thTopY  = sGaugeHdrH + 0.35;
-  const colCenters = [SLIDE_W * (1/6), SLIDE_W * (3/6), SLIDE_W * (5/6)];
 
+  // ── 1. Delivery Rate — PINK thermometer (left) ──────────────────────────
   drawThermometer(sGauge, colCenters[0], thTopY, thTubeH, thTubeW,
-    overallSuccessRate, delivColor,
+    overallSuccessRate, PINK,
     'DELIVERY RATE', `${overallSuccessRate.toFixed(1)}%`);
+  // Explanation label below thermometer title
+  const thBulbR = thTubeW * 0.9;
+  const thLabelY = thTopY + thTubeH + thBulbR * 2 + 0.22;
+  sGauge.addText('Of all DDVM delivery attempts,
+the % that reached voicemail', {
+    x: colCenters[0] - 1.55, y: thLabelY + 0.34, w: 3.1, h: 0.44,
+    fontSize: 8.5, color: '8A8298', italic: true,
+    align: 'center', fontFace: 'Aktiv Grotesk VF Medium'
+  });
 
-  drawThermometer(sGauge, colCenters[1], thTopY, thTubeH, thTubeW,
-    healthyPct, healthColor,
-    'NUMBERS CONNECTING WELL', `${healthyPct.toFixed(1)}%`);
+  // ── 2. Numbers Connecting Well — PURPLE doughnut (center) ───────────────
+  const donutSize = 3.3;
+  const donutX    = colCenters[1] - donutSize / 2;
+  const donutY    = thTopY + 0.05;
+  sGauge.addChart('doughnut',
+    [{ name: 'Connecting', labels: ['Connecting', 'Other'], values: [healthyPct, Math.max(0, 100 - healthyPct)] }],
+    {
+      x: donutX, y: donutY, w: donutSize, h: donutSize,
+      holeSize: 62,
+      chartColors: [PURPLE, 'DDD9EF'],
+      dataLabelFontSize: 1,
+      showLabel: false, showValue: false, showPercent: false,
+      showLegend: false,
+      border: { pt: 0, color: 'FFFFFF' },
+      chartBorder: { pt: 0, color: 'FFFFFF' }
+    }
+  );
+  // Big percentage overlaid in the doughnut hole
+  sGauge.addText(`${healthyPct.toFixed(1)}%`, {
+    x: donutX, y: donutY + donutSize * 0.30, w: donutSize, h: donutSize * 0.40,
+    fontSize: 30, bold: true, color: PURPLE,
+    align: 'center', valign: 'middle', fontFace: 'IvyPresto Text'
+  });
+  // Title + explanation below the doughnut
+  const donutLabelY = donutY + donutSize + 0.10;
+  sGauge.addText('NUMBERS CONNECTING WELL', {
+    x: colCenters[1] - 1.9, y: donutLabelY, w: 3.8, h: 0.26,
+    fontSize: 10, bold: true, color: TEXT_MID,
+    align: 'center', charSpacing: 0.3, fontFace: 'Aktiv Grotesk VF Medium'
+  });
+  sGauge.addText('Numbers with consistent delivery performance,
+not in consecutive failure patterns', {
+    x: colCenters[1] - 2.0, y: donutLabelY + 0.28, w: 4.0, h: 0.44,
+    fontSize: 8.5, color: '8A8298', italic: true,
+    align: 'center', fontFace: 'Aktiv Grotesk VF Medium'
+  });
 
-  drawThermometer(sGauge, colCenters[2], thTopY, thTubeH, thTubeW,
-    cleanPct, cleanColor,
-    'CLEAN LIST (NOT FLAGGED)', `${cleanPct.toFixed(1)}%`);
+  // ── 3. Clean List — BLUE horizontal gauge (right) ───────────────────────
+  const gaugeW   = 3.4;
+  const gaugeMidY = thTopY + (thTubeH / 2) + 0.5;
+  drawHorizontalGauge(sGauge, colCenters[2], gaugeMidY, gaugeW,
+    cleanPct, BLUE,
+    'CLEAN LIST (NOT FLAGGED)', `${cleanPct.toFixed(1)}%`,
+    'Numbers NOT flagged as suppression candidates —\nactive, usable contacts');
 
   // ── Stats row ────────────────────────────────────────────────────────────
   const gcX  = 0.5;
   const gcW  = SLIDE_W - 1.0;
-  // Place stats row below the thermometer bulbs
-  const bulbBottomY = thTopY + thTubeH + thTubeW * 0.9 * 2 + 0.18;
+  const bulbBottomY = thTopY + thTubeH + thBulbR * 2 + 0.18;
   const statY = Math.max(bulbBottomY + 0.55, SLIDE_H - 1.45);
 
   sGauge.addShape(RECT, {
@@ -508,6 +630,23 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     });
   });
 
+  sGauge.addNotes([
+    'DELIVERY PERFORMANCE SNAPSHOT — Speaker notes',
+    '',
+    'DELIVERY RATE (' + overallSuccessRate.toFixed(1) + '%)',
+    'This is the core campaign efficiency metric: of every DDVM drop attempted, this share reached a live voicemail inbox.',
+    'Industry context: rates above 70% indicate a well-maintained list with minimal carrier friction. Rates below 50% are a signal to review list quality, caller number health, or timing.',
+    '',
+    'NUMBERS CONNECTING WELL (' + healthyPct.toFixed(1) + '%)',
+    'Measures how many phone numbers in the dataset are in a healthy delivery state — meaning they have not entered an extended consecutive-failure pattern.',
+    'A high percentage (>75%) suggests the list is still fresh and productive. A declining number over successive campaigns is a leading indicator of list fatigue or number recycling.',
+    '',
+    'CLEAN LIST (' + cleanPct.toFixed(1) + '%)',
+    'Shows the share of numbers that have NOT yet met the suppression threshold (4+ consecutive failures over 30+ days).',
+    'Numbers below this threshold are still worth contacting. The complement (' + (100 - cleanPct).toFixed(1) + '%) are candidates for removal — keeping them inflates attempt counts and reduces overall delivery rate.',
+    '',
+    'Total attempts: ' + totalAttempts.toLocaleString() + ' | Delivered: ' + totalSuccess.toLocaleString() + ' | Not delivered: ' + (totalAttempts - totalSuccess).toLocaleString()
+  ].join('\n'));
   slideFooter(sGauge);
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -669,6 +808,21 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     );
   }
 
+  s2.addNotes([
+    'HIGH-LEVEL OVERVIEW — Speaker notes',
+    '',
+    'This slide is a snapshot of the key performance indicators for the period.',
+    'Use it to anchor the conversation before diving into deeper analysis.',
+    '',
+    'KEY TALKING POINTS:',
+    '• Unique Phone Numbers (' + uniqueNumbers.toLocaleString() + '): the size of the list being worked. Larger lists have more statistical stability in the metrics.',
+    '• Total DDVM Attempts (' + totalAttempts.toLocaleString() + '): total carrier-level drops in the period.',
+    '• Overall Success Rate (' + overallSuccessRate.toFixed(1) + '%): the primary efficiency KPI. See the Delivery Performance Snapshot slide for benchmark context.',
+    '• Numbers Connecting Well (' + healthyCount.toLocaleString() + ', ' + healthyPct.toFixed(0) + '%): productive numbers — safe to keep running.',
+    '• Date Span (' + daySpan + ' days): important for normalising attempt counts — a longer window with the same attempt count implies lower frequency.',
+    '',
+    'AGENT HOURS SAVED: Based on an industry-standard 3-minute average handle time per voicemail. Useful for quantifying operational impact in ROI conversations.'
+  ].join('\n'));
   slideFooter(s2);
   if (s2b) slideFooter(s2b);
 

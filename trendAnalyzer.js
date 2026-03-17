@@ -1854,16 +1854,15 @@ async function generateTrendAnalysis(
         (_maxMs - ns.lastAttemptMs) >= _thirtyDaysMs) {
       _staleWarmCount++;
     }
-    // Implied removed after delivery: number had a successful delivery, no attempt was made
-    // more than 18 hours after that last success (i.e. the delivery appears to have been the
-    // final contact — consistent with suppression/list removal), AND enough time has elapsed
-    // since that delivery for a re-attempt to have occurred naturally (≥ 1 cadence window).
-    // These are the numbers most likely to have generated an inbound callback.
+    // Implied removed after delivery: the number had at least one successful delivery,
+    // its current consecutive-failure streak is 0 (meaning the LAST attempt was a delivery),
+    // AND at least one full cadence window has elapsed since that last delivery without
+    // a follow-up attempt — strongly suggesting the number was removed from the calling
+    // list after it was successfully reached (a common post-delivery suppression signal).
     if (
       ns.successful > 0 &&
+      ns.consecutiveFailures === 0 &&
       ns.lastSuccessTimestamp &&
-      ns.lastAttemptMs !== null &&
-      ns.lastAttemptMs <= ns.lastSuccessTimestamp + 18 * 60 * 60 * 1000 &&
       _maxMs && (_maxMs - ns.lastSuccessTimestamp) >= _cadWinMs
     ) {
       _impliedRemovedCount++;
