@@ -4111,7 +4111,7 @@ async function runCombineCampaigns(config) {
         includeSlideReAttemptCadence: pptx_include_slide_cadence !== false,
         includeSlideOpportunities: pptx_include_slide_opportunities !== false,
         overviewCards: Array.isArray(pptx_overview_cards)
-          ? pptx_overview_cards.filter(k => VALID_CARD_KEYS.has(k)).slice(0, 12)
+          ? pptx_overview_cards.filter(k => VALID_CARD_KEYS.has(k)).slice(0, 13)
           : null,
       };
       if (job_id) sendProgress(job_id, { current: -1, total: 0, message: 'Generating Delivery Intelligence Report...' });
@@ -5331,7 +5331,7 @@ function createHttpServer() {
           includeSlideReAttemptCadence: csvPptxIncludeSlideCadence,
           includeSlideOpportunities: csvPptxIncludeSlideOpportunities,
           overviewCards: Array.isArray(csvPptxOverviewCards)
-            ? csvPptxOverviewCards.filter(k => CSV_VALID_CARD_KEYS.has(k)).slice(0, 12)
+            ? csvPptxOverviewCards.filter(k => CSV_VALID_CARD_KEYS.has(k)).slice(0, 13)
             : null,
         };
 
@@ -5605,7 +5605,7 @@ function createHttpServer() {
           includeSlideReAttemptCadence: dbPptxIncludeSlideCadence !== false,
           includeSlideOpportunities: dbPptxIncludeSlideOpportunities !== false,
           overviewCards: Array.isArray(dbPptxOverviewCards)
-            ? dbPptxOverviewCards.filter(k => DB_VALID_CARD_KEYS.has(k)).slice(0, 12)
+            ? dbPptxOverviewCards.filter(k => DB_VALID_CARD_KEYS.has(k)).slice(0, 13)
             : null,
         };
         await runAnalysisInWorker(
