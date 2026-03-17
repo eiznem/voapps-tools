@@ -2654,50 +2654,17 @@
                   <div style="font-size: 11px; color: #777; margin: 1px 0 8px 20px;">~$0.003–$0.006/message · higher accuracy · requires API key</div>
                 </div>
                 <div id="transcriptionLocalControls">
-                  <!-- Base row -->
-                  <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
-                    <input type="radio" name="localSttVariant" id="sttVariantBase" value="base" onchange="onSttVariantChange()" checked>
-                    <label for="sttVariantBase" style="font-size:11px; flex:1; cursor:pointer;">Lite — whisper-base &nbsp;<span style="color:#4caf50; font-weight:600;">~142 MB</span></label>
-                    <button id="deleteSttBaseBtn" class="btn btn-sm" style="display:none; color:#d32f2f; padding:4px 6px;" title="Delete downloaded model" onclick="deleteAiModel('stt','base')">
+                  <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
+                    <select id="localSttVariant" onchange="onSttVariantChange()" style="flex:1; font-size:11px; height:30px; border-radius:6px; border:1px solid #ddd; padding:0 6px; background:#fff; cursor:pointer;">
+                      <option value="base">Lite — whisper-base · ~142 MB</option>
+                      <option value="small">Standard — whisper-small · ~244 MB</option>
+                      <option value="medium">Enhanced — whisper-medium · ~769 MB</option>
+                      <option value="large">Pro — whisper-large · ~1.5 GB</option>
+                    </select>
+                    <button id="deleteSttBtn" class="btn btn-sm" style="display:none; color:#d32f2f; padding:4px 6px;" title="Delete downloaded model" onclick="deleteAiModel('stt', _getCurrentSttVariant())">
                       <svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
                     </button>
-                    <button id="downloadSttBaseBtn" class="btn btn-sm" onclick="downloadAiModel('stt','huggingface','base')">
-                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-                      Download
-                    </button>
-                  </div>
-                  <!-- Small row -->
-                  <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
-                    <input type="radio" name="localSttVariant" id="sttVariantSmall" value="small" onchange="onSttVariantChange()">
-                    <label for="sttVariantSmall" style="font-size:11px; flex:1; cursor:pointer;">Standard — whisper-small &nbsp;<span style="color:#2196f3; font-weight:600;">~244 MB</span></label>
-                    <button id="deleteSttSmallBtn" class="btn btn-sm" style="display:none; color:#d32f2f; padding:4px 6px;" title="Delete downloaded model" onclick="deleteAiModel('stt','small')">
-                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
-                    </button>
-                    <button id="downloadSttSmallBtn" class="btn btn-sm" onclick="downloadAiModel('stt','huggingface','small')">
-                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-                      Download
-                    </button>
-                  </div>
-                  <!-- Medium row -->
-                  <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
-                    <input type="radio" name="localSttVariant" id="sttVariantMedium" value="medium" onchange="onSttVariantChange()">
-                    <label for="sttVariantMedium" style="font-size:11px; flex:1; cursor:pointer;">Enhanced — whisper-medium &nbsp;<span style="color:#ff9800; font-weight:600;">~769 MB</span></label>
-                    <button id="deleteSttMediumBtn" class="btn btn-sm" style="display:none; color:#d32f2f; padding:4px 6px;" title="Delete downloaded model" onclick="deleteAiModel('stt','medium')">
-                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
-                    </button>
-                    <button id="downloadSttMediumBtn" class="btn btn-sm" onclick="downloadAiModel('stt','huggingface','medium')">
-                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-                      Download
-                    </button>
-                  </div>
-                  <!-- Large row -->
-                  <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
-                    <input type="radio" name="localSttVariant" id="sttVariantLarge" value="large" onchange="onSttVariantChange()">
-                    <label for="sttVariantLarge" style="font-size:11px; flex:1; cursor:pointer;">Pro — whisper-large &nbsp;<span style="color:#f44336; font-weight:600;">~1.5 GB</span></label>
-                    <button id="deleteSttLargeBtn" class="btn btn-sm" style="display:none; color:#d32f2f; padding:4px 6px;" title="Delete downloaded model" onclick="deleteAiModel('stt','large')">
-                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
-                    </button>
-                    <button id="downloadSttLargeBtn" class="btn btn-sm" onclick="downloadAiModel('stt','huggingface','large')">
+                    <button id="downloadSttBtn" class="btn btn-sm" onclick="downloadAiModel('stt','huggingface')">
                       <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
                       Download
                     </button>
@@ -2731,38 +2698,16 @@
                   <div style="font-size: 11px; color: #777; margin: 1px 0 8px 20px;">~$0.0001/message · higher quality · requires API key</div>
                 </div>
                 <div id="intentLocalControls">
-                  <!-- Base row (smallest: nli-deberta-v3-small) -->
-                  <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
-                    <input type="radio" name="localIntentVariant" id="intentVariantSmall" value="nli-deberta-v3-small" onchange="onIntentVariantChange()" checked>
-                    <label for="intentVariantSmall" style="font-size:11px; flex:1; cursor:pointer;">Lite — nli-deberta-v3-small &nbsp;<span style="color:#4caf50; font-weight:600;">~86 MB</span></label>
-                    <button id="deleteIntentSmallBtn" class="btn btn-sm" style="display:none; color:#d32f2f; padding:4px 6px;" title="Delete downloaded model" onclick="deleteAiModel('intent','nli-deberta-v3-small')">
+                  <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
+                    <select id="localIntentVariant" onchange="onIntentVariantChange()" style="flex:1; font-size:11px; height:30px; border-radius:6px; border:1px solid #ddd; padding:0 6px; background:#fff; cursor:pointer;">
+                      <option value="nli-deberta-v3-small">Lite — nli-deberta-v3-small · ~86 MB</option>
+                      <option value="nli-deberta-v3-base">Standard — nli-deberta-v3-base · ~270 MB</option>
+                      <option value="nli-deberta-v3-large">Pro — nli-deberta-v3-large · ~840 MB</option>
+                    </select>
+                    <button id="deleteIntentBtn" class="btn btn-sm" style="display:none; color:#d32f2f; padding:4px 6px;" title="Delete downloaded model" onclick="deleteAiModel('intent', _getCurrentIntentVariant())">
                       <svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
                     </button>
-                    <button id="downloadIntentSmallBtn" class="btn btn-sm" onclick="downloadAiModel('intent','huggingface','nli-deberta-v3-small')">
-                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-                      Download
-                    </button>
-                  </div>
-                  <!-- Standard row (nli-deberta-v3-base) -->
-                  <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
-                    <input type="radio" name="localIntentVariant" id="intentVariantBase" value="nli-deberta-v3-base" onchange="onIntentVariantChange()">
-                    <label for="intentVariantBase" style="font-size:11px; flex:1; cursor:pointer;">Standard — nli-deberta-v3-base &nbsp;<span style="color:#2196f3; font-weight:600;">~270 MB</span></label>
-                    <button id="deleteIntentBaseBtn" class="btn btn-sm" style="display:none; color:#d32f2f; padding:4px 6px;" title="Delete downloaded model" onclick="deleteAiModel('intent','nli-deberta-v3-base')">
-                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
-                    </button>
-                    <button id="downloadIntentBaseBtn" class="btn btn-sm" onclick="downloadAiModel('intent','huggingface','nli-deberta-v3-base')">
-                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-                      Download
-                    </button>
-                  </div>
-                  <!-- Large row -->
-                  <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
-                    <input type="radio" name="localIntentVariant" id="intentVariantLarge" value="nli-deberta-v3-large" onchange="onIntentVariantChange()">
-                    <label for="intentVariantLarge" style="font-size:11px; flex:1; cursor:pointer;">Pro — nli-deberta-v3-large &nbsp;<span style="color:#f44336; font-weight:600;">~840 MB</span></label>
-                    <button id="deleteIntentLargeBtn" class="btn btn-sm" style="display:none; color:#d32f2f; padding:4px 6px;" title="Delete downloaded model" onclick="deleteAiModel('intent','nli-deberta-v3-large')">
-                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
-                    </button>
-                    <button id="downloadIntentLargeBtn" class="btn btn-sm" onclick="downloadAiModel('intent','huggingface','nli-deberta-v3-large')">
+                    <button id="downloadIntentBtn" class="btn btn-sm" onclick="downloadAiModel('intent','huggingface')">
                       <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
                       Download
                     </button>
@@ -5399,26 +5344,12 @@
 
     const _downloadSvg = `<svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>`;
 
-    // Maps status key → button id for per-variant button refresh
-    const _sttVariantBtnMap    = { base: 'downloadSttBaseBtn',    small: 'downloadSttSmallBtn',    medium: 'downloadSttMediumBtn',    large: 'downloadSttLargeBtn' };
-    const _sttVariantStatusKey = { base: 'stt',                   small: 'sttSmall',               medium: 'sttMedium',               large: 'sttLarge' };
-    const _intentVariantBtnMap = {
-      'nli-deberta-v3-small': 'downloadIntentSmallBtn',
-      'nli-deberta-v3-base':  'downloadIntentBaseBtn',
-      'nli-deberta-v3-large': 'downloadIntentLargeBtn',
-    };
+    // Status key lookup for each variant (maps to /api/ai/model-status response keys)
+    const _sttVariantStatusKey = { base: 'stt', small: 'sttSmall', medium: 'sttMedium', large: 'sttLarge' };
     const _intentVariantStatusKey = {
       'nli-deberta-v3-small': 'intent',
       'nli-deberta-v3-base':  'intentBase',
       'nli-deberta-v3-large': 'intentLarge',
-    };
-
-    // Delete-button IDs for each STT/intent variant
-    const _sttDeleteBtnMap = { base: 'deleteSttBaseBtn', small: 'deleteSttSmallBtn', medium: 'deleteSttMediumBtn', large: 'deleteSttLargeBtn' };
-    const _intentDeleteBtnMap = {
-      'nli-deberta-v3-small': 'deleteIntentSmallBtn',
-      'nli-deberta-v3-base':  'deleteIntentBaseBtn',
-      'nli-deberta-v3-large': 'deleteIntentLargeBtn',
     };
 
     function refreshAiModelButtonState(sttMode, intentMode) {
@@ -5426,20 +5357,15 @@
         .then(r => r.json())
         .then(d => {
           if (sttMode === 'local') {
-            const statusEl = $('sttModelStatus');
-            // Update each STT variant button
-            for (const [v, btnId] of Object.entries(_sttVariantBtnMap)) {
-              const btn = $(btnId);
-              const delBtn = $(_sttDeleteBtnMap[v]);
-              if (btn && !btn.innerHTML.includes('…')) {
-                const ready = d[_sttVariantStatusKey[v]]?.downloaded;
-                btn.innerHTML = `${_downloadSvg} ${ready ? 'Re-download' : 'Download'}`;
-                if (delBtn) delBtn.style.display = ready ? '' : 'none';
-              }
-            }
-            // Status text reflects currently selected variant
             const variant = _getCurrentSttVariant();
-            const ready = d[_sttVariantStatusKey[variant] || 'stt']?.downloaded;
+            const ready   = d[_sttVariantStatusKey[variant] || 'stt']?.downloaded;
+            const btn     = $('downloadSttBtn');
+            const delBtn  = $('deleteSttBtn');
+            const statusEl = $('sttModelStatus');
+            if (btn && !btn.innerHTML.includes('…')) {
+              btn.innerHTML = `${_downloadSvg} ${ready ? 'Re-download' : 'Download'}`;
+            }
+            if (delBtn) delBtn.style.display = ready ? '' : 'none';
             if (statusEl && !statusEl.textContent.includes('…')) {
               if (ready) {
                 statusEl.innerHTML = '✓ Model ready &nbsp;<span style="color:#aaa;font-size:10px;">· Re-download to update</span>';
@@ -5449,20 +5375,15 @@
             }
           }
           if (intentMode === 'local') {
-            const statusEl = $('intentModelStatus');
-            // Update each intent variant button
-            for (const [v, btnId] of Object.entries(_intentVariantBtnMap)) {
-              const btn = $(btnId);
-              const delBtn = $(_intentDeleteBtnMap[v]);
-              if (btn && !btn.innerHTML.includes('…')) {
-                const ready = d[_intentVariantStatusKey[v]]?.downloaded;
-                btn.innerHTML = `${_downloadSvg} ${ready ? 'Re-download' : 'Download'}`;
-                if (delBtn) delBtn.style.display = ready ? '' : 'none';
-              }
-            }
-            // Status text reflects currently selected intent variant
             const intentVariant = _getCurrentIntentVariant();
-            const intentReady = d[_intentVariantStatusKey[intentVariant] || 'intent']?.downloaded;
+            const intentReady   = d[_intentVariantStatusKey[intentVariant] || 'intent']?.downloaded;
+            const btn     = $('downloadIntentBtn');
+            const delBtn  = $('deleteIntentBtn');
+            const statusEl = $('intentModelStatus');
+            if (btn && !btn.innerHTML.includes('…')) {
+              btn.innerHTML = `${_downloadSvg} ${intentReady ? 'Re-download' : 'Download'}`;
+            }
+            if (delBtn) delBtn.style.display = intentReady ? '' : 'none';
             if (statusEl && !statusEl.textContent.includes('…')) {
               if (intentReady) {
                 statusEl.innerHTML = '✓ Model ready &nbsp;<span style="color:#aaa;font-size:10px;">· Re-download to update</span>';
@@ -5891,11 +5812,11 @@
     }
 
     function _getCurrentSttVariant() {
-      return document.querySelector('input[name="localSttVariant"]:checked')?.value || 'base';
+      return $('localSttVariant')?.value || 'base';
     }
 
     function _getCurrentIntentVariant() {
-      return document.querySelector('input[name="localIntentVariant"]:checked')?.value || 'nli-deberta-v3-small';
+      return $('localIntentVariant')?.value || 'nli-deberta-v3-small';
     }
 
     async function onSttVariantChange() {
@@ -6096,15 +6017,9 @@
           if (radio) radio.checked = true;
         }
         // Restore STT variant
-        if (s.localSttModel) {
-          const variantRadio = document.querySelector(`input[name="localSttVariant"][value="${s.localSttModel}"]`);
-          if (variantRadio) variantRadio.checked = true;
-        }
+        if (s.localSttModel && $('localSttVariant')) $('localSttVariant').value = s.localSttModel;
         // Restore intent variant
-        if (s.localIntentModel) {
-          const intentVariantRadio = document.querySelector(`input[name="localIntentVariant"][value="${s.localIntentModel}"]`);
-          if (intentVariantRadio) intentVariantRadio.checked = true;
-        }
+        if (s.localIntentModel && $('localIntentVariant')) $('localIntentVariant').value = s.localIntentModel;
         // Restore OpenAI API key
         if (s.openaiApiKey && $('openaiApiKey')) $('openaiApiKey').value = s.openaiApiKey;
         // Sync AI mode visibility after restoring radio values
