@@ -1683,6 +1683,7 @@ async function initDatabase() {
         campaign_url VARCHAR,
         target_date VARCHAR,
         voapps_voice_append VARCHAR,
+        account_number VARCHAR,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -1697,6 +1698,12 @@ async function initDatabase() {
     // Migration: add voapps_voice_append column if it doesn't exist (for existing DBs)
     try {
       await runQuery(`ALTER TABLE campaign_results ADD COLUMN IF NOT EXISTS voapps_voice_append VARCHAR`);
+    } catch (e) {
+      // Ignore if already exists or not supported
+    }
+    // Migration: add account_number column if it doesn't exist (for existing DBs)
+    try {
+      await runQuery(`ALTER TABLE campaign_results ADD COLUMN IF NOT EXISTS account_number VARCHAR`);
     } catch (e) {
       // Ignore if already exists or not supported
     }
@@ -2017,9 +2024,9 @@ async function insertRows(rows, logger = null) {
     for (let i = 0; i < rows.length; i += BATCH_SIZE) {
       const batch = rows.slice(i, i + BATCH_SIZE);
 
-      // Build "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?), ..." for this batch
+      // Build "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?), ..." for this batch
       const placeholders = batch.map(() =>
-        '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+        '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
       ).join(',');
 
       const params = [];
@@ -2041,7 +2048,8 @@ async function insertRows(rows, logger = null) {
           row.voapps_timestamp   || '',
           row.campaign_url       || '',
           row.target_date        || '',
-          row.voapps_voice_append|| ''
+          row.voapps_voice_append|| '',
+          row.account_number     || ''
         );
       }
 
@@ -2050,7 +2058,7 @@ async function insertRows(rows, logger = null) {
           row_id, number, account_id, account_name, campaign_id, campaign_name,
           caller_number, caller_number_name, message_id, message_name, message_description,
           voapps_result, voapps_code, voapps_timestamp, campaign_url, target_date,
-          voapps_voice_append
+          voapps_voice_append, account_number
         ) VALUES ${placeholders}
         ON CONFLICT (row_id) DO NOTHING
       `, params);
@@ -2085,8 +2093,8 @@ async function insertRows(rows, logger = null) {
             row_id, number, account_id, account_name, campaign_id, campaign_name,
             caller_number, caller_number_name, message_id, message_name, message_description,
             voapps_result, voapps_code, voapps_timestamp, campaign_url, target_date,
-            voapps_voice_append
-          ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            voapps_voice_append, account_number
+          ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
           ON CONFLICT (row_id) DO NOTHING
         `, [
           generateRowId(row),
@@ -2105,7 +2113,8 @@ async function insertRows(rows, logger = null) {
           row.voapps_timestamp   || '',
           row.campaign_url       || '',
           row.target_date        || '',
-          row.voapps_voice_append|| ''
+          row.voapps_voice_append|| '',
+          row.account_number     || ''
         ]);
         inserted++;
       } catch (rowErr) {
@@ -2619,6 +2628,59 @@ function createLogger(logPath, errorPath, verbosity = "normal", jobId = null) {
 // CSV PARSING AND WRITING (from v2.4.1)
 // =============================================================================
 
+/**
+ * Look up a field value from a parsed CSV row using case-insensitive, trimmed key matching.
+ * Returns the first match found, or '' if none.
+ */
+function pickField(row, candidates) {
+  const keys = Object.keys(row);
+  for (const c of candidates) {
+    const norm = c.toLowerCase().trim();
+    const match = keys.find(k => k.toLowerCase().trim() === norm);
+    if (match !== undefined && row[match] !== undefined) return row[match] || '';
+  }
+  return '';
+}
+
+/** Extract voapps_voice_append, tolerating header casing variations */
+function resolveVoiceAppend(row) {
+  return pickField(row, ['voapps_voice_append', 'voice_append', 'VoApps_Voice_Append', 'Voapps_voice_append']);
+}
+
+/**
+ * Extract account number from a parsed CSV row.
+ * Checks ~35 known header aliases (case-insensitive).
+ */
+const ACCOUNT_NUMBER_ALIASES = [
+  'account_number', 'Account Number', 'AccountNumber', 'account number',
+  'acct_number', 'acct_num', 'AcctNumber', 'AcctNum', 'acct number',
+  'account_num', 'account num', 'AccountNum',
+  'account_no', 'account no', 'AccountNo', 'acct_no', 'acct no',
+  'account_ref', 'account ref', 'AccountRef',
+  'account_id_client', 'client_account', 'client account', 'client_acct',
+  'reference_number', 'reference number', 'ref_number', 'ref number', 'ref_num', 'ref num',
+  'loan_number', 'loan number', 'LoanNumber',
+  'member_number', 'member number', 'MemberNumber',
+  'policy_number', 'policy number', 'PolicyNumber',
+  'customer_number', 'customer number', 'CustomerNumber', 'customer_no', 'customer no',
+  'client_number', 'client number', 'ClientNumber',
+  'case_number', 'case number', 'CaseNumber',
+  'file_number', 'file number', 'FileNumber',
+  'id', 'ID', 'external_id', 'external id', 'ExternalId', 'ext_id',
+  'record_id', 'record id', 'RecordId',
+  'order_number', 'order number', 'OrderNumber',
+  'invoice_number', 'invoice number', 'InvoiceNumber',
+  'debtor_number', 'debtor number', 'DebtorNumber',
+  'borrower_number', 'borrower number', 'BorrowerNumber',
+];
+
+function resolveAccountNumber(row) {
+  return pickField(row, ACCOUNT_NUMBER_ALIASES);
+}
+
+// Columns always written to CSV regardless of user selection (identity columns)
+const ALWAYS_INCLUDED_COLS = new Set(['number', 'account_id', 'campaign_id', 'voapps_result', 'voapps_code', 'voapps_timestamp']);
+
 function parseCsv(text) {
   const lines = text.split(/\r?\n/);
   if (lines.length === 0) return { headers: [], rows: [] };
@@ -3120,7 +3182,8 @@ async function runNumberSearch(config) {
     include_message_meta = true,
     output_mode = "csv", // NEW: "csv", "database", or "both"
     job_id = null,
-    client_prefix = "" // Optional prefix for output files
+    client_prefix = "", // Optional prefix for output files
+    selected_columns = [] // Optional column filter for CSV output (empty = all)
   } = config;
 
   // Build filename prefix
@@ -3351,7 +3414,9 @@ async function runNumberSearch(config) {
               voapps_code: row.voapps_code || '',
               voapps_timestamp: normalizeToVoAppsTime(row.voapps_timestamp || ''),
               campaign_url: `https://directdropvoicemail.voapps.com/accounts/${accountId}/campaigns/${campaignId}`,
-              target_date: campaign.target_date || ''
+              target_date: campaign.target_date || '',
+              voapps_voice_append: resolveVoiceAppend(row),
+              account_number: resolveAccountNumber(row)
             });
           }
         }
@@ -3382,8 +3447,9 @@ async function runNumberSearch(config) {
       const headers = [
         'number', 'account_id', 'account_name', 'campaign_id', 'campaign_name',
         'caller_number', 'caller_number_name', 'message_id', 'message_name', 'message_description',
-        'voapps_result', 'voapps_code', 'voapps_timestamp', 'campaign_url'
-      ];
+        'voapps_result', 'voapps_code', 'voapps_timestamp', 'campaign_url',
+        'voapps_voice_append', 'account_number'
+      ].filter(h => selected_columns.length === 0 || selected_columns.includes(h) || ALWAYS_INCLUDED_COLS.has(h));
 
       const csvResult = await writeCsv(csvPath, allMatches, headers, log, MAX_ROWS_PER_FILE);
       allCsvFiles = csvResult.files;
@@ -3716,6 +3782,7 @@ async function runCombineCampaigns(config) {
     output_mode = "csv", // "csv", "database", or "both"
     job_id = null,
     client_prefix = "", // Optional prefix for output files
+    selected_columns = [], // Optional column filter for CSV output (empty = all)
     // AI settings come from the frontend request payload (UI/localStorage).
     // getAiSettings() reads from disk and never sees the UI toggle state.
     ai_enabled = false,
@@ -3895,7 +3962,9 @@ async function runCombineCampaigns(config) {
             voapps_code: row.voapps_code || '',
             voapps_timestamp: normalizeToVoAppsTime(row.voapps_timestamp || ''),
             campaign_url: `https://directdropvoicemail.voapps.com/accounts/${accountId}/campaigns/${campaignId}`,
-            target_date: campaign.target_date || ''
+            target_date: campaign.target_date || '',
+            voapps_voice_append: resolveVoiceAppend(row),
+            account_number: resolveAccountNumber(row)
           });
         }
 
@@ -3961,11 +4030,15 @@ async function runCombineCampaigns(config) {
     let fileCount = 1;
     let tempAnalysisCsvFiles = []; // temp files created only for analysis in database-only mode
 
-    const CSV_HEADERS = [
+    const ALL_CSV_HEADERS = [
       'number', 'account_id', 'account_name', 'campaign_id', 'campaign_name',
       'caller_number', 'caller_number_name', 'message_id', 'message_name', 'message_description',
-      'voapps_result', 'voapps_code', 'voapps_timestamp', 'campaign_url'
+      'voapps_result', 'voapps_code', 'voapps_timestamp', 'campaign_url',
+      'voapps_voice_append', 'account_number'
     ];
+    const CSV_HEADERS = selected_columns.length === 0
+      ? ALL_CSV_HEADERS
+      : ALL_CSV_HEADERS.filter(h => selected_columns.includes(h) || ALWAYS_INCLUDED_COLS.has(h));
 
     if (output_mode === "csv" || output_mode === "both") {
       csvPath = path.join(folders.combineCampaigns, `${filePrefix}combined_${suffix}.csv`);
@@ -4105,14 +4178,15 @@ async function runCombineCampaigns(config) {
         }
       }
 
-      const VALID_CARD_KEYS = new Set(['uniquePhoneNumbers','totalAttempts','overallSuccessRate','successfulDeliveries','numbersConnectingWell','dateSpan','unsuccessfulAttempts','firstAttemptSuccessRate','avgAttemptsPerNumber','nonDeliverableNumbers','impliedRemovedNumbers','impliedCallbackOppty']);
+      const VALID_CARD_KEYS = new Set(['firstAttemptSuccessRate','avgAttemptsPerNumber','impliedCallbackOppty','dateSpan']);
       const pptxOptions = {
         includeSlideDecayCurve: !!pptx_include_slide_decay_curve,
         includeSlideReAttemptCadence: pptx_include_slide_cadence !== false,
         includeSlideOpportunities: pptx_include_slide_opportunities !== false,
         overviewCards: Array.isArray(pptx_overview_cards)
-          ? pptx_overview_cards.filter(k => VALID_CARD_KEYS.has(k)).slice(0, 12)
+          ? pptx_overview_cards.filter(k => VALID_CARD_KEYS.has(k)).slice(0, 4)
           : null,
+        clientPrefix: client_prefix || '',
       };
       if (job_id) sendProgress(job_id, { current: -1, total: 0, message: 'Generating Delivery Intelligence Report...' });
       await runAnalysisInWorker(
@@ -5015,7 +5089,8 @@ function createHttpServer() {
           include_message_meta: !!(body.include_message_meta ?? true),
           output_mode: body.output_mode || "csv",
           job_id: body.job_id || null,
-          client_prefix: body.client_prefix || ""
+          client_prefix: body.client_prefix || "",
+          selected_columns: Array.isArray(body.selected_columns) ? body.selected_columns : []
         });
 
         return sendJson(res, 200, {
@@ -5062,6 +5137,7 @@ function createHttpServer() {
           output_mode: body.output_mode || "csv",
           job_id: body.job_id || null,
           client_prefix: body.client_prefix || "",
+          selected_columns: Array.isArray(body.selected_columns) ? body.selected_columns : [],
           // AI settings come from the frontend payload (UI / localStorage).
           // The enable toggle and mode radios are only stored in localStorage,
           // so getAiSettings() (disk-based) would always return enabled:false.
@@ -5325,14 +5401,15 @@ function createHttpServer() {
         const targetBytesPerFile = 50 * 1024 * 1024; // 50MB
         const dynamicRowLimit = Math.max(50000, Math.min(MAX_ROWS_PER_FILE, Math.floor(targetBytesPerFile / avgBytesPerRow)));
 
-        const CSV_VALID_CARD_KEYS = new Set(['uniquePhoneNumbers','totalAttempts','overallSuccessRate','successfulDeliveries','numbersConnectingWell','dateSpan','unsuccessfulAttempts','firstAttemptSuccessRate','avgAttemptsPerNumber','nonDeliverableNumbers','impliedRemovedNumbers','impliedCallbackOppty']);
+        const CSV_VALID_CARD_KEYS = new Set(['firstAttemptSuccessRate','avgAttemptsPerNumber','impliedCallbackOppty','dateSpan']);
         const csvPptxOptions = {
           includeSlideDecayCurve: csvPptxIncludeSlideDecayCurve,
           includeSlideReAttemptCadence: csvPptxIncludeSlideCadence,
           includeSlideOpportunities: csvPptxIncludeSlideOpportunities,
           overviewCards: Array.isArray(csvPptxOverviewCards)
-            ? csvPptxOverviewCards.filter(k => CSV_VALID_CARD_KEYS.has(k)).slice(0, 12)
+            ? csvPptxOverviewCards.filter(k => CSV_VALID_CARD_KEYS.has(k)).slice(0, 4)
             : null,
+          clientPrefix: client_prefix || '',
         };
 
         if (allRows.length > dynamicRowLimit) {
@@ -5599,14 +5676,15 @@ function createHttpServer() {
           console.warn('[AI DB] AI analysis failed (non-fatal):', aiErr.message);
         }
 
-        const DB_VALID_CARD_KEYS = new Set(['uniquePhoneNumbers','totalAttempts','overallSuccessRate','successfulDeliveries','numbersConnectingWell','dateSpan','unsuccessfulAttempts','firstAttemptSuccessRate','avgAttemptsPerNumber','nonDeliverableNumbers','impliedRemovedNumbers','impliedCallbackOppty']);
+        const DB_VALID_CARD_KEYS = new Set(['firstAttemptSuccessRate','avgAttemptsPerNumber','impliedCallbackOppty','dateSpan']);
         const dbPptxOptions = {
           includeSlideDecayCurve: !!dbPptxIncludeSlideDecayCurve,
           includeSlideReAttemptCadence: dbPptxIncludeSlideCadence !== false,
           includeSlideOpportunities: dbPptxIncludeSlideOpportunities !== false,
           overviewCards: Array.isArray(dbPptxOverviewCards)
-            ? dbPptxOverviewCards.filter(k => DB_VALID_CARD_KEYS.has(k)).slice(0, 12)
+            ? dbPptxOverviewCards.filter(k => DB_VALID_CARD_KEYS.has(k)).slice(0, 4)
             : null,
+          clientPrefix: client_prefix || '',
         };
         await runAnalysisInWorker(
           tempCsvFiles,

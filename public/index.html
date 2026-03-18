@@ -2481,52 +2481,28 @@
                   <!-- Left: Metric Cards (wider) -->
                   <div class="column-group">
                     <div class="column-group-title">
-                      Metric Cards
-                      <span style="font-weight:normal; font-size:10px; color:#888;" id="cardSelectionCount"> — 6 / 12 selected</span>
+                      Metric Cards (select up to 4)
+                      <span style="font-weight:normal; font-size:10px; color:#888;" id="cardSelectionCount"> — 4 / 4 selected</span>
                       <div class="col-group-actions">
                         <span onclick="document.querySelectorAll('#metricCardsBox .card-check').forEach(c=>{c.checked=true;});updateCardCount();">all</span>
                         <span onclick="document.querySelectorAll('#metricCardsBox .card-check').forEach(c=>{c.checked=false;updateCardCount();})">clear</span>
                       </div>
                     </div>
                     <div id="metricCardsBox" style="display:grid; grid-template-columns:1fr 1fr; gap:0 8px;">
-                      <label class="checkbox-label" title="Total unique phone numbers reached in this period">
-                        <input type="checkbox" class="card-check" id="card_uniquePhoneNumbers" value="uniquePhoneNumbers" checked onchange="updateCardCount()"> Unique Phone Numbers
+                      <label class="checkbox-label" title="Percentage of numbers successfully delivered on the very first attempt — baseline list quality before multi-touch selection bias">
+                        <input type="checkbox" class="card-check" id="card_firstAttemptSuccessRate" value="firstAttemptSuccessRate" checked onchange="updateCardCount()"> First Attempt Success Rate
                       </label>
-                      <label class="checkbox-label" title="Sum of all DDVM delivery attempts">
-                        <input type="checkbox" class="card-check" id="card_totalAttempts" value="totalAttempts" checked onchange="updateCardCount()"> Total DDVM Attempts
+                      <label class="checkbox-label" title="Mean number of delivery attempts per phone number in this dataset">
+                        <input type="checkbox" class="card-check" id="card_avgAttemptsPerNumber" value="avgAttemptsPerNumber" checked onchange="updateCardCount()"> Avg. Attempts Per Number
                       </label>
-                      <label class="checkbox-label" title="Percentage of attempts that resulted in a successful delivery">
-                        <input type="checkbox" class="card-check" id="card_overallSuccessRate" value="overallSuccessRate" checked onchange="updateCardCount()"> Overall Success Rate
-                      </label>
-                      <label class="checkbox-label" title="Total count of successful DDVM deliveries">
-                        <input type="checkbox" class="card-check" id="card_successfulDeliveries" value="successfulDeliveries" checked onchange="updateCardCount()"> Successful Deliveries
-                      </label>
-                      <label class="checkbox-label" title="Numbers with a healthy delivery rate — connecting well on most attempts">
-                        <input type="checkbox" class="card-check" id="card_numbersConnectingWell" value="numbersConnectingWell" checked onchange="updateCardCount()"> Numbers Connecting Well
+                      <label class="checkbox-label" title="Ratio of implied-removed numbers to total successful deliveries — estimates how many deliveries may have generated an inbound callback">
+                        <input type="checkbox" class="card-check" id="card_impliedCallbackOppty" value="impliedCallbackOppty" checked onchange="updateCardCount()"> Implied Callback Rate
                       </label>
                       <label class="checkbox-label" title="Calendar range from the first to last campaign in this dataset">
                         <input type="checkbox" class="card-check" id="card_dateSpan" value="dateSpan" checked onchange="updateCardCount()"> Date Span
                       </label>
-                      <label class="checkbox-label" title="Total attempts that did not result in a successful delivery">
-                        <input type="checkbox" class="card-check" id="card_unsuccessfulAttempts" value="unsuccessfulAttempts" onchange="updateCardCount()"> Unsuccessful Attempts
-                      </label>
-                      <label class="checkbox-label" title="Percentage of numbers successfully delivered on the very first attempt">
-                        <input type="checkbox" class="card-check" id="card_firstAttemptSuccessRate" value="firstAttemptSuccessRate" onchange="updateCardCount()"> First Attempt Success Rate
-                      </label>
-                      <label class="checkbox-label" title="Mean number of delivery attempts per phone number in this dataset">
-                        <input type="checkbox" class="card-check" id="card_avgAttemptsPerNumber" value="avgAttemptsPerNumber" onchange="updateCardCount()"> Avg Attempts per Number
-                      </label>
-                      <label class="checkbox-label" title="Numbers meeting suppression criteria – repeated failures over an extended span">
-                        <input type="checkbox" class="card-check" id="card_nonDeliverableNumbers" value="nonDeliverableNumbers" onchange="updateCardCount()"> Likely Non-Deliverable
-                      </label>
-                      <label class="checkbox-label" title="Numbers that received a successful delivery and were not re-attempted within one cadence window — likely removed from the list (suppressed) after delivery">
-                        <input type="checkbox" class="card-check" id="card_impliedRemovedNumbers" value="impliedRemovedNumbers" onchange="updateCardCount()"> Implied Removed After Delivery
-                      </label>
-                      <label class="checkbox-label" title="Ratio of implied-removed numbers to total successful deliveries — estimates how many deliveries may have generated an inbound callback">
-                        <input type="checkbox" class="card-check" id="card_impliedCallbackOppty" value="impliedCallbackOppty" onchange="updateCardCount()"> Implied Callback Rate
-                      </label>
                     </div>
-                    <p style="font-size:10px; color:#aaa; margin:4px 0 0; line-height:1.4;">Up to 12 cards — 6 per slide. Extra cards appear on a second overview page.</p>
+                    <p style="font-size:10px; color:#aaa; margin:4px 0 0; line-height:1.4;">All 4 cards appear on one High-Level Overview slide. Unique Phone Numbers, Successful Deliveries, and Avg. Attempts Per Number are always shown on the Delivery Performance Snapshot.</p>
                   </div>
                   <!-- Right: Other Slides -->
                   <div class="column-group">
@@ -2558,11 +2534,12 @@
                       <span onclick="toggleGroup('core', false)">clear</span>
                     </div>
                   </div>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-core" value="number" checked> number</label>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-core" value="account_id" checked> account_id</label>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-core" value="account_name" checked> account_name</label>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-core" value="campaign_id" checked> campaign_id</label>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-core" value="campaign_name" checked> campaign_name</label>
+                  <label class="checkbox-label" title="The phone number (10-digit, normalized) — sourced from 'number' or 'phone_number' column in the results file"><input type="checkbox" class="col-check col-core" value="number" checked> number</label>
+                  <label class="checkbox-label" title="Client's account or reference number for this record — auto-detected from the results file (also recognized as AcctNum, acct_no, loan_number, member_number, reference_number, and 40+ other common field names)"><input type="checkbox" class="col-check col-core" value="account_number"> account_number</label>
+                  <label class="checkbox-label" title="VoApps account ID — the numeric ID of the account that ran this campaign"><input type="checkbox" class="col-check col-core" value="account_id" checked> account_id</label>
+                  <label class="checkbox-label" title="Display name of the VoApps account"><input type="checkbox" class="col-check col-core" value="account_name" checked> account_name</label>
+                  <label class="checkbox-label" title="VoApps campaign ID — unique identifier for the specific campaign this record belongs to"><input type="checkbox" class="col-check col-core" value="campaign_id" checked> campaign_id</label>
+                  <label class="checkbox-label" title="Display name of the campaign"><input type="checkbox" class="col-check col-core" value="campaign_name" checked> campaign_name</label>
                 </div>
 
                 <div class="column-group">
@@ -2573,11 +2550,11 @@
                       <span onclick="toggleGroup('optional', false)">clear</span>
                     </div>
                   </div>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-optional" value="caller_number" checked> caller_number</label>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-optional" value="caller_number_name" checked> caller_number_name</label>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-optional" value="message_id" checked> message_id</label>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-optional" value="message_name" checked> message_name</label>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-optional" value="message_description" checked> message_description</label>
+                  <label class="checkbox-label" title="The caller ID (phone number) used when dropping the voicemail — what the recipient sees in missed calls"><input type="checkbox" class="col-check col-optional" value="caller_number" checked> caller_number</label>
+                  <label class="checkbox-label" title="Display name associated with the caller number in your VoApps account"><input type="checkbox" class="col-check col-optional" value="caller_number_name" checked> caller_number_name</label>
+                  <label class="checkbox-label" title="VoApps message ID — identifies which recorded audio message was used for this drop"><input type="checkbox" class="col-check col-optional" value="message_id" checked> message_id</label>
+                  <label class="checkbox-label" title="Display name of the message recording used for this drop"><input type="checkbox" class="col-check col-optional" value="message_name" checked> message_name</label>
+                  <label class="checkbox-label" title="Description or notes attached to the message in your VoApps account"><input type="checkbox" class="col-check col-optional" value="message_description" checked> message_description</label>
                 </div>
 
                 <div class="column-group">
@@ -2588,10 +2565,10 @@
                       <span onclick="toggleGroup('results', false)">clear</span>
                     </div>
                   </div>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-results" value="voapps_result" checked> voapps_result</label>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-results" value="voapps_code" checked> voapps_code</label>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-results" value="voapps_timestamp" checked> voapps_timestamp</label>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-results" value="campaign_url" checked> campaign_url</label>
+                  <label class="checkbox-label" title="Delivery outcome — e.g. 'Successfully Delivered', 'Unsuccessful Delivery Attempt', 'Not in Service', 'Voicemail Full', 'Voicemail Not Setup', 'Duplicate Number', 'Expired'"><input type="checkbox" class="col-check col-results" value="voapps_result" checked> voapps_result</label>
+                  <label class="checkbox-label" title="Numeric result code — machine-readable version of voapps_result (e.g. 200 = Successfully Delivered, 400 = Unsuccessful Delivery Attempt, 405 = Not in Service, 406 = Voicemail Not Setup, 407 = Voicemail Full, 300 = Expired)"><input type="checkbox" class="col-check col-results" value="voapps_code" checked> voapps_code</label>
+                  <label class="checkbox-label" title="Timestamp of when the delivery attempt was made (UTC, normalized to VoApps time format)"><input type="checkbox" class="col-check col-results" value="voapps_timestamp" checked> voapps_timestamp</label>
+                  <label class="checkbox-label" title="Direct link to this campaign in the VoApps portal"><input type="checkbox" class="col-check col-results" value="campaign_url" checked> campaign_url</label>
                 </div>
               </div>
             </div>
@@ -4861,16 +4838,15 @@
     window.updateCardCount = () => {
       const allBoxes = [...document.querySelectorAll('.card-check')];
       let checked = allBoxes.filter(c => c.checked);
-      // Enforce hard cap — uncheck any extras beyond 12 (2 slides × 6)
-      if (checked.length > 12) {
-        checked.slice(12).forEach(cb => { cb.checked = false; });
-        checked = checked.slice(0, 12);
+      // Enforce hard cap — 4 cards, single slide
+      if (checked.length > 4) {
+        checked.slice(4).forEach(cb => { cb.checked = false; });
+        checked = checked.slice(0, 4);
       }
       const count = checked.length;
       const display = document.getElementById('cardSelectionCount');
-      const pageNote = count > 6 ? ` (2 slides)` : '';
-      if (display) display.textContent = ` — ${count} / 12 selected${pageNote}`;
-      if (count >= 12) {
+      if (display) display.textContent = ` — ${count} / 4 selected`;
+      if (count >= 4) {
         allBoxes.filter(c => !c.checked).forEach(cb => { cb.disabled = true; });
       } else {
         allBoxes.forEach(cb => { cb.disabled = false; });
@@ -4990,6 +4966,11 @@
       // NOT to bulk-export (individual campaign exports don't need client prefix)
       if (searchType !== 'bulk-export' && clientPrefix) {
         payload.client_prefix = clientPrefix;
+      }
+
+      // Send selected CSV columns so the server can filter output accordingly
+      if (searchType === 'combine' || searchType === 'phone') {
+        payload.selected_columns = selectedCols;
       }
 
       if (isPhoneSearch) {
@@ -6004,7 +5985,8 @@
         if ($('slideOpportunities'))    $('slideOpportunities').checked    = s.includeSlideOpportunities     ?? true;
 
         if (s.overviewCards && Array.isArray(s.overviewCards) && s.overviewCards.length > 0) {
-          const allowedCards = s.overviewCards.slice(0, 12);
+          const ALLOWED = ['firstAttemptSuccessRate','avgAttemptsPerNumber','impliedCallbackOppty','dateSpan'];
+          const allowedCards = s.overviewCards.filter(k => ALLOWED.includes(k)).slice(0, 4);
           document.querySelectorAll('.card-check').forEach(cb => { cb.checked = allowedCards.includes(cb.value); });
           if (typeof window.updateCardCount === 'function') window.updateCardCount();
         }
@@ -6240,6 +6222,12 @@
       }
 
       loadSettings();
+
+      // Persist column checkbox state immediately on change (not just on run)
+      document.querySelectorAll('.col-check').forEach(cb => {
+        cb.addEventListener('change', saveSettings);
+      });
+
       initLogFilter();
       initHomeResizeHandle();
       initTrendSourceUI();

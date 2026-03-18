@@ -355,6 +355,192 @@ function drawHorizontalGauge(slide, cx, midY, barW, pct, fillColor, title, value
 }
 
 /**
+ * Draw the Delivery Rate speedometer: three fixed color zones (0-60% navy,
+ * 60-70% sky-blue target band, 70-100% light gray) with a PINK needle.
+ * If pct < 60 the graphic is suppressed and only text is shown.
+ *
+ * @param {object} slide  - pptxgenjs slide object
+ * @param {number} cx     - horizontal center of the column (inches)
+ * @param {number} topY   - top of the chart bounding box (inches)
+ * @param {number} size   - diameter of the doughnut bounding box (inches)
+ * @param {number} pct    - delivery rate 0-100
+ */
+function drawDeliverySpeedometer(slide, cx, topY, size, pct) {
+  const clamped  = Math.max(0, Math.min(100, pct));
+  const LOW = 60, HIGH = 70;
+  const C_NAVY  = '0D053F';
+  const C_SKY   = '4A9EE0';
+  const C_LGRAY = 'C8C4DE';
+
+  // Chart center — needle pivots here
+  const circleCy = topY + size / 2;
+  const outerR   = size / 2;             // chart radius in inches
+  const holeRatio = 0.60;                // holeSize=60 → inner r = 60% of outerR
+  const innerR   = outerR * holeRatio;
+
+  // ── Graphic (always shown) ───────────────────────────────────────────
+  {
+    // Three-zone doughnut: 60 navy | 10 sky | 30 lgray | 100 cream (hidden)
+    slide.addChart('doughnut',
+      [{ name: 'Delivery', labels: ['low', 'target', 'high', 'hidden'], values: [60, 10, 30, 100] }],
+      {
+        x: cx - size / 2, y: topY, w: size, h: size,
+        holeSize: 60,
+        firstSliceAng: 270,
+        chartColors: [C_NAVY, C_SKY, C_LGRAY, CREAM],
+        dataLabelFontSize: 1,
+        showLabel: false, showValue: false, showPercent: false,
+        showLegend: false,
+        border: { pt: 0, color: CREAM },
+        chartBorder: { pt: 0, color: CREAM }
+      }
+    );
+
+    // ── "60–70% expected" label above the target band ─────────────────
+    // Band midpoint at 65% → canvas angle = 180 + 65*1.8 = 297°
+    const lblAngRad = (180 + 65 * 1.8) * Math.PI / 180;
+    const lblR      = outerR + 0.26;
+    const lblCx     = cx       + lblR * Math.cos(lblAngRad);
+    const lblCy     = circleCy + lblR * Math.sin(lblAngRad);
+    slide.addText('60\u201370% expected', {
+      x: lblCx - 0.62, y: lblCy - 0.14,
+      w: 1.24, h: 0.30,
+      fontSize: 8.5, bold: true, color: C_SKY,
+      align: 'center', fontFace: 'Aktiv Grotesk VF Medium'
+    });
+
+    // ── Needle ────────────────────────────────────────────────────────
+    const needleLen  = innerR * 0.92;
+    const nAngRad    = (180 + clamped * 1.8) * Math.PI / 180;
+    const ntx        = cx       + needleLen * Math.cos(nAngRad);
+    const nty        = circleCy + needleLen * Math.sin(nAngRad);
+    const ndx = ntx - cx, ndy = nty - circleCy;
+    const adx = Math.abs(ndx), ady = Math.abs(ndy);
+
+    // Line from pivot → tip, accounting for direction with flipH/flipV
+    let lx, ly, lw, lh, flipH = false, flipV = false;
+    if      (ndx >= 0 && ndy >= 0) { lx = cx;  ly = circleCy; lw = adx; lh = ady; }
+    else if (ndx <  0 && ndy >= 0) { lx = ntx; ly = circleCy; lw = adx; lh = ady; flipH = true; }
+    else if (ndx >= 0 && ndy <  0) { lx = cx;  ly = nty;      lw = adx; lh = ady; flipV = true; }
+    else                            { lx = ntx; ly = nty;      lw = adx; lh = ady; flipH = true; flipV = true; }
+    slide.addShape('line', { x: lx, y: ly, w: lw, h: lh, flipH, flipV, line: { color: PINK, pt: 2 } });
+
+    // Pivot dot
+    const pivR = 0.09;
+    slide.addShape('ellipse', {
+      x: cx - pivR, y: circleCy - pivR, w: pivR * 2, h: pivR * 2,
+      fill: { color: PINK }, line: { color: PINK }
+    });
+  }
+
+  // ── Value — pushed down so it sits visibly inside the arc ────────────
+  const valY = topY + size * 0.30;
+  slide.addText(`${pct.toFixed(1)}%`, {
+    x: cx - 1.1, y: valY, w: 2.2, h: 0.5,
+    fontSize: 26, bold: true, color: '0D053F',
+    align: 'center', fontFace: 'IvyPresto Text'
+  });
+
+  // ── Title + explanation — placed at arc center, not below full bounding box ──
+  // The doughnut chart h = size but only the top half is visible.
+  // Position title just past the midpoint so it sits under the arc with no gap.
+  const titY = topY + size * 0.55;
+  slide.addText('DELIVERY RATE', {
+    x: cx - 1.55, y: titY, w: 3.1, h: 0.30,
+    fontSize: 11, bold: true, color: TEXT_MID,
+    align: 'center', charSpacing: 0.3, fontFace: 'Aktiv Grotesk VF Medium'
+  });
+  slide.addText('of all attempts, the % that successfully delivered', {
+    x: cx - 1.55, y: titY + 0.34, w: 3.1, h: 0.44,
+    fontSize: 10.5, color: '8A8298', italic: true,
+    align: 'center', fontFace: 'Aktiv Grotesk VF Medium'
+  });
+}
+
+/**
+ * Draw a half-donut speedometer (top arc visible, bottom hidden in cream).
+ * The 60–70% target band is always visible as a pale-green arc segment.
+ * Fill color changes to reflect whether the value is below / in / above the band.
+ */
+function drawSpeedometer(slide, cx, topY, size, pct, title, explanation) {
+  const clamped = Math.max(0, Math.min(100, pct));
+  const LOW = 60, HIGH = 70;
+
+  const C_FILL_LOW   = PURPLE;     // below target
+  const C_FILL_MID   = '2D8A60';   // green — inside target band
+  const C_FILL_HIGH  = PINK;       // above target
+  const C_TARGET     = 'B8E0CA';   // pale green — unfilled target zone marker
+  const C_UNFILLED   = 'DDD9EF';   // light lavender — unfilled arc
+  const C_HIDDEN     = CREAM;      // matches slide background — hidden bottom half
+
+  // Visible 100 units (top half arc), hidden 100 units (bottom half, cream)
+  const seg_purpleFill   = Math.min(clamped, LOW);
+  const seg_greenFill    = Math.max(0, Math.min(clamped, HIGH) - LOW);
+  const seg_pinkFill     = Math.max(0, clamped - HIGH);
+  const seg_unfilledPre  = Math.max(0, LOW - clamped);
+  const seg_targetZone   = (HIGH - LOW) - seg_greenFill;   // remaining pale-green band
+  const seg_unfilledPost = Math.max(0, 100 - Math.max(clamped, HIGH));
+  const seg_hidden       = 100;
+
+  const rawSegs = [
+    { v: seg_purpleFill,   c: C_FILL_LOW  },
+    { v: seg_greenFill,    c: C_FILL_MID  },
+    { v: seg_pinkFill,     c: C_FILL_HIGH },
+    { v: seg_unfilledPre,  c: C_UNFILLED  },
+    { v: seg_targetZone,   c: C_TARGET    },
+    { v: seg_unfilledPost, c: C_UNFILLED  },
+    { v: seg_hidden,       c: C_HIDDEN    },
+  ].filter(s => s.v > 0);
+
+  slide.addChart('doughnut',
+    [{ name: 'Speedometer', labels: rawSegs.map((_, i) => `s${i}`), values: rawSegs.map(s => s.v) }],
+    {
+      x: cx - size / 2, y: topY, w: size, h: size,
+      holeSize: 62,
+      firstSliceAng: 270,           // start at 9 o'clock → arc through 12 → 3 o'clock
+      chartColors: rawSegs.map(s => s.c),
+      dataLabelFontSize: 1,
+      showLabel: false, showValue: false, showPercent: false,
+      showLegend: false,
+      border: { pt: 0, color: 'FFFFFF' },
+      chartBorder: { pt: 0, color: 'FFFFFF' }
+    }
+  );
+
+  // Value color reflects zone
+  const valColor = clamped < LOW ? C_FILL_LOW : (clamped <= HIGH ? C_FILL_MID : C_FILL_HIGH);
+  const circCenterY = topY + size / 2;
+
+  // Large value — positioned in the visible upper arc hole
+  slide.addText(`${pct.toFixed(1)}%`, {
+    x: cx - size / 2, y: topY + size * 0.17, w: size, h: size * 0.37,
+    fontSize: 28, bold: true, color: valColor,
+    align: 'center', valign: 'middle', fontFace: 'IvyPresto Text'
+  });
+
+  // "Target: 60–70%" annotation — just below the arc midpoint, in the cream area
+  slide.addText('Target: 60\u201370%', {
+    x: cx - 1.1, y: circCenterY + 0.06, w: 2.2, h: 0.22,
+    fontSize: 8, bold: false, color: '2D8A60',
+    align: 'center', fontFace: 'Aktiv Grotesk VF Medium'
+  });
+
+  // Title & explanation stack below in the cream lower half
+  slide.addText(title, {
+    x: cx - 1.9, y: circCenterY + 0.32, w: 3.8, h: 0.26,
+    fontSize: 10, bold: true, color: TEXT_MID,
+    align: 'center', charSpacing: 0.3, fontFace: 'Aktiv Grotesk VF Medium'
+  });
+  if (explanation) {
+    slide.addText(explanation, {
+      x: cx - 2.0, y: circCenterY + 0.60, w: 4.0, h: 0.44,
+      fontSize: 8.5, color: '8A8298', italic: true,
+      align: 'center', fontFace: 'Aktiv Grotesk VF Medium'
+    });
+  }
+}
+
+/**
  * Generate a branded business review .pptx alongside the Excel report.
  *
  * @param {Object} stats      - Aggregated stats from generateTrendAnalysis
@@ -369,7 +555,8 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     includeSlideReAttemptCadence = true,
     includeSlideOpportunities    = true,
     overviewCards                = null,
-    reAttemptData                = null
+    reAttemptData                = null,
+    clientPrefix                 = ''
   } = options;
 
   // ── Helper: strip Excel tab cross-references from slide text, return separately ──
@@ -485,9 +672,19 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     align: 'center'
   });
 
+  // Filename prefix (client name) just above Account line
+  if (clientPrefix) {
+    s1.addText(clientPrefix, {
+      x: 0.5, y: 4.44, w: SLIDE_W - 1.0, h: 0.30,
+      fontSize: 13, bold: true, color: WHITE,
+      fontFace: 'Aktiv Grotesk VF Medium',
+      align: 'center'
+    });
+  }
+
   if (acctList) {
     s1.addText(`Account${accountIds.length > 1 ? 's' : ''}: ${acctList}`, {
-      x: 0.5, y: 4.5, w: SLIDE_W - 1.0, h: 0.5,
+      x: 0.5, y: clientPrefix ? 4.76 : 4.5, w: SLIDE_W - 1.0, h: 0.5,
       fontSize: 12, color: PINK_PALE,
       fontFace: 'Aktiv Grotesk VF Medium',
       align: 'center', italic: true,
@@ -510,102 +707,93 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     (acctList ? 'Accounts: ' + acctList : ''),
     '',
     'Use this slide to orient the audience: what time period are we reviewing, which accounts are included, and what is the purpose of this review.',
-    'The report covers three dimensions: delivery efficiency (how well DDVM drops are connecting), list health (which numbers are still productive), and re-attempt strategy (how much incremental value multi-touch delivers).'
+    'The report covers three dimensions: delivery efficiency (how well DirectDrop Voicemail drops are connecting), list health (which numbers are still productive), and re-attempt strategy (how much incremental value multi-touch delivers).'
   ].filter(Boolean).join('\n'));
 
   // ────────────────────────────────────────────────────────────────────────────
-  // SLIDE 2 – Delivery Performance Gauge
-  // Half-donut speedometer + three key stats
+  // SLIDE 2 – Delivery Performance Snapshot
+  // Large speedometer (left 2/3) + Agent Hours Saved (right 1/3)
+  // Fixed bottom stats: Unique Phone Numbers | Successful Deliveries | Avg Attempts/Number
   // ────────────────────────────────────────────────────────────────────────────
   const sGauge = pptx.addSlide();
   sGauge.background = { color: CREAM };
   const sGaugeHdrH = headerBar(pptx, sGauge, 'Delivery Performance Snapshot', headerLogo, dateRangeStr);
 
-  // ── Three distinct metrics with different chart types ──────────────────
-  // 1 (left):   Thermometer — DELIVERY RATE              — brand PINK
-  // 2 (center): Doughnut chart — NUMBERS CONNECTING WELL — brand PURPLE
-  // 3 (right):  Horizontal bar gauge — CLEAN LIST        — brand BLUE
   const healthyPct = uniqueNumbers > 0 ? (healthyCount / uniqueNumbers) * 100 : 0;
-  const cleanPct   = uniqueNumbers > 0 ? ((uniqueNumbers - suppressionCandidateCount) / uniqueNumbers) * 100 : 100;
 
-  const colCenters = [SLIDE_W * (1/6), SLIDE_W / 2, SLIDE_W * (5/6)];
-  const thTubeH = 3.1;
-  const thTubeW = 0.52;
-  const thTopY  = sGaugeHdrH + 0.35;
+  // Layout: divider at true center; each zone is exactly half the slide
+  const dividerX  = SLIDE_W / 2;                // 6.665" — true center
+  const spdCx     = dividerX / 2;               // 3.33" — center of left half
+  const spdSize   = 3.2;                         // compact — avoids gap from invisible bottom half
+  const ahCardW   = 4.40;                        // card width (fits within right half with margins)
+  const ahCardH   = 2.46;
 
-  // ── 1. Delivery Rate — PINK thermometer (left) ──────────────────────────
-  drawThermometer(sGauge, colCenters[0], thTopY, thTubeH, thTubeW,
-    overallSuccessRate, PINK,
-    'DELIVERY RATE', `${overallSuccessRate.toFixed(1)}%`);
-  // Explanation label below thermometer title
-  const thBulbR = thTubeW * 0.9;
-  const thLabelY = thTopY + thTubeH + thBulbR * 2 + 0.22;
-  sGauge.addText('Of all DDVM delivery attempts, the % that reached voicemail', {
-    x: colCenters[0] - 1.55, y: thLabelY + 0.34, w: 3.1, h: 0.44,
-    fontSize: 8.5, color: '8A8298', italic: true,
-    align: 'center', fontFace: 'Aktiv Grotesk VF Medium'
+  // Vertically center the content block in the body area (between header and stats bar)
+  // Speedometer visible height = size*0.55 (title sits at midpoint) + 0.34 + 0.44 (text stack)
+  const spdVisualH = spdSize * 0.55 + 0.78;     // 2.54" — arc + DELIVERY RATE + explanation
+  const contentH   = Math.max(spdVisualH, ahCardH + 0.10); // taller of the two zones
+  const statY      = SLIDE_H - 1.40;            // bottom stats bar top edge
+  const thTopY     = sGaugeHdrH + Math.max(0.30, (statY - 0.10 - sGaugeHdrH - contentH) / 2);
+
+  // ── 1. Delivery Rate — speedometer centered in left half ─────────────────
+  drawDeliverySpeedometer(sGauge, spdCx, thTopY, spdSize, overallSuccessRate);
+
+  // ── 2. Agent Hours Saved — card centered in right half ───────────────────
+  const ahCardX  = dividerX + (dividerX - ahCardW) / 2;  // centered in right half
+  const ahCardY  = thTopY + 0.10;
+
+  // Thin vertical separator at true center — 70% of content area height
+  const divH = (SLIDE_H - sGaugeHdrH - 1.55) * 0.70;
+  sGauge.addShape(RECT, {
+    x: dividerX, y: sGaugeHdrH + 0.30,
+    w: 0.02, h: divH,
+    fill: { color: 'E0DCEA' }, line: { color: 'E0DCEA' }
   });
 
-  // ── 2. Numbers Connecting Well — PURPLE doughnut (center) ───────────────
-  const donutSize = 3.3;
-  const donutX    = colCenters[1] - donutSize / 2;
-  const donutY    = thTopY + 0.05;
-  sGauge.addChart('doughnut',
-    [{ name: 'Connecting', labels: ['Connecting', 'Other'], values: [healthyPct, Math.max(0, 100 - healthyPct)] }],
+  // Card: light pink background + pink border
+  sGauge.addShape(RECT, {
+    x: ahCardX, y: ahCardY, w: ahCardW, h: ahCardH,
+    fill: { color: 'FEF0F3' }, line: { color: PINK_PALE, pt: 0.75 }
+  });
+  // Pink accent bar at top of card
+  sGauge.addShape(RECT, { x: ahCardX, y: ahCardY, w: ahCardW, h: 0.06, fill: { color: PINK }, line: { color: PINK } });
+
+  sGauge.addText('AGENT HOURS SAVED (EST.)', {
+    x: ahCardX + 0.16, y: ahCardY + 0.16, w: ahCardW - 0.32, h: 0.28,
+    fontSize: 11, bold: true, color: TEXT_SOFT,
+    align: 'center', charSpacing: 1, fontFace: 'Aktiv Grotesk VF Medium'
+  });
+  sGauge.addText(agentHoursSaved > 0 ? agentHoursSaved.toLocaleString() : '—', {
+    x: ahCardX + 0.16, y: ahCardY + 0.52, w: ahCardW - 0.32, h: 1.10,
+    fontSize: 52, bold: true, color: NAVY,
+    align: 'center', valign: 'middle', fontFace: 'IvyPresto Text', shrinkText: true
+  });
+  sGauge.addText(
+    agentHoursSaved > 0
+      ? `Based on ${totalSuccess.toLocaleString()} deliveries × 3 min avg handle time — capacity freed for higher-value work`
+      : 'Enable agent hours calculation by confirming avg handle time in settings',
     {
-      x: donutX, y: donutY, w: donutSize, h: donutSize,
-      holeSize: 62,
-      chartColors: [PURPLE, 'DDD9EF'],
-      dataLabelFontSize: 1,
-      showLabel: false, showValue: false, showPercent: false,
-      showLegend: false,
-      border: { pt: 0, color: 'FFFFFF' },
-      chartBorder: { pt: 0, color: 'FFFFFF' }
+      x: ahCardX + 0.16, y: ahCardY + 1.72, w: ahCardW - 0.32, h: 0.62,
+      fontSize: 11, color: '8A8298', italic: true,
+      align: 'center', fontFace: 'Aktiv Grotesk VF Medium'
     }
   );
-  // Big percentage overlaid in the doughnut hole
-  sGauge.addText(`${healthyPct.toFixed(1)}%`, {
-    x: donutX, y: donutY + donutSize * 0.30, w: donutSize, h: donutSize * 0.40,
-    fontSize: 30, bold: true, color: PURPLE,
-    align: 'center', valign: 'middle', fontFace: 'IvyPresto Text'
-  });
-  // Title + explanation below the doughnut
-  const donutLabelY = donutY + donutSize + 0.10;
-  sGauge.addText('NUMBERS CONNECTING WELL', {
-    x: colCenters[1] - 1.9, y: donutLabelY, w: 3.8, h: 0.26,
-    fontSize: 10, bold: true, color: TEXT_MID,
-    align: 'center', charSpacing: 0.3, fontFace: 'Aktiv Grotesk VF Medium'
-  });
-  sGauge.addText('Numbers with consistent delivery performance — not in consecutive failure patterns', {
-    x: colCenters[1] - 2.0, y: donutLabelY + 0.28, w: 4.0, h: 0.44,
-    fontSize: 8.5, color: '8A8298', italic: true,
-    align: 'center', fontFace: 'Aktiv Grotesk VF Medium'
-  });
 
-  // ── 3. Clean List — BLUE horizontal gauge (right) ───────────────────────
-  const gaugeW   = 3.4;
-  const gaugeMidY = thTopY + (thTubeH / 2) + 0.5;
-  drawHorizontalGauge(sGauge, colCenters[2], gaugeMidY, gaugeW,
-    cleanPct, BLUE,
-    'CLEAN LIST (NOT FLAGGED)', `${cleanPct.toFixed(1)}%`,
-    'Numbers NOT flagged as suppression candidates —\nactive, usable contacts');
-
-  // ── Stats row ────────────────────────────────────────────────────────────
-  const gcX  = 0.5;
-  const gcW  = SLIDE_W - 1.0;
-  const bulbBottomY = thTopY + thTubeH + thBulbR * 2 + 0.18;
-  const statY = Math.max(bulbBottomY + 0.55, SLIDE_H - 1.45);
+  // ── Bottom stats row: fixed — Unique Phone Numbers | Successful Deliveries | Avg Attempts ──
+  const gcX   = 0.5;
+  const gcW   = SLIDE_W - 1.0;
+  // statY already declared above for vertical centering calculation
 
   sGauge.addShape(RECT, {
     x: gcX, y: statY - 0.04, w: gcW, h: 0.02,
     fill: { color: 'E0DCEA' }, line: { color: 'E0DCEA' }
   });
 
-  // Three key stats in a row below the thermometers
+  const avgAttemptsVal = uniqueNumbers > 0 ? (totalAttempts / uniqueNumbers).toFixed(1) : '—';
   const gaugeStats = [
-    { value: totalAttempts.toLocaleString(),              label: 'TOTAL ATTEMPTS'  },
-    { value: totalSuccess.toLocaleString(),               label: 'DELIVERED'       },
-    { value: (totalAttempts - totalSuccess).toLocaleString(), label: 'NOT DELIVERED' }
+    { value: uniqueNumbers.toLocaleString(),   label: 'UNIQUE PHONE NUMBERS'    },
+    { value: totalSuccess.toLocaleString(),    label: 'SUCCESSFUL DELIVERIES'   },
+    { value: avgAttemptsVal,                   label: 'AVG. ATTEMPTS PER NUMBER'}
   ];
   const statColW = gcW / 3;
   gaugeStats.forEach((st, i) => {
@@ -632,18 +820,23 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     'DELIVERY PERFORMANCE SNAPSHOT — Speaker notes',
     '',
     'DELIVERY RATE (' + overallSuccessRate.toFixed(1) + '%)',
-    'This is the core campaign efficiency metric: of every DDVM drop attempted, this share reached a live voicemail inbox.',
-    'Industry context: rates above 70% indicate a well-maintained list with minimal carrier friction. Rates below 50% are a signal to review list quality, caller number health, or timing.',
+    'This is the headline efficiency metric: the share of DirectDrop Voicemail drops that successfully landed in a live voicemail inbox.',
+    'The speedometer shows where the rate falls relative to the 60–70% expected range. Rates above 70% reflect excellent list health and carrier connectivity. Rates in the 60–70% band are normal and healthy.',
+    overallSuccessRate >= 70
+      ? 'Great news: this rate is above the expected range — the list is performing exceptionally well.'
+      : overallSuccessRate >= 60
+        ? 'This rate is right in the expected range — the campaign is running efficiently.'
+        : 'Opportunity: a few list hygiene steps (removing non-deliverable numbers) can meaningfully move this rate into the expected range.',
     '',
-    'NUMBERS CONNECTING WELL (' + healthyPct.toFixed(1) + '%)',
-    'Measures how many phone numbers in the dataset are in a healthy delivery state — meaning they have not entered an extended consecutive-failure pattern.',
-    'A high percentage (>75%) suggests the list is still fresh and productive. A declining number over successive campaigns is a leading indicator of list fatigue or number recycling.',
+    'AGENT HOURS SAVED (' + (agentHoursSaved > 0 ? agentHoursSaved.toLocaleString() + ' hrs' : 'not calculated') + ')',
+    'Estimated based on ' + totalSuccess.toLocaleString() + ' successful deliveries × 3 minutes average handle time.',
+    'This is the operational capacity DirectDrop Voicemail returned to the business — time agents did not have to spend leaving manual voicemails.',
+    'Use this figure to anchor ROI conversations: the hours freed represent real cost savings or capacity available for higher-value outreach.',
     '',
-    'CLEAN LIST (' + cleanPct.toFixed(1) + '%)',
-    'Shows the share of numbers that have NOT yet met the suppression threshold (4+ consecutive failures over 30+ days).',
-    'Numbers below this threshold are still worth contacting. The complement (' + (100 - cleanPct).toFixed(1) + '%) are candidates for removal — keeping them inflates attempt counts and reduces overall delivery rate.',
-    '',
-    'Total attempts: ' + totalAttempts.toLocaleString() + ' | Delivered: ' + totalSuccess.toLocaleString() + ' | Not delivered: ' + (totalAttempts - totalSuccess).toLocaleString()
+    'BOTTOM STATS',
+    '• Unique Phone Numbers (' + uniqueNumbers.toLocaleString() + '): the size of the list being worked.',
+    '• Successful Deliveries (' + totalSuccess.toLocaleString() + '): voicemails that reached a live inbox.',
+    '• Avg. Attempts Per Number (' + avgAttemptsVal + '): higher values indicate a persistent multi-touch strategy.',
   ].join('\n'));
   slideFooter(sGauge);
 
@@ -670,173 +863,178 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   // healthyPct already declared above for the thermometer section
   const healthyAccent = healthyPct >= 80 ? BLUE : healthyPct >= 60 ? BLUE_LIGHT : PURPLE_LIGHT;
 
-  // ── Card registry – all possible metric cards ─────────────────────────────
+  // ── Card registry – limited to the 4 selectable overview cards ──────────
   // firstAttemptSuccessRate uses decayCurve[0] if available
   const firstAttemptRate = (decayCurve && decayCurve.length > 0)
     ? `${(decayCurve[0].probability * 100).toFixed(1)}%`
     : `${overallSuccessRate.toFixed(1)}%`;
+  const firstAttemptPct = (decayCurve && decayCurve.length > 0)
+    ? decayCurve[0].probability * 100
+    : overallSuccessRate;
 
   const ALL_CARDS = {
-    uniquePhoneNumbers:    { label: 'UNIQUE PHONE NUMBERS',      value: uniqueNumbers.toLocaleString(),                              sub: 'Phone numbers analyzed in this report',                               accent: PINK },
-    totalAttempts:         { label: 'TOTAL DDVM ATTEMPTS',       value: totalAttempts.toLocaleString(),                             sub: 'Delivery attempts recorded across all campaigns',                     accent: NAVY },
-    overallSuccessRate:    { label: 'OVERALL SUCCESS RATE',      value: `${overallSuccessRate.toFixed(1)}%`,                        sub: `${totalSuccess.toLocaleString()} voicemails successfully delivered`,  accent: successAccent },
-    successfulDeliveries:  { label: 'SUCCESSFUL DELIVERIES',     value: totalSuccess.toLocaleString(),                              sub: `${overallSuccessRate.toFixed(1)}% of all attempts – voicemails delivered to consumers`, accent: BLUE },
-    numbersConnectingWell: { label: 'NUMBERS CONNECTING WELL',   value: healthyCount.toLocaleString(),                              sub: `${healthyPct.toFixed(0)}% of the list maintaining good delivery performance`, accent: healthyAccent },
-    dateSpan:              { label: 'DATE SPAN',                 value: daySpan > 0 ? `${daySpan} Days` : dateRangeStr,            sub: daySpan > 0 ? dateRangeStr : '',                                       accent: PINK_LIGHT, fontSize: 28 },
-    agentHoursSaved:       { label: 'AGENT HOURS SAVED (EST.)',  value: agentHoursSaved > 0 ? `${agentHoursSaved.toLocaleString()} hrs` : '—', sub: `Based on ${totalSuccess.toLocaleString()} deliveries × 3 min avg handle time`, accent: PURPLE },
-    unsuccessfulAttempts:  { label: 'UNSUCCESSFUL ATTEMPTS',     value: (totalAttempts - totalSuccess).toLocaleString(),           sub: `${(100 - overallSuccessRate).toFixed(1)}% of all attempts`,           accent: CHARCOAL },
-    firstAttemptSuccessRate: { label: 'FIRST ATTEMPT SUCCESS RATE', value: firstAttemptRate,                                       sub: 'Success rate on the very first delivery attempt to each number',      accent: BLUE_LIGHT },
-    avgAttemptsPerNumber:  { label: 'AVG ATTEMPTS PER NUMBER',   value: uniqueNumbers > 0 ? (totalAttempts / uniqueNumbers).toFixed(1) : '—', sub: 'Average total delivery attempts per unique phone number',    accent: PURPLE_LIGHT },
-    nonDeliverableNumbers:   { label: 'LIKELY NON-DELIVERABLE',      value: (suppressionCandidateCount || 0).toLocaleString(),         sub: 'Numbers meeting suppression criteria – repeated failures over an extended span',         accent: CHARCOAL },
-    impliedRemovedNumbers:   { label: 'IMPLIED REMOVED AFTER DELIVERY', value: impliedRemovedCount.toLocaleString(),                    sub: 'Delivered numbers not re-attempted after one cadence window – likely suppressed/removed from list', accent: PURPLE },
-    impliedCallbackOppty:    { label: 'IMPLIED CALLBACK RATE',         value: `${impliedCallbackRate.toFixed(1)}%`,                     sub: `${impliedRemovedCount.toLocaleString()} delivered numbers appear removed – each is a potential inbound callback`, accent: BLUE_LIGHT }
+    firstAttemptSuccessRate: {
+      label: 'FIRST ATTEMPT SUCCESS RATE',
+      value: firstAttemptRate,
+      sub: 'Success rate on the very first delivery attempt to each number — baseline list quality before multi-touch selection bias',
+      accent: BLUE_LIGHT,
+      barPct: firstAttemptPct
+    },
+    avgAttemptsPerNumber: {
+      label: 'AVG. ATTEMPTS PER NUMBER',
+      value: uniqueNumbers > 0 ? (totalAttempts / uniqueNumbers).toFixed(1) : '—',
+      sub: 'Average total delivery attempts per unique phone number',
+      accent: PURPLE_LIGHT
+    },
+    impliedCallbackOppty: {
+      label: 'IMPLIED CALLBACK RATE',
+      value: `${impliedCallbackRate.toFixed(1)}%`,
+      sub: `${impliedRemovedCount.toLocaleString()} delivered numbers appear removed — each is a potential inbound callback`,
+      accent: PINK_MED
+    },
+    dateSpan: {
+      label: 'DATE SPAN',
+      value: daySpan > 0 ? `${daySpan} Days` : dateRangeStr,
+      sub: daySpan > 0 ? dateRangeStr : '',
+      accent: PINK_LIGHT,
+      fontSize: 28
+    }
   };
 
-  const DEFAULT_CARDS = [
-    'uniquePhoneNumbers', 'totalAttempts', 'overallSuccessRate',
-    'successfulDeliveries', 'numbersConnectingWell', 'dateSpan'
-  ];
-  // Allow up to 12 cards across two overview slides (6 per slide)
+  // All 4 are available; user selection filters which ones appear.
+  const ALLOWED_CARD_KEYS = ['firstAttemptSuccessRate', 'avgAttemptsPerNumber', 'impliedCallbackOppty', 'dateSpan'];
+  const DEFAULT_CARDS = ALLOWED_CARD_KEYS;
   const cardKeys = (Array.isArray(overviewCards) && overviewCards.length > 0)
-    ? overviewCards.slice(0, 12)
+    ? overviewCards.filter(k => ALLOWED_CARD_KEYS.includes(k)).slice(0, 4)
     : DEFAULT_CARDS;
 
-  const cardPositions = [
-    [c1, row1Y], [c2, row1Y], [c3, row1Y],
-    [c1, row2Y], [c2, row2Y], [c3, row2Y]
+  // Always 4-per-page (2×2) — max 4 cards, one slide only
+  const p4W   = 5.8;
+  const p4H   = 1.90;
+  const p4Gap = 0.26;
+  const p4c1  = (SLIDE_W - 2 * p4W - p4Gap) / 2;
+  const p4c2  = p4c1 + p4W + p4Gap;
+  const p4r1  = s2HdrH + 0.55;
+  const p4r2  = p4r1 + p4H + p4Gap;
+  const pos4  = [
+    [p4c1, p4r1], [p4c2, p4r1],
+    [p4c1, p4r2], [p4c2, p4r2]
   ];
 
-  // Helper: render a page of up to 6 cards onto a slide
+  // Helper: render cards onto a slide — bar-style for firstAttemptSuccessRate
   function renderCardPage(slide, pageKeys) {
     pageKeys.forEach((key, i) => {
       const card = ALL_CARDS[key];
-      const pos  = cardPositions[i];
+      const pos  = pos4[i];
       if (!card || !pos) return;
-      if (key === 'overallSuccessRate') {
-        const [cx, cy] = pos;
-        slide.addShape(RECT, { x: cx, y: cy, w: bW, h: bH, fill: { color: CREAM }, line: { color: PINK_PALE, pt: 1 } });
-        slide.addShape(RECT, { x: cx, y: cy, w: bW, h: 0.06, fill: { color: card.accent }, line: { color: card.accent } });
-        slide.addText(card.label, { x: cx + 0.16, y: cy + 0.16, w: bW - 0.32, h: 0.26,
-          fontSize: 11, color: TEXT_SOFT, bold: false, fontFace: 'Aktiv Grotesk VF Medium', charSpacing: 1.5 });
-        slide.addText(card.value, { x: cx + 0.16, y: cy + 0.42, w: bW - 0.32, h: 0.56,
-          fontSize: 28, bold: true, color: NAVY, fontFace: 'IvyPresto Text', align: 'left', valign: 'top', shrinkText: true });
-        const pbX = cx + 0.16, pbY = cy + 1.02, pbW2 = bW - 0.32, pbH = 0.14;
+      const [cx, cy] = pos;
+      const cW = p4W, cH = p4H;
+
+      if (key === 'firstAttemptSuccessRate') {
+        // Bar-style card (mirrors overallSuccessRate treatment)
+        slide.addShape(RECT, { x: cx, y: cy, w: cW, h: cH, fill: { color: CREAM }, line: { color: PINK_PALE, pt: 1 } });
+        slide.addShape(RECT, { x: cx, y: cy, w: cW, h: 0.06, fill: { color: card.accent }, line: { color: card.accent } });
+        slide.addText(card.label, { x: cx + 0.16, y: cy + 0.14, w: cW - 0.32, h: 0.26,
+          fontSize: 10, color: TEXT_SOFT, fontFace: 'Aktiv Grotesk VF Medium', charSpacing: 1.5 });
+        slide.addText(card.value, { x: cx + 0.16, y: cy + 0.40, w: cW - 0.32, h: 0.62,
+          fontSize: 34, bold: true, color: NAVY, fontFace: 'IvyPresto Text', align: 'left', valign: 'top', shrinkText: true });
+        const pbX = cx + 0.16, pbY = cy + 1.10, pbW2 = cW - 0.32, pbH = 0.14;
         slide.addShape(RECT, { x: pbX, y: pbY, w: pbW2, h: pbH, fill: { color: 'DDD9EF' }, line: { color: 'DDD9EF' } });
-        const fillW = Math.max(0.04, pbW2 * (overallSuccessRate / 100));
+        const fillW = Math.max(0.04, pbW2 * (card.barPct / 100));
         slide.addShape(RECT, { x: pbX, y: pbY, w: fillW, h: pbH, fill: { color: card.accent }, line: { color: card.accent } });
-        slide.addText(card.sub, { x: cx + 0.16, y: cy + 1.20, w: bW - 0.32, h: 0.30,
-          fontSize: 10, color: TEXT_SOFT, fontFace: 'Aktiv Grotesk VF Medium' });
+        slide.addText(card.sub, { x: cx + 0.16, y: pbY + 0.20, w: cW - 0.32, h: 0.52,
+          fontSize: 9.5, color: TEXT_SOFT, fontFace: 'Aktiv Grotesk VF Medium' });
       } else {
-        metricBox(slide, pos[0], pos[1], bW, bH, card.label, card.value, card.sub, card.accent, card.fontSize || 32);
+        metricBox(slide, cx, cy, cW, cH, card.label, card.value, card.sub, card.accent, card.fontSize || 38);
       }
     });
   }
 
-  // Page 1 (always exists)
-  renderCardPage(s2, cardKeys.slice(0, 6));
+  // Single overview slide — no s2b
+  renderCardPage(s2, cardKeys);
 
-  // Page 2 (only if there are more than 6 selected cards)
-  let s2b = null;
-  if (cardKeys.length > 6) {
-    s2b = pptx.addSlide();
-    s2b.background = { color: CREAM };
-    headerBar(pptx, s2b, 'High-Level Overview (cont.)', headerLogo, dateRangeStr);
-    renderCardPage(s2b, cardKeys.slice(6, 12));
-    s2b.addNotes([
-      'HIGH-LEVEL OVERVIEW (continued) — Speaker notes',
-      '',
-      'This slide continues the metric card overview when more than 6 cards are selected.',
-      'Cards on this page represent supplemental performance indicators — deeper cuts beyond the primary six.',
-      '',
-      'NOTABLE METRICS ON THIS PAGE (if selected):',
-      '• Unsuccessful Attempts: the inverse of deliveries — useful for framing list quality conversations.',
-      '• First Attempt Success Rate: baseline reachability before any selection bias from multi-touch; compare this to overall rate to see how much multi-touch adds.',
-      '• Avg Attempts per Number: higher values indicate a persistent campaign. Pair with the cadence slide to assess timing strategy.',
-      '• Likely Non-Deliverable: numbers meeting the suppression criteria. Removing these from future drops directly raises delivery rate.',
-      '• Implied Removed After Delivery: numbers whose last contact was a successful delivery, not re-attempted since. Each represents a potential inbound callback already in progress.',
-      '• Implied Callback Rate: the share of successful deliveries that appear to have prompted list removal — a proxy for callback conversion.'
-    ].join('\n'));
-  }
+  // ── Single-touch callout — always on s2, below the 2×2 grid ─────────────
+  const STRIP_W    = 2 * p4W + p4Gap;
+  const STRIP_X    = p4c1;
+  const stripBaseY = p4r2 + p4H + 0.24;
 
-  // ── Single-touch opportunity callout strip (on last overview slide) ─────────
-  const lastOverviewSlide = s2b || s2;
   const cadenceTotalNumbers = (cadence.cadenceSingleTouch || 0) + (cadence.cadenceMultiTouchCount || 0);
   if (cadenceTotalNumbers > 0) {
-    const stPct = (cadence.cadenceSingleTouch / cadenceTotalNumbers * 100).toFixed(1);
-    const stripY = row2Y + bH + 0.20;
-    const stripH = 0.68;
-    const stripX = c1;
-    const stripW = 3 * bW + 2 * bGap;
-
-    lastOverviewSlide.addShape(RECT, { x: stripX, y: stripY, w: stripW, h: stripH,
-      fill: { color: WHITE }, line: { color: PINK_PALE, pt: 1 } });
-    lastOverviewSlide.addShape(RECT, { x: stripX, y: stripY, w: 0.07, h: stripH,
-      fill: { color: PINK }, line: { color: PINK } });
-
-    lastOverviewSlide.addText(
-      `${cadence.cadenceSingleTouch.toLocaleString()} numbers (${stPct}%) received only one DDVM attempt this period.`,
-      { x: stripX + 0.18, y: stripY + 0.10, w: stripW - 0.26, h: 0.28,
-        fontSize: 12, bold: true, color: NAVY, fontFace: 'Aktiv Grotesk VF Medium', valign: 'middle' }
-    );
+    const stCount = cadence.cadenceSingleTouch;
+    const stPct   = (stCount / cadenceTotalNumbers * 100).toFixed(1);
     const staleNote = staleWarmCount > 0
-      ? ` Additionally, ${staleWarmCount.toLocaleString()} numbers with prior successful deliveries haven't been contacted in 30+ days – confirmed-reachable low-hanging fruit for re-engagement.`
+      ? ` ${staleWarmCount.toLocaleString()} confirmed-reachable numbers haven\u2019t been contacted in 30+ days \u2014 ready for immediate re-engagement.`
       : '';
     const impliedNote = impliedRemovedCount > 0
-      ? ` ~${impliedRemovedCount.toLocaleString()} numbers appear to have been removed after their last successful delivery – a potential inbound callback opportunity.`
+      ? ` ~${impliedRemovedCount.toLocaleString()} numbers appear removed after their last successful delivery \u2014 a potential inbound callback opportunity.`
       : '';
-    lastOverviewSlide.addText(
-      `Consumers often need 2\u20133 touches before taking action. A follow-up campaign at a 3\u201310 day interval can produce meaningful incremental results from this same list.${staleNote}${impliedNote}`,
-      { x: stripX + 0.18, y: stripY + 0.29, w: stripW - 0.26, h: 0.28,
-        fontSize: 10, color: TEXT_SOFT, italic: true, fontFace: 'Aktiv Grotesk VF Medium', valign: 'middle' }
+
+    const calloutH  = 1.06;
+    const bigNumW   = 1.60;
+    const textX     = STRIP_X + bigNumW + 0.10;
+    const textW     = STRIP_W - bigNumW - 0.14;
+
+    // Card background — navy with pink top bar for energy
+    s2.addShape(RECT, { x: STRIP_X, y: stripBaseY, w: STRIP_W, h: calloutH,
+      fill: { color: '0D053F' }, line: { color: '0D053F' } });
+    s2.addShape(RECT, { x: STRIP_X, y: stripBaseY, w: STRIP_W, h: 0.05,
+      fill: { color: PINK }, line: { color: PINK } });
+
+    // Large % on the left — visually dominant anchor
+    s2.addText(`${stPct}%`, {
+      x: STRIP_X, y: stripBaseY + 0.05, w: bigNumW + 0.02, h: calloutH - 0.06,
+      fontSize: 32, bold: true, color: PINK,
+      fontFace: 'IvyPresto Text', align: 'center', valign: 'middle', shrinkText: true
+    });
+
+    // Thin vertical divider
+    s2.addShape(RECT, { x: STRIP_X + bigNumW + 0.02, y: stripBaseY + 0.14, w: 0.02, h: calloutH - 0.28,
+      fill: { color: 'FFFFFF' }, line: { color: 'FFFFFF' } });
+    // Opacity effect via fill alpha isn't directly supported; use a light hex instead
+    s2.addShape(RECT, { x: STRIP_X + bigNumW + 0.02, y: stripBaseY + 0.14, w: 0.02, h: calloutH - 0.28,
+      fill: { color: '3D3070' }, line: { color: '3D3070' } });
+
+    // Headline
+    s2.addText(
+      `of numbers (${stCount.toLocaleString()}) received only one attempt this period`,
+      { x: textX, y: stripBaseY + 0.10, w: textW, h: 0.32,
+        fontSize: 11.5, bold: true, color: WHITE,
+        fontFace: 'Aktiv Grotesk VF Medium', valign: 'middle' }
     );
-  }
-
-  // ── Agent Hours Saved – full-width purple strip below callout strip ──────────
-  // Always shown as a banner strip (not a selectable metric card)
-  if (agentHoursSaved > 0) {
-    const ahCardH  = 1.14;
-    const ahCardW  = 3 * bW + 2 * bGap;
-    const ahStripBottom = row2Y + bH + 0.20 + 0.68;
-    const ahY = cadenceTotalNumbers > 0
-      ? ahStripBottom + 0.10
-      : row2Y + bH + 0.22;
-
-    const PURPLE_BG    = 'EBE9F7';
-    const PURPLE_STRIP = '3F2FB8';
-
-    lastOverviewSlide.addShape(RECT, { x: c1, y: ahY, w: ahCardW, h: ahCardH, fill: { color: PURPLE_BG }, line: { color: PURPLE_BG } });
-    lastOverviewSlide.addShape(RECT, { x: c1, y: ahY, w: ahCardW, h: 0.05, fill: { color: PURPLE_STRIP }, line: { color: PURPLE_STRIP } });
-    lastOverviewSlide.addText('AGENT HOURS SAVED (EST.)', {
-      x: c1 + 0.16, y: ahY + 0.127, w: ahCardW - 0.32, h: 0.28,
-      fontSize: 11, color: TEXT_SOFT, bold: false, fontFace: 'Aktiv Grotesk VF Medium', align: 'left', charSpacing: 1.5
-    });
-    lastOverviewSlide.addText(`${agentHoursSaved.toLocaleString()} hrs`, {
-      x: c1 + 0.16, y: ahY + 0.308, w: ahCardW - 0.32, h: 0.44,
-      fontSize: 32, bold: true, color: NAVY, fontFace: 'IvyPresto Text', align: 'left', valign: 'top', shrinkText: true
-    });
-    lastOverviewSlide.addText(
-      `Based on ${totalSuccess.toLocaleString()} successful deliveries \u00d7 3 min avg manual voicemail handle time \u2014 capacity your agents didn\u2019t need to spend on outreach`,
-      { x: c1 + 0.16, y: ahY + 0.784, w: ahCardW - 0.32, h: 0.3, fontSize: 10, color: TEXT_SOFT, fontFace: 'Aktiv Grotesk VF Medium', align: 'left' }
+    // Body
+    s2.addText(
+      `Consumers often need 2\u20133 touches before taking action. A follow-up campaign at a 3\u201310 day interval can produce meaningful incremental results from this same list.${staleNote}${impliedNote}`,
+      { x: textX, y: stripBaseY + 0.46, w: textW, h: 0.50,
+        fontSize: 9.5, color: 'C8C4DE', italic: true,
+        fontFace: 'Aktiv Grotesk VF Medium', valign: 'top' }
     );
   }
 
   s2.addNotes([
     'HIGH-LEVEL OVERVIEW — Speaker notes',
     '',
-    'This slide is a snapshot of the key performance indicators for the period.',
-    'Use it to anchor the conversation before diving into deeper analysis.',
+    'This slide shows 4 key performance indicators for the period. Use it to anchor the conversation before deeper analysis.',
     '',
-    'KEY TALKING POINTS:',
-    '• Unique Phone Numbers (' + uniqueNumbers.toLocaleString() + '): the size of the list being worked. Larger lists have more statistical stability in the metrics.',
-    '• Total DDVM Attempts (' + totalAttempts.toLocaleString() + '): total carrier-level drops in the period.',
-    '• Overall Success Rate (' + overallSuccessRate.toFixed(1) + '%): the primary efficiency KPI. See the Delivery Performance Snapshot slide for benchmark context.',
-    '• Numbers Connecting Well (' + healthyCount.toLocaleString() + ', ' + healthyPct.toFixed(0) + '%): productive numbers — safe to keep running.',
-    '• Date Span (' + daySpan + ' days): important for normalising attempt counts — a longer window with the same attempt count implies lower frequency.',
+    'FIRST ATTEMPT SUCCESS RATE (' + firstAttemptRate + ')',
+    'The percentage of numbers that received a successful delivery on the very first attempt — a clean measure of list quality before any multi-touch selection bias.',
+    'Comparing this to the overall delivery rate reveals how much incremental value the multi-touch strategy is generating.',
     '',
-    'AGENT HOURS SAVED: Based on an industry-standard 3-minute average handle time per voicemail. Useful for quantifying operational impact in ROI conversations.'
+    'AVG. ATTEMPTS PER NUMBER (' + (uniqueNumbers > 0 ? (totalAttempts / uniqueNumbers).toFixed(1) : '—') + ')',
+    'Higher values indicate a persistent multi-touch campaign. Pair with the cadence slide to assess timing strategy and diminishing returns.',
+    '',
+    'IMPLIED CALLBACK RATE (' + impliedCallbackRate.toFixed(1) + '%)',
+    impliedRemovedCount.toLocaleString() + ' delivered numbers appear to have been removed from the list after a successful delivery — consistent with a contact taking inbound action (calling back, submitting a form, making a payment).',
+    'This is a compelling ROI signal: it suggests the campaign is generating conversions beyond what outbound metrics alone can capture.',
+    '',
+    'DATE SPAN',
+    'Important context for normalising attempt counts. A longer window with the same attempt count implies lower frequency — useful for pacing conversations.',
+    '',
+    'SINGLE-TOUCH OPPORTUNITY',
+    cadenceTotalNumbers > 0
+      ? ((cadence.cadenceSingleTouch / cadenceTotalNumbers * 100).toFixed(1)) + '% of numbers (' + (cadence.cadenceSingleTouch || 0).toLocaleString() + ') received only one attempt this period. A follow-up campaign targeting this group can generate meaningful incremental deliveries with minimal additional list cost.'
+      : 'No cadence data available for single-touch analysis.'
   ].join('\n'));
   slideFooter(s2);
-  if (s2b) slideFooter(s2b);
 
   // ────────────────────────────────────────────────────────────────────────────
   // SLIDE 3 – Success Probability by Attempt (optional)
@@ -852,7 +1050,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     {
       x: 0.4, y: s3CY + 0.08,
       w: SLIDE_W - 0.8, h: 0.4,
-      fontSize: 9.5, color: TEXT_SOFT, italic: true,
+      fontSize: 9.5, color: TEXT_SOFT, italic: true, align: 'center',
       fontFace: 'Aktiv Grotesk VF Medium'
     }
   );
@@ -890,13 +1088,21 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     })
   ];
 
-  s3.addTable(tblRows, {
-    x: 1.4, y: s3CY + 0.58,
-    w: SLIDE_W - 2.8,
-    fontSize: 10.5,
-    rowH: 0.43,
-    border: { type: 'solid', color: PINK_PALE, pt: 0.75 }
-  });
+  {
+    const s3TblW  = SLIDE_W - 2.8;
+    const s3TblRH = 0.43;
+    const s3TblH  = tblRows.length * s3TblRH;
+    const s3BodyT = s3CY + 0.58;
+    const s3BodyB = SLIDE_H - 0.35;
+    const s3TblY  = s3BodyT + Math.max(0, (s3BodyB - s3BodyT - s3TblH) / 2);
+    s3.addTable(tblRows, {
+      x: (SLIDE_W - s3TblW) / 2, y: s3TblY,
+      w: s3TblW,
+      fontSize: 10.5,
+      rowH: s3TblRH,
+      border: { type: 'solid', color: PINK_PALE, pt: 0.75 }
+    });
+  }
 
   s3.addNotes([
     'SUCCESS PROBABILITY BY ATTEMPT — Speaker notes',
@@ -933,9 +1139,9 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   s4.addText(
     `${cadence.cadenceMultiTouchCount.toLocaleString()} numbers (${s4MultiPct}%) had 2+ delivery attempts – across all result types (successfully delivered, unsuccessful, voicemail not setup, voicemail full, and not in service). ${cadence.cadenceSingleTouch.toLocaleString()} numbers (${s4SinglePct}%) were contacted only once – each a potential opportunity for an additional touch. Breakdown by median interval between consecutive attempts:`,
     {
-      x: 0.4, y: s4CY + 0.08,
-      w: SLIDE_W - 0.8, h: 0.44,
-      fontSize: 9.5, color: TEXT_SOFT, italic: true,
+      x: 1.8, y: s4CY + 0.08,
+      w: SLIDE_W - 3.6, h: 0.44,
+      fontSize: 9.5, color: TEXT_SOFT, italic: true, align: 'center',
       fontFace: 'Aktiv Grotesk VF Medium'
     }
   );
@@ -974,12 +1180,20 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     })
   ];
 
-  s4.addTable(cTbl, {
-    x: 1.8, y: s4CY + 0.58,
-    w: SLIDE_W - 3.6,
-    fontSize: 10.5, rowH: 0.44,
-    border: { type: 'solid', color: PINK_PALE, pt: 0.75 }
-  });
+  {
+    const s4TblW  = SLIDE_W - 3.6;
+    const s4TblRH = 0.44;
+    const s4TblH  = cTbl.length * s4TblRH;
+    const s4BodyT = s4CY + 0.62;
+    const s4BodyB = SLIDE_H - 1.72; // leave room for insight strip (starts at SLIDE_H - 1.62) + gap
+    const s4TblY  = s4BodyT + Math.max(0, (s4BodyB - s4BodyT - s4TblH) / 2);
+    s4.addTable(cTbl, {
+      x: (SLIDE_W - s4TblW) / 2, y: s4TblY,
+      w: s4TblW,
+      fontSize: 10.5, rowH: s4TblRH,
+      border: { type: 'solid', color: PINK_PALE, pt: 0.75 }
+    });
+  }
 
   // ── Multi-touch value insight strip ─────────────────────────────────────────
   {
@@ -1072,8 +1286,9 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     });
 
     const maxItems = Math.min(actions.length, 5); // one fewer since BNA takes space
-    const availH   = SLIDE_H - s5HdrH - bnaH - 1.2;
-    const itemH    = Math.min(0.82, availH / Math.max(maxItems, 1));
+    const availH   = SLIDE_H - s5HdrH - bnaH - 0.9;
+    // Fill available height; cap only prevents overflow when 5 items are present
+    const itemH    = Math.min(availH / Math.max(maxItems, 1), 1.40);
     let ay = bnaY + bnaH + 0.12;
 
     const slideNotes = [];
@@ -1216,11 +1431,13 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
 
       // Count + delivered rate inside/beside bar
       const pctDel = level.count > 0 ? (level.delivered / level.count * 100).toFixed(0) : 0;
+      // Use dark text on light bars (i>=2) so the label is always readable
+      const labelColor = i < 2 ? WHITE : NAVY;
       sfun.addText(
         `${level.count.toLocaleString()}  ·  ${pctDel}% eventually delivered`,
         {
           x: bx + 0.14, y: by, w: Math.max(barW - 0.28, 2.0), h: barH,
-          fontSize: 10.5, bold: false, color: i === 0 ? WHITE : WHITE,
+          fontSize: 10.5, bold: false, color: labelColor,
           fontFace: 'Aktiv Grotesk VF Medium', valign: 'middle', align: 'left'
         }
       );
@@ -1232,7 +1449,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     sfun.addText('Count at this attempt level', { x: barX + 0.28, y: legY - 0.01, w: 2.8, h: 0.18,
       fontSize: 9, color: TEXT_SOFT, fontFace: 'Aktiv Grotesk VF Medium' });
     sfun.addShape(RECT, { x: barX + 3.2, y: legY, w: 0.22, h: 0.16, fill: { color: NAVY }, line: { color: NAVY } });
-    sfun.addText('Eventually delivered (200)', { x: barX + 3.48, y: legY - 0.01, w: 2.8, h: 0.18,
+    sfun.addText('Eventually delivered (result code 200)', { x: barX + 3.48, y: legY - 0.01, w: 3.4, h: 0.18,
       fontSize: 9, color: TEXT_SOFT, fontFace: 'Aktiv Grotesk VF Medium' });
 
     sfun.addNotes([
@@ -1240,7 +1457,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
       '',
       'HOW TO READ THIS CHART:',
       'Each bar represents the pool of numbers that reached at least that many attempts. The taller/wider the bar, the more numbers reached that attempt level.',
-      '"Eventually delivered" means at least one successful DDVM drop (result code 200) at any point — not necessarily on that specific attempt number.',
+      '"Eventually delivered" means at least one successful DirectDrop Voicemail drop (result code 200) at any point — not necessarily on that specific attempt number.',
       'The darker segment of each bar shows how many of those numbers eventually delivered.',
       '',
       'KEY TALKING POINTS:',
@@ -1290,20 +1507,22 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
 
   const discussionQs = [
     cadenceSingleTouch > 0
-      ? `Research shows consumers typically need 2–3 touches before taking action. Of the ${cadenceSingleTouch.toLocaleString()} numbers that received just one attempt this period, how many could convert with a well-timed follow-up?`
-      : `What does your re-attempt strategy look like today – and is there an opportunity to capture more value from the same list with a structured multi-touch cadence?`,
+      ? `${cadenceSingleTouch.toLocaleString()} numbers in this campaign were only touched once. Research consistently shows consumers need 2–3 touches before taking action — what would a well-timed follow-up campaign on this same list unlock for you?`
+      : `What would a 10% lift in delivery rate mean for your program in concrete terms — more callbacks, more applications, more revenue? Let's map out what's realistic.`,
 
     staleWarmCount > 0
-      ? `${staleWarmCount.toLocaleString()} consumers you've already successfully reached haven't been contacted in 30+ days – a pre-warmed audience ready for re-engagement. What's the right message to put in front of them right now?`
-      : `How quickly do you follow up after a successful delivery? A timely second touch to already-engaged consumers tends to see significantly higher conversion rates.`,
-
-    `How recently has your active list been refreshed? Periodic list maintenance is one of the highest-leverage ways to raise delivery rates – what does that process look like for your team today?`,
+      ? `${staleWarmCount.toLocaleString()} consumers you've already successfully reached haven't been contacted in 30+ days — a pre-warmed audience with no cold-start problem. What's the highest-value message to put in front of them right now?`
+      : `DirectDrop Voicemail delivered ${totalSuccess.toLocaleString()} messages this period — every one landing directly in a live voicemail inbox. What other parts of your consumer journey could benefit from that same frictionless, non-intrusive reach?`,
 
     agentHoursSaved > 0
-      ? `DDVM freed up an estimated ${agentHoursSaved.toLocaleString()} hours of agent time this period. How is that capacity being put to work – and where would redirecting it create the most impact for your business?`
-      : `As DDVM scales, so does the agent capacity it unlocks. How are you thinking about reinvesting that time into higher-value conversations or expanded outreach?`,
+      ? `This campaign freed an estimated ${agentHoursSaved.toLocaleString()} hours of agent capacity. If you could point that time at one specific business outcome, what would move the needle most for your team right now?`
+      : `As DirectDrop Voicemail scales, the agent capacity it unlocks scales with it. What would your team do with an extra 100 hours a month freed from manual outreach?`,
 
-    `If you could change one thing about how this program runs today, what would it be – and what's been stopping you from making that change?`,
+    impliedRemovedCount > 0
+      ? `~${impliedRemovedCount.toLocaleString()} numbers appear to have been removed after their last successful delivery — a strong signal of inbound callbacks already in motion. How are you capturing and converting those inbound calls when they come in?`
+      : `DirectDrop Voicemail sits at the beginning of a consumer conversation. What happens on your end after the voicemail lands — and is there an opportunity to tighten that handoff?`,
+
+    `If you could expand DirectDrop Voicemail into one new use case or channel integration — SMS follow-up, email sequencing, CRM automation — what would that look like, and what's one thing standing in the way today?`,
   ];
 
   const qStartY  = 1.10;
@@ -1333,17 +1552,20 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
     "LET'S TALK — Speaker notes",
     '',
     'PURPOSE OF THIS SLIDE:',
-    'Close the review with forward-looking, value-oriented discussion questions. The goal is to transition from data review into an action-planning conversation.',
+    'Close the review by opening a forward-looking conversation. Shift from "here\'s what the data shows" to "here\'s what we can do next together." Each question is anchored to a specific data point from this campaign.',
     '',
     'FACILITATION TIPS:',
-    '• Lead with the question most relevant to the largest opportunity surfaced in the data (single-touch gap, stale warm numbers, or list quality).',
-    '• Avoid framing these as problems — frame them as quantified opportunities with known ROI.',
-    '• The agent hours saved figure is a useful anchor for ROI conversations — it demonstrates value already delivered, making the case for continued or expanded investment.',
+    '• Lead with the question tied to the biggest opportunity surfaced in the data — typically the single-touch gap or the agent hours figure.',
+    '• Frame every question as an opportunity, not a gap. The data is a starting point for expansion, not a report card.',
+    '• Let the client answer fully before moving on — the best conversations come from listening, not presenting.',
+    '• The implied callback figure (' + impliedRemovedCount.toLocaleString() + ' numbers) is often a surprise — clients don\'t always connect DirectDrop Voicemail delivery to inbound call volume.',
     '',
-    'FOLLOW-UP ACTIONS TO SUGGEST:',
-    '• Schedule a follow-up cadence campaign targeting single-touch numbers (if applicable).',
-    '• Initiate list refresh or suppression of flagged numbers to raise baseline delivery rates.',
-    '• Review re-attempt intervals with the operations team if cadence data shows significant same-day or very-short-gap retry patterns.'
+    'EXPANSION IDEAS TO SEED:',
+    '• Multi-touch follow-up campaign on single-touch numbers',
+    '• Re-engagement campaign for the stale warm audience',
+    '• Integration with inbound call routing to capture callback intent',
+    '• Extending DirectDrop Voicemail to new use cases: collections, appointment reminders, win-back, product launches',
+    '• Combining with SMS or email for a coordinated multi-channel sequence'
   ].join('\n'));
 
   await pptx.writeFile({ fileName: outputPath });
