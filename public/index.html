@@ -209,7 +209,7 @@
       color: #666;
       display: inline-flex;
       align-items: center;
-      gap: 5px;
+      gap: 10px;
     }
 
     .header-btn .btn-icon {
@@ -235,7 +235,7 @@
       font-size: 12px;
       display: inline-flex;
       align-items: center;
-      gap: 5px;
+      gap: 10px;
     }
 
     .quit-btn:hover {
@@ -670,7 +670,7 @@
 
     .trend-analyzer-layout {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1fr 2fr;
       gap: 12px;
     }
 
@@ -753,8 +753,7 @@
 
     .trend-action-area {
       margin-top: 8px;
-      padding-top: 8px;
-      border-top: 1px solid #e0e0e0;
+      padding-top: 4px;
     }
 
     .trend-action-btn {
@@ -853,7 +852,7 @@
       cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 5px;
+      gap: 10px;
     }
 
     .btn-status:disabled {
@@ -890,7 +889,7 @@
       color: #666;
       margin-top: 5px;
       display: flex;
-      gap: 5px;
+      gap: 10px;
     }
 
     .artifact-row code {
@@ -1164,10 +1163,55 @@
     }
     .drawer-tab:hover { color: #444; }
     .drawer-tab.active {
-      color: #1a1a1a;
-      border-bottom-color: #E91E8C;
+      color: #FF4B7D;
+      border-bottom-color: #FF4B7D;
     }
     .drawer-tab-panel { padding-top: 8px; }
+    .inner-tab-panel { padding-top: 0; }
+    .btn-sm { font-size: 11px; padding: 4px 8px; min-height: 26px; white-space: nowrap; }
+    /* Outer-level tabs (e.g. Delivery Intelligence / CSV Columns) — bolder, larger */
+    .drawer-tab-outer {
+      font-size: 13px;
+      font-weight: 600;
+      padding: 10px 14px;
+      color: #666;
+      letter-spacing: 0.01em;
+    }
+    .drawer-tab-outer:hover { color: #333; }
+    .drawer-tab-outer.active {
+      color: #FF4B7D;
+      border-bottom: 3px solid #FF4B7D;
+    }
+    /* Pill-style inner sub-tabs (e.g. Number Analysis / Business Review) */
+    /* Segmented control container — gray bar spanning full width */
+    .drawer-tabs-segmented {
+      display: flex;
+      background: #e8e8e8;
+      border-radius: 8px;
+      padding: 3px;
+      gap: 10px;
+      border-bottom: none !important;
+      margin-left: 0 !important;
+      margin-right: 0 !important;
+      padding-left: 3px !important;
+      padding-right: 3px !important;
+    }
+    .drawer-tab-pill {
+      background: #f5f5f5;
+      border: none;
+      border-bottom: none;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #777;
+      cursor: pointer;
+      margin-bottom: 0;
+      transition: background 0.15s, color 0.15s;
+      white-space: nowrap;
+    }
+    .drawer-tab-pill:hover:not(.active) { background: #efefef; color: #444; }
+    .drawer-tab-pill.active { background: #FF4B7D; color: #fff; border-bottom: none; }
 
     .settings-section-subtitle {
       font-size: 11px;
@@ -1764,7 +1808,7 @@
     .toast-buttons {
       display: flex;
       flex-direction: column;
-      gap: 5px;
+      gap: 10px;
       margin-top: 8px;
     }
 
@@ -1852,7 +1896,7 @@
         </div>
         <div class="sidebar-item" data-view="api" onclick="toggleDrawer('api')">
           <svg viewBox="0 0 24 24"><path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
-          <span class="sidebar-item-tooltip">API Key</span>
+          <span class="sidebar-item-tooltip">API Keys</span>
         </div>
       </div>
 
@@ -1923,6 +1967,7 @@
                     <div id="searchTypeDescription" class="search-type-description">
                       Searches all campaigns for the specified phone numbers and returns detailed interaction history.
                     </div>
+                    <div id="searchTypeLink" style="font-size: 11px; margin-top: 4px;"></div>
                   </div>
                   <div class="search-output-divider"></div>
                   <div class="output-section">
@@ -1995,16 +2040,19 @@
                       </div>
                       <label class="trend-radio-option">
                         <input type="radio" name="trendSource" value="combine" id="trendSourceCombine">
-                        <span>Combine Campaigns</span>
+                        <span>Combine Campaigns <span style="font-size:10px; color:#888; font-weight:normal;">— from Search Type above</span></span>
                       </label>
                       <label class="trend-radio-option">
                         <input type="radio" name="trendSource" value="csv" id="trendSourceCsv">
-                        <span>Uploaded CSV</span>
+                        <span>Uploaded CSV <span style="font-size:10px; color:#888; font-weight:normal;">— ad-hoc</span></span>
                       </label>
                       <label class="trend-radio-option">
                         <input type="radio" name="trendSource" value="database" id="trendSourceDb">
-                        <span>Local Database</span>
+                        <span>Local Database <span style="font-size:10px; color:#888; font-weight:normal;">— ad-hoc</span></span>
                       </label>
+                      <div style="margin-top: 6px; font-size: 11px;">
+                        <a href="#" onclick="openReportOutputTab('reportTab-deliveryIntelligence','innerTab-numberAnalysis'); return false;" style="color: #1976d2; text-decoration: none;">Report Output settings ↗</a>
+                      </div>
                       <!-- Dynamic action buttons -->
                       <div id="trendActionArea" class="trend-action-area">
                         <input type="file" id="csvFileUpload" accept=".csv" multiple style="display: none;">
@@ -2292,7 +2340,10 @@
           <div class="drawer-content">
             <!-- Section 1: Output Folder -->
             <div class="settings-section">
-              <div class="settings-section-title">Output Folder</div>
+              <div class="settings-section-title">
+                <svg viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px;margin-right:5px;fill:currentColor;"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+                Output Folder
+              </div>
               <div class="settings-section-subtitle">Where output files are saved</div>
 
               <div class="folder-path-display" id="outputFolderPath" style="background: #f5f5f5; padding: 8px 12px; border-radius: 6px; font-family: monospace; font-size: 12px; word-break: break-all; margin-bottom: 8px; border: 1px solid #e0e0e0;">
@@ -2311,8 +2362,11 @@
             </div>
 
             <!-- Section 2: Timezone -->
-            <div class="settings-section" style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #e0e0e0;">
-              <div class="settings-section-title">Timezone</div>
+            <div class="settings-section" style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #e0e0e0; margin-bottom: 16px;">
+              <div class="settings-section-title">
+                <svg viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px;margin-right:5px;fill:currentColor;"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95c-.32-1.25-.78-2.45-1.38-3.56 1.84.63 3.37 1.91 4.33 3.56zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2 0 .68.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56-1.84-.63-3.37-1.9-4.33-3.56zm2.95-8H5.08c.96-1.66 2.49-2.93 4.33-3.56C8.81 5.55 8.35 6.75 8.03 8zM12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96zM14.34 14H9.66c-.09-.66-.16-1.32-.16-2 0-.68.07-1.35.16-2h4.68c.09.65.16 1.32.16 2 0 .68-.07 1.34-.16 2zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95c-.96 1.65-2.49 2.93-4.33 3.56zM16.36 14c.08-.66.14-1.32.14-2 0-.68-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z"/></svg>
+                Timezone
+              </div>
               <div class="settings-section-subtitle">Timezone for timestamps in reports</div>
 
               <select id="timezoneSelect" class="form-select" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid #e0e0e0; font-size: 12px; margin-top: 8px;">
@@ -2328,32 +2382,149 @@
               </div>
             </div>
 
-            <!-- Tabbed: Analysis Tabs / CSV Columns -->
+            <!-- Tabbed: Delivery Intelligence / CSV Columns -->
             <div class="drawer-tabs">
-              <button class="drawer-tab active" onclick="switchDrawerTab(this,'reportTab-analysisTabs')">Analysis Tabs</button>
-              <button class="drawer-tab" onclick="switchDrawerTab(this,'reportTab-csvColumns')">CSV Columns</button>
+              <button class="drawer-tab drawer-tab-outer active" onclick="switchDrawerTab(this,'reportTab-deliveryIntelligence')">
+                <svg class="btn-icon" viewBox="0 0 24 24" style="vertical-align:-3px;margin-right:4px;"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg>
+                Delivery Intelligence
+              </button>
+              <button class="drawer-tab drawer-tab-outer" onclick="switchDrawerTab(this,'reportTab-csvColumns')">
+                <svg class="btn-icon" viewBox="0 0 24 24" style="vertical-align:-3px;margin-right:4px;"><path d="M4 5h3v3H4zm0 4h3v3H4zm0 4h3v3H4zm4-8h12v3H8zm0 4h12v3H8zm0 4h12v3H8z"/></svg>
+                CSV Columns
+              </button>
             </div>
 
-            <!-- Tab: Analysis Tabs -->
-            <div id="reportTab-analysisTabs" class="drawer-tab-panel">
-              <div class="settings-section-subtitle">Optional detail tabs in the Delivery Intelligence Report</div>
-              <div style="margin-top: 6px; font-size: 11px; color: #666; margin-bottom: 6px;">
-                These tabs add detailed number-level data. They are large and optional — the Executive Summary provides the high-level overview.
+            <!-- Tab: Delivery Intelligence (with inner sub-tabs) -->
+            <div id="reportTab-deliveryIntelligence" class="drawer-tab-panel">
+
+              <!-- Inner sub-tab bar -->
+              <div class="drawer-tabs-segmented" style="margin-bottom: 10px;">
+                <button class="drawer-tab drawer-tab-pill active" onclick="switchInnerTab(this,'innerTab-numberAnalysis')">
+                  <svg class="btn-icon" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:3px;"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+                  Number Analysis (Excel)
+                </button>
+                <button class="drawer-tab drawer-tab-pill" onclick="switchInnerTab(this,'innerTab-bizReview')">
+                  <svg class="btn-icon" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:3px;"><path d="M2 3h20v14H2zm10 17l5 3v-3z"/></svg>
+                  Business Review (PowerPoint)
+                </button>
               </div>
-              <label class="checkbox-label">
-                <input type="checkbox" id="includeTabTnHealth"> TN Health
-              </label>
-              <label class="checkbox-label">
-                <input type="checkbox" id="includeTabVariability"> Variability Analysis
-              </label>
-              <label class="checkbox-label">
-                <input type="checkbox" id="includeTabNumberSummary"> Number Summary
-              </label>
+
+              <!-- Inner sub-tab: Number Analysis -->
+              <div id="innerTab-numberAnalysis" class="inner-tab-panel" style="padding-top: 8px;">
+                <div class="settings-section-subtitle">Optional Excel tabs added to the Delivery Intelligence Report. The Executive Summary (high-level overview) is always included.</div>
+                <div style="font-size: 11px; color: #555; margin-top: 5px; margin-bottom: 8px; line-height: 1.5;">
+                  <strong>Detailed Number-Level Data:</strong> These are large and not necessary in most cases.<br>
+                  <strong>Re-Attempt Analysis:</strong> Analyzes how outcomes evolve across multiple delivery attempts. Requires numbers with 2+ attempts in the dataset.
+                </div>
+                <!-- Two-column layout -->
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                  <!-- Left: Detailed Number-Level Data -->
+                  <div class="column-group">
+                    <div class="column-group-title">
+                      Detailed Number-Level Data
+                      <div class="col-group-actions">
+                        <span onclick="document.querySelectorAll('#numberAnalysisLeft .analysis-check').forEach(c=>c.checked=true)">all</span>
+                        <span onclick="document.querySelectorAll('#numberAnalysisLeft .analysis-check').forEach(c=>c.checked=false)">clear</span>
+                      </div>
+                    </div>
+                    <div id="numberAnalysisLeft">
+                      <label class="checkbox-label" title="Per-number health scores based on consecutive failure patterns — helps identify numbers at risk of permanent non-delivery">
+                        <input type="checkbox" id="includeTabTnHealth" class="analysis-check"> TN Health
+                      </label>
+                      <label class="checkbox-label" title="Delivery rate variance by account and message — surfaces which combinations perform inconsistently">
+                        <input type="checkbox" id="includeTabVariability" class="analysis-check"> Variability Analysis
+                      </label>
+                      <label class="checkbox-label" title="Full number-level detail: every result code seen, attempt count, first/last seen dates">
+                        <input type="checkbox" id="includeTabNumberSummary" class="analysis-check"> Number Summary
+                      </label>
+                      <label class="checkbox-label" title="Numbers with extended consecutive failure runs ready to remove from your active list — removing them raises overall delivery rate">
+                        <input type="checkbox" id="includeTabSuppressionCandidates" class="analysis-check" checked> Suppression Candidates
+                      </label>
+                    </div>
+                  </div>
+                  <!-- Right: Re-Attempt Analysis -->
+                  <div class="column-group">
+                    <div class="column-group-title">
+                      Re-Attempt Analysis
+                      <div class="col-group-actions">
+                        <span onclick="document.querySelectorAll('#numberAnalysisRight .analysis-check').forEach(c=>c.checked=true)">all</span>
+                        <span onclick="document.querySelectorAll('#numberAnalysisRight .analysis-check').forEach(c=>c.checked=false)">clear</span>
+                      </div>
+                    </div>
+                    <div id="numberAnalysisRight">
+                      <label class="checkbox-label" title="High-level metrics on re-attempt ROI: eventual delivery rates by initial result code, average attempts to first delivery">
+                        <input type="checkbox" id="includeTabReAttemptSummary" class="analysis-check"> Re-attempt Summary
+                      </label>
+                      <label class="checkbox-label" title="Shows what result code each number transitions to on its next attempt — instantly reveals which codes are worth retrying">
+                        <input type="checkbox" id="includeTabReAttemptMatrix" class="analysis-check"> Outcome Transition Matrix
+                      </label>
+                      <label class="checkbox-label" title="At which attempt number did first delivery occur? Reveals diminishing returns by initial result code">
+                        <input type="checkbox" id="includeTabReAttemptFunnel" class="analysis-check"> Attempt Funnel by Code
+                      </label>
+                      <label class="checkbox-label" title="Correlates the gap between attempts with next-attempt success rate — identifies the optimal retry window per result code">
+                        <input type="checkbox" id="includeTabReAttemptTiming" class="analysis-check"> Retry Timing Analysis
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Inner sub-tab: Business Review -->
+              <div id="innerTab-bizReview" class="inner-tab-panel" style="display:none; padding-top: 8px;">
+                <div class="settings-section-subtitle">Optional slides in the complementary PowerPoint Business Review.</div>
+                <div style="font-size: 11px; color: #555; margin-top: 5px; margin-bottom: 8px; line-height: 1.5;">
+                  <strong>Metric Cards:</strong> Select up to 6 to feature on the overview slide.<br>
+                  <strong>Other Slides:</strong> Additional analysis slides appended to the deck.
+                </div>
+                <!-- Two-column layout -->
+                <div style="display:grid; grid-template-columns:2fr 1fr; gap:12px;">
+                  <!-- Left: Metric Cards (wider) -->
+                  <div class="column-group">
+                    <div class="column-group-title">
+                      Metric Cards (select up to 4)
+                      <span style="font-weight:normal; font-size:10px; color:#888;" id="cardSelectionCount"> — 4 / 4 selected</span>
+                      <div class="col-group-actions">
+                        <span onclick="document.querySelectorAll('#metricCardsBox .card-check').forEach(c=>{c.checked=true;});updateCardCount();">all</span>
+                        <span onclick="document.querySelectorAll('#metricCardsBox .card-check').forEach(c=>{c.checked=false;updateCardCount();})">clear</span>
+                      </div>
+                    </div>
+                    <div id="metricCardsBox" style="display:grid; grid-template-columns:1fr 1fr; gap:0 8px;">
+                      <label class="checkbox-label" title="Percentage of numbers successfully delivered on the very first attempt — baseline list quality before multi-touch selection bias">
+                        <input type="checkbox" class="card-check" id="card_firstAttemptSuccessRate" value="firstAttemptSuccessRate" checked onchange="updateCardCount()"> First Attempt Success Rate
+                      </label>
+                      <label class="checkbox-label" title="Mean number of delivery attempts per phone number in this dataset">
+                        <input type="checkbox" class="card-check" id="card_avgAttemptsPerNumber" value="avgAttemptsPerNumber" checked onchange="updateCardCount()"> Avg. Attempts Per Number
+                      </label>
+                      <label class="checkbox-label" title="Ratio of implied-removed numbers to total successful deliveries — estimates how many deliveries may have generated an inbound callback">
+                        <input type="checkbox" class="card-check" id="card_impliedCallbackOppty" value="impliedCallbackOppty" checked onchange="updateCardCount()"> Implied Callback Rate
+                      </label>
+                      <label class="checkbox-label" title="Calendar range from the first to last campaign in this dataset">
+                        <input type="checkbox" class="card-check" id="card_dateSpan" value="dateSpan" checked onchange="updateCardCount()"> Date Span
+                      </label>
+                    </div>
+                    <p style="font-size:10px; color:#aaa; margin:4px 0 0; line-height:1.4;">All 4 cards appear on one High-Level Overview slide. Unique Phone Numbers, Successful Deliveries, and Avg. Attempts Per Number are always shown on the Delivery Performance Snapshot.</p>
+                  </div>
+                  <!-- Right: Other Slides -->
+                  <div class="column-group">
+                    <div class="column-group-title">Other Slides</div>
+                    <label class="checkbox-label" title="Decay curve showing likelihood of delivery at attempt 1, 2, 3, etc. — quantifies the value of each additional touch">
+                      <input type="checkbox" id="slideDdecayCurve"> Success Probability by Attempt
+                    </label>
+                    <label class="checkbox-label" title="Visualizes how many numbers required multiple touches and the typical spacing between attempts">
+                      <input type="checkbox" id="slideReAttemptCadence" checked> Delivery Re-Attempt Cadence
+                    </label>
+                    <label class="checkbox-label" title="AI-identified action items and recommendations derived from your delivery data">
+                      <input type="checkbox" id="slideOpportunities" checked> Opportunities to Maximize Performance
+                    </label>
+                  </div>
+                </div>
+              </div>
+
             </div>
 
             <!-- Tab: CSV Columns -->
             <div id="reportTab-csvColumns" class="drawer-tab-panel" style="display:none;">
-              <div class="settings-section-subtitle">Select columns to include in CSV exports</div>
+              <div class="settings-section-subtitle">Select columns to include in CSV exports — applies to Combine Campaigns and Phone Number Search</div>
               <div class="columns-grid" style="margin-top: 8px;">
                 <div class="column-group">
                   <div class="column-group-title">
@@ -2363,11 +2534,12 @@
                       <span onclick="toggleGroup('core', false)">clear</span>
                     </div>
                   </div>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-core" value="number" checked> number</label>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-core" value="account_id" checked> account_id</label>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-core" value="account_name" checked> account_name</label>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-core" value="campaign_id" checked> campaign_id</label>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-core" value="campaign_name" checked> campaign_name</label>
+                  <label class="checkbox-label" title="The phone number (10-digit, normalized) — sourced from 'number' or 'phone_number' column in the results file"><input type="checkbox" class="col-check col-core" value="number" checked> number</label>
+                  <label class="checkbox-label" title="Client's account or reference number for this record — auto-detected from the results file (also recognized as AcctNum, acct_no, loan_number, member_number, reference_number, and 40+ other common field names)"><input type="checkbox" class="col-check col-core" value="account_number"> account_number</label>
+                  <label class="checkbox-label" title="VoApps account ID — the numeric ID of the account that ran this campaign"><input type="checkbox" class="col-check col-core" value="account_id" checked> account_id</label>
+                  <label class="checkbox-label" title="Display name of the VoApps account"><input type="checkbox" class="col-check col-core" value="account_name" checked> account_name</label>
+                  <label class="checkbox-label" title="VoApps campaign ID — unique identifier for the specific campaign this record belongs to"><input type="checkbox" class="col-check col-core" value="campaign_id" checked> campaign_id</label>
+                  <label class="checkbox-label" title="Display name of the campaign"><input type="checkbox" class="col-check col-core" value="campaign_name" checked> campaign_name</label>
                 </div>
 
                 <div class="column-group">
@@ -2378,11 +2550,11 @@
                       <span onclick="toggleGroup('optional', false)">clear</span>
                     </div>
                   </div>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-optional" value="caller_number" checked> caller_number</label>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-optional" value="caller_number_name" checked> caller_number_name</label>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-optional" value="message_id" checked> message_id</label>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-optional" value="message_name" checked> message_name</label>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-optional" value="message_description" checked> message_description</label>
+                  <label class="checkbox-label" title="The caller ID (phone number) used when dropping the voicemail — what the recipient sees in missed calls"><input type="checkbox" class="col-check col-optional" value="caller_number" checked> caller_number</label>
+                  <label class="checkbox-label" title="Display name associated with the caller number in your VoApps account"><input type="checkbox" class="col-check col-optional" value="caller_number_name" checked> caller_number_name</label>
+                  <label class="checkbox-label" title="VoApps message ID — identifies which recorded audio message was used for this drop"><input type="checkbox" class="col-check col-optional" value="message_id" checked> message_id</label>
+                  <label class="checkbox-label" title="Display name of the message recording used for this drop"><input type="checkbox" class="col-check col-optional" value="message_name" checked> message_name</label>
+                  <label class="checkbox-label" title="Description or notes attached to the message in your VoApps account"><input type="checkbox" class="col-check col-optional" value="message_description" checked> message_description</label>
                 </div>
 
                 <div class="column-group">
@@ -2393,13 +2565,15 @@
                       <span onclick="toggleGroup('results', false)">clear</span>
                     </div>
                   </div>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-results" value="voapps_result" checked> voapps_result</label>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-results" value="voapps_code" checked> voapps_code</label>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-results" value="voapps_timestamp" checked> voapps_timestamp</label>
-                  <label class="checkbox-label"><input type="checkbox" class="col-check col-results" value="campaign_url" checked> campaign_url</label>
+                  <label class="checkbox-label" title="Delivery outcome — e.g. 'Successfully Delivered', 'Unsuccessful Delivery Attempt', 'Not in Service', 'Voicemail Full', 'Voicemail Not Setup', 'Duplicate Number', 'Expired'"><input type="checkbox" class="col-check col-results" value="voapps_result" checked> voapps_result</label>
+                  <label class="checkbox-label" title="Numeric result code — machine-readable version of voapps_result (e.g. 200 = Successfully Delivered, 400 = Unsuccessful Delivery Attempt, 405 = Not in Service, 406 = Voicemail Not Setup, 407 = Voicemail Full, 300 = Expired)"><input type="checkbox" class="col-check col-results" value="voapps_code" checked> voapps_code</label>
+                  <label class="checkbox-label" title="Timestamp of when the delivery attempt was made (UTC, normalized to VoApps time format)"><input type="checkbox" class="col-check col-results" value="voapps_timestamp" checked> voapps_timestamp</label>
+                  <label class="checkbox-label" title="Direct link to this campaign in the VoApps portal"><input type="checkbox" class="col-check col-results" value="campaign_url" checked> campaign_url</label>
                 </div>
               </div>
             </div>
+
+
           </div>
         </div>
 
@@ -2422,7 +2596,7 @@
                 <input type="checkbox" id="enableAiAnalysis" onchange="onAiEnableChange()" style="margin-top: 2px; flex-shrink: 0;">
                 <span>
                   <strong>Enable AI Message Analysis</strong><br>
-                  <span style="font-size: 11px; color: #666; font-weight: normal;">Transcribes your DDVM recordings and infers message intent and caller insights. Runs automatically during analysis.</span>
+                  <span style="font-size: 11px; color: #666; font-weight: normal;">Transcribes DDVM recordings and classifies message intent. Results appear in the Delivery Intelligence Report (Number Analysis tab).</span>
                 </span>
               </label>
             </div>
@@ -2432,13 +2606,22 @@
 
               <!-- Tabbed: Transcription / Intent & Summary -->
               <div class="drawer-tabs">
-                <button class="drawer-tab active" onclick="switchDrawerTab(this,'aiTab-transcription')">Transcription</button>
-                <button class="drawer-tab" onclick="switchDrawerTab(this,'aiTab-intent')">Intent &amp; Summary</button>
+                <button class="drawer-tab active" onclick="switchDrawerTab(this,'aiTab-transcription')">
+                  <svg class="btn-icon" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:4px;"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+                  Transcription
+                </button>
+                <button class="drawer-tab" onclick="switchDrawerTab(this,'aiTab-intent')">
+                  <svg class="btn-icon" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:4px;"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7zm2 12.85V16h-4v-2.15C8.48 12.63 7 10.96 7 9c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.96-1.48 3.63-3 4.85z"/></svg>
+                  Intent &amp; Summary
+                </button>
               </div>
 
               <!-- Tab: Transcription Engine -->
               <div id="aiTab-transcription" class="drawer-tab-panel">
-                <div class="settings-section-subtitle">Convert message audio to text</div>
+                <div class="settings-section-subtitle">
+                  <svg viewBox="0 0 24 24" style="width:11px;height:11px;vertical-align:-1px;margin-right:4px;fill:currentColor;"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+                  Convert message audio to text
+                </div>
                 <div style="margin-top: 8px;">
                   <label class="checkbox-label" style="margin-bottom: 2px;">
                     <input type="radio" name="transcriptionMode" id="transcriptionLocal" value="local" onchange="onAiModeChange()">
@@ -2452,31 +2635,41 @@
                   <div style="font-size: 11px; color: #777; margin: 1px 0 8px 20px;">~$0.003–$0.006/message · higher accuracy · requires API key</div>
                 </div>
                 <div id="transcriptionLocalControls">
-                  <button id="downloadSttModelBtn" class="btn" style="width: 100%;" onclick="downloadAiModel('stt')">
-                    <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-                    Download Whisper Model (~142 MB)
-                  </button>
-                  <div id="sttModelStatus" style="font-size: 11px; color: #666; margin-top: 4px; text-align: center; min-height: 16px;"></div>
-                  <div id="sttManualInstallHint" style="display:none; margin-top: 8px; padding: 8px 10px; background: #FFF8E1; border: 1px solid #F9A825; border-radius: 6px; font-size: 10px; line-height: 1.6; color: #5D4037;">
-                    <strong>Install manually instead:</strong><br>
-                    1. <a href="#" onclick="if(window.voapps?.openUpdateUrl) window.voapps.openUpdateUrl('https://github.com/eiznem/voapps-tools/releases/latest'); else window.open('https://github.com/eiznem/voapps-tools/releases/latest','_blank'); return false;" style="color:#1565C0;">Download VoApps-Tools-Models.zip</a> from GitHub Releases<br>
-                    2. Extract to:<br>
-                    &nbsp;&nbsp;• <strong>Windows:</strong> <code style="font-size:9px;">%APPDATA%\voapps-tools\models\</code><br>
-                    &nbsp;&nbsp;• <strong>macOS:</strong> <code style="font-size:9px;">~/Library/Application Support/VoApps Tools/models/</code><br>
-                    3. Both buttons will update to "Re-download ↺" automatically
+                  <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
+                    <select id="localSttVariant" onchange="onSttVariantChange()" style="flex:1; font-size:11px; height:30px; border-radius:6px; border:1px solid #ddd; padding:0 6px; background:#fff; cursor:pointer;">
+                      <option value="base">Lite — whisper-base · ~142 MB · ~30 sec/clip</option>
+                      <option value="small">Standard — whisper-small · ~244 MB · ~1–3 min/clip</option>
+                    </select>
+                    <button id="deleteSttBtn" class="btn btn-sm" style="display:none; color:#d32f2f; padding:4px 6px;" title="Delete downloaded model" onclick="deleteAiModel('stt', _getCurrentSttVariant())">
+                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                    </button>
+                    <button id="downloadSttBtn" class="btn btn-sm" onclick="downloadAiModel('stt','huggingface')">
+                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+                      Download
+                    </button>
                   </div>
+                  <div id="sttModelStatus" style="font-size: 11px; color: #666; margin-top: 2px;"></div>
+                  <!-- GitHub fallback -->
+                  <button class="btn btn-sm" style="width:100%; margin-top:4px;" onclick="downloadAiModel('stt','github')">
+                    <svg class="btn-icon" viewBox="0 0 24 24"><path d="M12 2A10 10 0 0 0 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2z"/></svg>
+                    Download via GitHub (VPN-friendly)
+                  </button>
+                  <div style="font-size:10px; color:#888; margin-top:3px; text-align:center; line-height:1.4;">Bypasses huggingface.co — use if the primary download fails</div>
                 </div>
               </div>
 
               <!-- Tab: Intent & Summary Engine -->
               <div id="aiTab-intent" class="drawer-tab-panel" style="display:none;">
-                <div class="settings-section-subtitle">Classify message intent</div>
+                <div class="settings-section-subtitle">
+                  <svg viewBox="0 0 24 24" style="width:11px;height:11px;vertical-align:-1px;margin-right:4px;fill:currentColor;"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7zm2 12.85V16h-4v-2.15C8.48 12.63 7 10.96 7 9c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.96-1.48 3.63-3 4.85z"/></svg>
+                  Classify message intent
+                </div>
                 <div style="margin-top: 8px;">
                   <label class="checkbox-label" style="margin-bottom: 2px;">
                     <input type="radio" name="intentMode" id="intentLocal" value="local" onchange="onAiModeChange()">
                     🖥 Local Model &nbsp;<span style="font-size: 11px; color: #4caf50; font-weight: 600;">Free</span>
                   </label>
-                  <div style="font-size: 11px; color: #777; margin: 1px 0 8px 20px;">~85 MB one-time download · offline · zero-shot classification</div>
+                  <div style="font-size: 11px; color: #777; margin: 1px 0 8px 20px;">One-time download · offline · zero-shot classification (NLI)</div>
                   <label class="checkbox-label" style="margin-bottom: 2px;">
                     <input type="radio" name="intentMode" id="intentOpenai" value="openai" onchange="onAiModeChange()">
                     ☁ OpenAI GPT-4o-mini
@@ -2484,11 +2677,26 @@
                   <div style="font-size: 11px; color: #777; margin: 1px 0 8px 20px;">~$0.0001/message · higher quality · requires API key</div>
                 </div>
                 <div id="intentLocalControls">
-                  <button id="downloadIntentModelBtn" class="btn" style="width: 100%;" onclick="downloadAiModel('intent')">
-                    <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-                    Download Intent Model (~85 MB)
+                  <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
+                    <select id="localIntentVariant" onchange="onIntentVariantChange()" style="flex:1; font-size:11px; height:30px; border-radius:6px; border:1px solid #ddd; padding:0 6px; background:#fff; cursor:pointer;">
+                      <option value="nli-deberta-v3-small">Lite — nli-deberta-v3-small · ~86 MB · ~2–5 sec/clip</option>
+                      <option value="nli-deberta-v3-base">Standard — nli-deberta-v3-base · ~270 MB · ~5–15 sec/clip</option>
+                    </select>
+                    <button id="deleteIntentBtn" class="btn btn-sm" style="display:none; color:#d32f2f; padding:4px 6px;" title="Delete downloaded model" onclick="deleteAiModel('intent', _getCurrentIntentVariant())">
+                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                    </button>
+                    <button id="downloadIntentBtn" class="btn btn-sm" onclick="downloadAiModel('intent','huggingface')">
+                      <svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+                      Download
+                    </button>
+                  </div>
+                  <div id="intentModelStatus" style="font-size: 11px; color: #666; margin-top: 2px;"></div>
+                  <!-- GitHub fallback -->
+                  <button class="btn btn-sm" style="width:100%; margin-top:4px;" onclick="downloadAiModel('intent','github')">
+                    <svg class="btn-icon" viewBox="0 0 24 24"><path d="M12 2A10 10 0 0 0 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.52 2.34 1.07 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2z"/></svg>
+                    Download via GitHub (VPN-friendly)
                   </button>
-                  <div id="intentModelStatus" style="font-size: 11px; color: #666; margin-top: 4px; text-align: center; min-height: 16px;"></div>
+                  <div style="font-size:10px; color:#888; margin-top:3px; text-align:center; line-height:1.4;">Bypasses huggingface.co — use if the primary download fails</div>
                   <div id="intentManualInstallHint" style="display:none; margin-top: 8px; padding: 8px 10px; background: #FFF8E1; border: 1px solid #F9A825; border-radius: 6px; font-size: 10px; line-height: 1.6; color: #5D4037;">
                     <strong>Install manually instead:</strong><br>
                     1. <a href="#" onclick="if(window.voapps?.openUpdateUrl) window.voapps.openUpdateUrl('https://github.com/eiznem/voapps-tools/releases/latest'); else window.open('https://github.com/eiznem/voapps-tools/releases/latest','_blank'); return false;" style="color:#1565C0;">Download VoApps-Tools-Models.zip</a> from GitHub Releases<br>
@@ -2500,23 +2708,10 @@
                 </div>
               </div>
 
-              <!-- OpenAI API Key (shown when either engine is set to OpenAI) -->
-              <div id="openaiKeySection" class="settings-section" style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #e0e0e0; display: none;">
-                <div class="settings-section-title">OpenAI API Key</div>
-                <div class="settings-section-subtitle">Required for OpenAI transcription or intent</div>
-                <div class="api-key-input-row" style="margin-top: 8px;">
-                  <input id="openaiApiKey" type="password" placeholder="sk-..." />
-                  <button id="toggleOpenaiKeyBtn" class="btn" title="Show/Hide">
-                    <svg class="btn-icon" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
-                  </button>
-                </div>
-                <div style="display: flex; gap: 8px; margin-top: 6px; align-items: center;">
-                  <button id="saveOpenaiKeyBtn" class="btn">
-                    <svg class="btn-icon" viewBox="0 0 24 24"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg>
-                    Save
-                  </button>
-                  <a href="#" onclick="if(window.voapps?.openUpdateUrl) window.voapps.openUpdateUrl('https://platform.openai.com/api-keys'); else window.open('https://platform.openai.com/api-keys', '_blank'); return false;" style="font-size: 11px; color: #1976d2; text-decoration: none; margin-left: auto;">Get API key ↗</a>
-                </div>
+              <!-- OpenAI API Key link (shown when either engine is set to OpenAI) -->
+              <div id="openaiKeySection" style="display:none; margin-top:10px; font-size:11px; color:#555; padding:8px 10px; background:#f5f5f5; border-radius:6px;">
+                OpenAI API key required —
+                <a href="#" onclick="switchView('api'); return false;" style="color:#1976d2;">set it in API Keys ↗</a>
               </div>
 
               <!-- AI Accuracy Caveat -->
@@ -2534,8 +2729,14 @@
               <!-- Transcript Cache + Dictionary (tabbed) -->
               <div class="settings-section" style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #e0e0e0;">
                 <div class="drawer-tabs" style="margin-bottom: 10px;">
-                  <button class="drawer-tab active" onclick="switchDrawerTab(this,'aiCachePanel')">Transcript Cache</button>
-                  <button class="drawer-tab" onclick="switchDrawerTab(this,'aiDictPanel')">Transcript Dictionary</button>
+                  <button class="drawer-tab active" onclick="switchDrawerTab(this,'aiCachePanel')">
+                    <svg class="btn-icon" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:4px;"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z"/></svg>
+                    Transcript Cache
+                  </button>
+                  <button class="drawer-tab" onclick="switchDrawerTab(this,'aiDictPanel')">
+                    <svg class="btn-icon" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:4px;"><path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"/></svg>
+                    Transcript Dictionary
+                  </button>
                 </div>
 
                 <!-- Transcript Cache panel -->
@@ -2575,12 +2776,12 @@
           </div>
         </div>
 
-        <!-- API KEY DRAWER -->
+        <!-- API KEYS DRAWER -->
         <div id="drawerApi" class="drawer-panel">
           <div class="drawer-header">
             <div class="drawer-title">
               <svg viewBox="0 0 24 24"><path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
-              API Key
+              API Keys
               <span class="info-icon info-icon-drawer" onclick="event.stopPropagation(); showInfoModal('apiKey')">i</span>
             </div>
             <button class="drawer-close" onclick="closeDrawer()">
@@ -2588,16 +2789,28 @@
             </button>
           </div>
           <div class="drawer-content">
+            <!-- VoApps API Key -->
             <div class="settings-section">
-              <div class="settings-section-subtitle">Your VoApps API key is stored locally</div>
-
-              <div class="api-key-input-row">
-                <input id="apiKey" type="password" placeholder="Paste your VoApps API key..." />
-                <button id="toggleApiKeyVisibility" class="btn" title="Show/Hide">
-                  <svg class="btn-icon" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+              <div style="font-size: 13px; font-weight: 700; color: #FF4B7D; margin-bottom: 2px;">VoApps API Key</div>
+              <div style="font-size: 11px; color: #888; margin-bottom: 10px;">Required — used to access your campaign data</div>
+              <!-- Input row: input with inline eyeball + Test button beside it -->
+              <div style="display:flex; gap:8px; align-items:center;">
+                <div style="position:relative; flex:1;">
+                  <input id="apiKey" type="password" placeholder="Paste your VoApps API key..." style="width:100%; padding-left:8px; padding-right:36px; box-sizing:border-box; height:34px; border-radius:6px; border:1px solid #ddd;" />
+                  <button id="toggleApiKeyVisibility" title="Show/Hide" style="position:absolute; right:4px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; padding:4px; color:#888; display:flex; align-items:center;">
+                    <svg class="btn-icon" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                  </button>
+                </div>
+                <button id="pingBtn" class="btn" title="Test API key" style="height:34px; flex-shrink:0;">
+                  <svg class="btn-icon" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+                  Test
                 </button>
               </div>
-              <div style="display: flex; gap: 8px;">
+              <div style="text-align:right; margin-top:4px; margin-bottom:8px;">
+                <a href="#" onclick="openExternalUrl('https://directdropvoicemail.voapps.com'); return false;" style="font-size: 11px; color: #1976d2; text-decoration: none;">Get API key ↗</a>
+              </div>
+              <!-- Save + Clear buttons -->
+              <div style="display:flex; gap:8px; align-items:center;">
                 <button id="saveKeyBtn" class="btn">
                   <svg class="btn-icon" viewBox="0 0 24 24"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg>
                   Save
@@ -2606,9 +2819,40 @@
                   <svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
                   Clear
                 </button>
-                <button id="pingBtn" class="btn" style="margin-left: auto;">
+              </div>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 16px 0;">
+
+            <!-- OpenAI API Key -->
+            <div class="settings-section">
+              <div style="font-size: 13px; font-weight: 700; color: #333; margin-bottom: 2px;">OpenAI API Key</div>
+              <div style="font-size: 11px; color: #888; margin-bottom: 10px;">Optional — required only when using OpenAI transcription or intent in AI Message Analysis</div>
+              <!-- Input row: input with inline eyeball + Test button beside it -->
+              <div style="display:flex; gap:8px; align-items:center;">
+                <div style="position:relative; flex:1;">
+                  <input id="openaiApiKey" type="password" placeholder="sk-..." style="width:100%; padding-left:8px; padding-right:36px; box-sizing:border-box; height:34px; border-radius:6px; border:1px solid #ddd;" />
+                  <button id="toggleOpenaiKeyBtn" title="Show/Hide" style="position:absolute; right:4px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; padding:4px; color:#888; display:flex; align-items:center;">
+                    <svg class="btn-icon" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                  </button>
+                </div>
+                <button id="testOpenaiKeyBtn" class="btn" title="Test OpenAI API key" onclick="testOpenaiKey()" style="height:34px; flex-shrink:0;">
                   <svg class="btn-icon" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
                   Test
+                </button>
+              </div>
+              <div style="text-align:right; margin-top:4px; margin-bottom:8px;">
+                <a href="#" onclick="openExternalUrl('https://platform.openai.com/api-keys'); return false;" style="font-size: 11px; color: #1976d2; text-decoration: none;">Get API key ↗</a>
+              </div>
+              <!-- Save + Clear buttons -->
+              <div style="display:flex; gap:8px; align-items:center;">
+                <button id="saveOpenaiKeyBtn" class="btn">
+                  <svg class="btn-icon" viewBox="0 0 24 24"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg>
+                  Save
+                </button>
+                <button id="clearOpenaiKeyBtn" class="btn" onclick="clearOpenaiKey()">
+                  <svg class="btn-icon" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                  Clear
                 </button>
               </div>
             </div>
@@ -2826,30 +3070,31 @@
   <div id="apiKeyModal" class="info-modal" onclick="if(event.target === this) hideInfoModal('apiKey')">
     <div class="info-modal-content">
       <div class="info-modal-header">
-        <div class="info-modal-title">API Key</div>
+        <div class="info-modal-title">🔑 API Keys</div>
         <button class="info-modal-close" onclick="hideInfoModal('apiKey')">×</button>
       </div>
       <div class="info-modal-body" style="font-size: 12px;">
-        <h4 style="margin-top:0;">What is the API Key?</h4>
-        <p>The API key authenticates your requests to the VoApps API. It's required to download campaign data and fetch account information.</p>
-
-        <h4>Getting Your API Key</h4>
-        <p>Contact VoApps support or your account manager to obtain an API key. The key is typically a long alphanumeric string.</p>
-        <p style="margin-top: 8px;">
-          <a href="#" onclick="if(window.voapps?.openUpdateUrl) window.voapps.openUpdateUrl('https://directdropvoicemail.voapps.com/api/index'); else window.open('https://directdropvoicemail.voapps.com/api/index', '_blank'); return false;" style="color: #FF4B7D; text-decoration: none; font-weight: 600;">
-            🔗 VoApps DirectDrop Portal
-          </a>
+        <h4 style="margin-top:0; color:#FF4B7D;">VoApps API Key</h4>
+        <p><strong>Required.</strong> Authenticates requests to the VoApps API. Used to download campaign data and fetch account information.</p>
+        <p style="margin-top: 6px;">
+          <a href="#" onclick="openExternalUrl('https://directdropvoicemail.voapps.com/api/index'); hideInfoModal('apiKey'); return false;" style="color: #FF4B7D; text-decoration: none; font-weight: 600;">🔗 VoApps DirectDrop Portal</a>
         </p>
 
-        <h4>Security</h4>
+        <h4 style="margin-top:16px;">OpenAI API Key</h4>
+        <p><strong>Optional.</strong> Required only when you enable OpenAI transcription (Whisper API) or OpenAI intent classification (GPT-4o-mini) in AI Message Analysis. Not needed if you use local models only.</p>
+        <p style="margin-top: 6px;">
+          <a href="#" onclick="openExternalUrl('https://platform.openai.com/api-keys'); hideInfoModal('apiKey'); return false;" style="color: #1976d2; text-decoration: none; font-weight: 600;">🔗 OpenAI Platform → API Keys</a>
+        </p>
+
+        <h4 style="margin-top:16px;">Security</h4>
         <ul style="margin-left: 16px;">
-          <li>Your API key is stored <strong>locally on your machine only</strong></li>
-          <li>It is never sent to any servers other than VoApps</li>
-          <li>The key is encrypted in local storage</li>
+          <li>Both keys are stored <strong>locally on your machine only</strong></li>
+          <li>VoApps key is never sent to any server other than the VoApps API</li>
+          <li>OpenAI key is never sent to any server other than api.openai.com</li>
         </ul>
 
-        <h4>Testing</h4>
-        <p>After entering your API key, click <strong>Test</strong> to verify it works. A successful test will show your account details.</p>
+        <h4 style="margin-top:16px;">Testing</h4>
+        <p>After entering a key, click <strong>Test</strong> to verify it's valid. VoApps Test returns your account list; OpenAI Test confirms the key authenticates against the OpenAI API.</p>
       </div>
     </div>
   </div>
@@ -3276,11 +3521,34 @@
       const bar = tabEl.closest('.drawer-tabs');
       bar.querySelectorAll('.drawer-tab').forEach(t => t.classList.remove('active'));
       tabEl.classList.add('active');
-      // Show the matching panel, hide siblings
+      // Hide only DIRECT children that are drawer-tab-panel (avoids hiding nested tab panels)
       const content = bar.parentElement;
-      content.querySelectorAll('.drawer-tab-panel').forEach(p => p.style.display = 'none');
+      Array.from(content.children).filter(c => c.classList.contains('drawer-tab-panel')).forEach(p => p.style.display = 'none');
       const panel = document.getElementById(panelId);
       if (panel) panel.style.display = '';
+    }
+
+    function switchInnerTab(tabEl, panelId) {
+      const bar = tabEl.closest('.drawer-tabs, .drawer-tabs-segmented');
+      bar.querySelectorAll('.drawer-tab, .drawer-tab-pill').forEach(t => t.classList.remove('active'));
+      tabEl.classList.add('active');
+      // Show matching inner panel, hide other inner panels (scoped to inner-tab-panel class)
+      const content = bar.parentElement;
+      content.querySelectorAll('.inner-tab-panel').forEach(p => p.style.display = 'none');
+      const panel = document.getElementById(panelId);
+      if (panel) panel.style.display = '';
+    }
+
+    function openReportOutputTab(outerPanelId, innerPanelId) {
+      switchView('report');
+      setTimeout(() => {
+        const outerBtn = document.querySelector(`#drawerReport .drawer-tab[onclick*="${outerPanelId}"]`);
+        if (outerBtn) switchDrawerTab(outerBtn, outerPanelId);
+        if (innerPanelId) {
+          const innerBtn = document.querySelector(`#${outerPanelId} .drawer-tab[onclick*="${innerPanelId}"], #${outerPanelId} .drawer-tab-pill[onclick*="${innerPanelId}"]`);
+          if (innerBtn) switchInnerTab(innerBtn, innerPanelId);
+        }
+      }, 0);
     }
 
     function closeDrawer() {
@@ -3430,6 +3698,11 @@
       const logBtn = $('openLogBtn');
       if (csvBtn) { csvBtn.disabled = true; csvBtn.onclick = null; }
       if (logBtn) { logBtn.disabled = true; logBtn.onclick = null; }
+    }
+
+    function openExternalUrl(url) {
+      if (window.voapps?.openUpdateUrl) window.voapps.openUpdateUrl(url);
+      else window.open(url, '_blank');
     }
 
     function showToast(message, type = 'info', duration = 3000) {
@@ -3842,14 +4115,21 @@
     // ============================================================================
     const searchTypeDescriptions = {
       phone: "Search campaigns for specific phone numbers.",
-      combine: "Merge all campaign data into a single CSV.",
+      combine: "Generate a Delivery Intelligence Report — an Excel Analysis and complementary PowerPoint Business Review of phone numbers, caller numbers, messages, and other performance insights.",
       "bulk-export": "Export each campaign as a separate CSV.",
       "executive-summary": "Aggregate campaign level statistics into a high-level deliverability report for the period selected (users often set date ranges to encompass a whole month)."
+    };
+
+    const searchTypeLinks = {
+      combine: '<a href="#" onclick="openReportOutputTab(\'reportTab-csvColumns\',null); return false;" style="color:#1976d2; text-decoration:none;">Change CSV Columns ↗</a>',
+      phone: '<a href="#" onclick="openReportOutputTab(\'reportTab-csvColumns\',null); return false;" style="color:#1976d2; text-decoration:none;">Change CSV Columns ↗</a>'
     };
 
     $('searchTypeDropdown').onchange = () => {
       const val = $('searchTypeDropdown').value;
       $('searchTypeDescription').textContent = searchTypeDescriptions[val] || "";
+      const linkEl = $('searchTypeLink');
+      if (linkEl) linkEl.innerHTML = searchTypeLinks[val] || '';
       $('phoneInputContainer').classList.toggle('visible', val === 'phone');
       $('trendAnalyzerContainer').classList.toggle('visible', val === 'combine');
 
@@ -4084,6 +4364,8 @@
           document.querySelector('input[name="transcriptionMode"]:checked')?.value || 'local');
         formData.append('ai_intent_mode',
           document.querySelector('input[name="intentMode"]:checked')?.value || 'local');
+        formData.append('local_stt_model',    _getCurrentSttVariant());
+        formData.append('local_intent_model', _getCurrentIntentVariant());
 
         log(`Uploading and processing ${uploadedCsvFiles.length} CSV file(s)...`);
         if (csvAiEnabled) log('  AI Message Analysis: enabled');
@@ -4182,7 +4464,9 @@
               api_key: $('apiKey')?.value || localStorage.getItem(KEY_STORE) || '',
               ai_enabled: $('enableAiAnalysis')?.checked || false,
               ai_transcription_mode: document.querySelector('input[name="transcriptionMode"]:checked')?.value || 'local',
-              ai_intent_mode: document.querySelector('input[name="intentMode"]:checked')?.value || 'local'
+              ai_intent_mode: document.querySelector('input[name="intentMode"]:checked')?.value || 'local',
+              local_stt_model:    _getCurrentSttVariant(),
+              local_intent_model: _getCurrentIntentVariant()
             })
           });
         } finally {
@@ -4551,6 +4835,25 @@
       saveSettings();
     };
 
+    window.updateCardCount = () => {
+      const allBoxes = [...document.querySelectorAll('.card-check')];
+      let checked = allBoxes.filter(c => c.checked);
+      // Enforce hard cap — 4 cards, single slide
+      if (checked.length > 4) {
+        checked.slice(4).forEach(cb => { cb.checked = false; });
+        checked = checked.slice(0, 4);
+      }
+      const count = checked.length;
+      const display = document.getElementById('cardSelectionCount');
+      if (display) display.textContent = ` — ${count} / 4 selected`;
+      if (count >= 4) {
+        allBoxes.filter(c => !c.checked).forEach(cb => { cb.disabled = true; });
+      } else {
+        allBoxes.forEach(cb => { cb.disabled = false; });
+      }
+      saveSettings();
+    };
+
     // ============================================================================
     // RUN
     // ============================================================================
@@ -4624,7 +4927,7 @@
             $('logContent').appendChild(entry);
             $('logContent').scrollTop = $('logContent').scrollHeight;
           } else if (data.type === 'progress') {
-            updateProgress(data.current, data.total, data.text);
+            updateProgress(data.current, data.total, data.message || data.text);
           } else if (data.type === 'notify') {
             showActionToast(data.message, 'error', data.actionLabel || 'Learn More', () => {
               window.open(data.url, '_blank');
@@ -4665,6 +4968,11 @@
         payload.client_prefix = clientPrefix;
       }
 
+      // Send selected CSV columns so the server can filter output accordingly
+      if (searchType === 'combine' || searchType === 'phone') {
+        payload.selected_columns = selectedCols;
+      }
+
       if (isPhoneSearch) {
         // Parse phone numbers - strip all non-digit characters, handle +1 prefix
         payload.numbers = $('phoneNumbers').value.trim().split(/[\n,]+/)
@@ -4687,6 +4995,12 @@
         payload.min_consec_unsuccessful = parseInt($('minConsecUnsuccessful').value) || 4;
         payload.min_run_span_days = parseInt($('minRunSpanDays').value) || 30;
         payload.include_detail_tabs = $('includeTabTnHealth')?.checked || $('includeTabVariability')?.checked || $('includeTabNumberSummary')?.checked || false;
+        payload.include_suppression_candidates = $('includeTabSuppressionCandidates')?.checked ?? true;
+        payload.include_re_attempt_tabs = $('includeTabReAttemptSummary')?.checked || $('includeTabReAttemptMatrix')?.checked || $('includeTabReAttemptFunnel')?.checked || $('includeTabReAttemptTiming')?.checked || false;
+        payload.pptx_include_slide_decay_curve = $('slideDdecayCurve')?.checked ?? false;
+        payload.pptx_include_slide_cadence = $('slideReAttemptCadence')?.checked ?? true;
+        payload.pptx_include_slide_opportunities = $('slideOpportunities')?.checked ?? true;
+        payload.pptx_overview_cards = Array.from(document.querySelectorAll('.card-check:checked')).map(cb => cb.value);
       }
 
       // AI Message Analysis settings — always sent with combine requests.
@@ -4696,7 +5010,9 @@
       if (searchType === 'combine') {
         payload.ai_enabled = $('enableAiAnalysis')?.checked || false;
         payload.ai_transcription_mode = document.querySelector('input[name="transcriptionMode"]:checked')?.value || 'local';
-        payload.ai_intent_mode = document.querySelector('input[name="intentMode"]:checked')?.value || 'local';
+        payload.ai_intent_mode        = document.querySelector('input[name="intentMode"]:checked')?.value || 'local';
+        payload.local_stt_model       = _getCurrentSttVariant();
+        payload.local_intent_model    = _getCurrentIntentVariant();
       }
 
       let endpoint = '/api/search';
@@ -4746,7 +5062,16 @@
           log(`✓ Complete: ${count} results`);
         }
 
-        showToast(`${taskName}: ${summary}`, 'success', 5000);
+        {
+          const _ap = data.artifacts?.analysisPath;
+          const _pp = data.artifacts?.pptxPath;
+          showActionToast(`${taskName} complete — ${summary}`, 'success',
+            _ap ? 'Open Delivery Intelligence' : null,
+            _ap ? async () => { clearAllToasts(); await window.voapps?.openPath(_ap); } : null,
+            _pp ? 'Open Business Review' : null,
+            _pp ? async () => { clearAllToasts(); await window.voapps?.openPath(_pp); } : null
+          );
+        }
 
         if (outputMode === 'database' || outputMode === 'both') {
           await refreshDatabaseStats();
@@ -5011,34 +5336,78 @@
 
     const _downloadSvg = `<svg class="btn-icon" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>`;
 
+    // Status key lookup for each variant (maps to /api/ai/model-status response keys)
+    const _sttVariantStatusKey = { base: 'stt', small: 'sttSmall', medium: 'sttMedium', large: 'sttLarge' };
+    const _intentVariantStatusKey = {
+      'nli-deberta-v3-small': 'intent',
+      'nli-deberta-v3-base':  'intentBase',
+      'nli-deberta-v3-large': 'intentLarge',
+    };
+
     function refreshAiModelButtonState(sttMode, intentMode) {
       fetch('/api/ai/model-status')
         .then(r => r.json())
         .then(d => {
           if (sttMode === 'local') {
-            const btn = $('downloadSttModelBtn');
+            const variant = _getCurrentSttVariant();
+            const ready   = d[_sttVariantStatusKey[variant] || 'stt']?.downloaded;
+            const btn     = $('downloadSttBtn');
+            const delBtn  = $('deleteSttBtn');
             const statusEl = $('sttModelStatus');
-            if (d.stt?.downloaded) {
-              if (btn && !btn.innerHTML.includes('…')) btn.innerHTML = `${_downloadSvg} Re-download Whisper Model`;
-              if (statusEl && !statusEl.textContent.includes('…')) statusEl.innerHTML = '✓ Model ready &nbsp;<span style="color:#aaa;font-size:10px;">· Re-download to update</span>';
-            } else {
-              if (btn && !btn.innerHTML.includes('…')) btn.innerHTML = `${_downloadSvg} Download Whisper Model (~142 MB)`;
-              if (statusEl && statusEl.textContent.startsWith('✓')) statusEl.textContent = '';
+            if (btn && !btn.innerHTML.includes('…')) {
+              btn.innerHTML = `${_downloadSvg} ${ready ? 'Re-download' : 'Download'}`;
+            }
+            if (delBtn) delBtn.style.display = ready ? '' : 'none';
+            if (statusEl && !statusEl.textContent.includes('…')) {
+              if (ready) {
+                statusEl.innerHTML = '✓ Model ready &nbsp;<span style="color:#aaa;font-size:10px;">· Re-download to update</span>';
+              } else if (statusEl.textContent.startsWith('✓')) {
+                statusEl.textContent = '';
+              }
             }
           }
           if (intentMode === 'local') {
-            const btn = $('downloadIntentModelBtn');
+            const intentVariant = _getCurrentIntentVariant();
+            const intentReady   = d[_intentVariantStatusKey[intentVariant] || 'intent']?.downloaded;
+            const btn     = $('downloadIntentBtn');
+            const delBtn  = $('deleteIntentBtn');
             const statusEl = $('intentModelStatus');
-            if (d.intent?.downloaded) {
-              if (btn && !btn.innerHTML.includes('…')) btn.innerHTML = `${_downloadSvg} Re-download Intent Model`;
-              if (statusEl && !statusEl.textContent.includes('…')) statusEl.innerHTML = '✓ Model ready &nbsp;<span style="color:#aaa;font-size:10px;">· Re-download to update</span>';
-            } else {
-              if (btn && !btn.innerHTML.includes('…')) btn.innerHTML = `${_downloadSvg} Download Intent Model (~85 MB)`;
-              if (statusEl && statusEl.textContent.startsWith('✓')) statusEl.textContent = '';
+            if (btn && !btn.innerHTML.includes('…')) {
+              btn.innerHTML = `${_downloadSvg} ${intentReady ? 'Re-download' : 'Download'}`;
+            }
+            if (delBtn) delBtn.style.display = intentReady ? '' : 'none';
+            if (statusEl && !statusEl.textContent.includes('…')) {
+              if (intentReady) {
+                statusEl.innerHTML = '✓ Model ready &nbsp;<span style="color:#aaa;font-size:10px;">· Re-download to update</span>';
+              } else if (statusEl.textContent.startsWith('✓')) {
+                statusEl.textContent = '';
+              }
             }
           }
         })
         .catch(() => {});
+    }
+
+    async function deleteAiModel(type, variant) {
+      const label = type === 'stt' ? `whisper-${variant}` : variant;
+      if (!confirm(`Delete downloaded model "${label}"?\n\nThis frees disk space but requires re-downloading before use.`)) return;
+      try {
+        const r = await fetch('/api/ai/delete-model', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type, variant })
+        });
+        if (r.ok) {
+          showToast(`Model "${label}" deleted`, 'success');
+          const sttMode = document.querySelector('input[name="transcriptionMode"]:checked')?.value || 'local';
+          const intentMode = document.querySelector('input[name="intentMode"]:checked')?.value || 'local';
+          refreshAiModelButtonState(sttMode, intentMode);
+        } else {
+          showToast('Failed to delete model', 'error');
+        }
+      } catch (e) {
+        showToast('Failed to delete model', 'error');
+      }
     }
 
     function updateAiCostSummary(sttMode, intentMode) {
@@ -5076,6 +5445,49 @@
         else showToast('Failed to save key', 'error');
       } catch (e) {
         showToast('Failed to save key', 'error');
+      }
+    }
+
+    async function clearOpenaiKey() {
+      if ($('openaiApiKey')) $('openaiApiKey').value = '';
+      try {
+        await fetch('/api/settings/openai-key', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: '' })
+        });
+        showToast('OpenAI key cleared', 'success');
+      } catch (e) {
+        showToast('Failed to clear key', 'error');
+      }
+    }
+
+    async function testOpenaiKey() {
+      const key = $('openaiApiKey')?.value?.trim() || '';
+      if (!key) { showToast('Enter an OpenAI API key first', 'error'); return; }
+      const btn = $('testOpenaiKeyBtn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Testing…'; }
+      try {
+        // Lightweight test: list models endpoint
+        const r = await fetch('https://api.openai.com/v1/models', {
+          headers: { 'Authorization': `Bearer ${key}` }
+        });
+        if (r.ok) {
+          showToast('✓ OpenAI API key is valid', 'success');
+          log('OpenAI API key test: OK');
+        } else {
+          const d = await r.json().catch(() => ({}));
+          const msg = d.error?.message || `HTTP ${r.status}`;
+          showToast(`OpenAI key invalid: ${msg}`, 'error');
+          log(`OpenAI API key test failed: ${msg}`);
+        }
+      } catch (e) {
+        showToast(`OpenAI test failed: ${e.message}`, 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `<svg class="btn-icon" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg> Test`;
+        }
       }
     }
 
@@ -5153,8 +5565,11 @@
           const ts = entry.transcribed_at ? entry.transcribed_at.replace('T', ' ').slice(0, 16) : '—';
           const transcript = (entry.transcript || '').replace(/</g, '&lt;');
           const shortTranscript = transcript.length > 80 ? transcript.slice(0, 80) + '…' : transcript;
+          const audioLink = (entry.account_id && entry.message_id)
+            ? `<br><a href="#" onclick="openExternalUrl('https://directdropvoicemail.voapps.com/accounts/${entry.account_id}/messages/${entry.message_id}'); return false;" style="color:#1976d2;font-size:10px;text-decoration:none;">🔊 Listen</a>`
+            : '';
           tr.innerHTML = `
-            <td style="padding:7px 10px;vertical-align:top;white-space:nowrap;color:#666;font-size:10px;">${entry.message_id}<br><span style="color:#aaa;">${entry.account_id}</span></td>
+            <td style="padding:7px 10px;vertical-align:top;white-space:nowrap;color:#666;font-size:10px;">${entry.message_id}${audioLink}<br><span style="color:#aaa;">${entry.account_id}</span></td>
             <td style="padding:7px 10px;vertical-align:top;max-width:220px;word-break:break-word;" title="${transcript}">${shortTranscript || '<span style="color:#bbb;font-style:italic;">—</span>'}</td>
             <td style="padding:7px 10px;vertical-align:top;white-space:nowrap;">${entry.intent || '<span style="color:#bbb;font-style:italic;">—</span>'}</td>
             <td style="padding:7px 10px;vertical-align:top;white-space:nowrap;color:#888;font-size:10px;">${ts}<br><span style="color:#bbb;">${entry.stt_model || ''}</span></td>
@@ -5388,11 +5803,53 @@
       }
     }
 
-    async function downloadAiModel(type) {
+    function _getCurrentSttVariant() {
+      return $('localSttVariant')?.value || 'base';
+    }
+
+    function _getCurrentIntentVariant() {
+      return $('localIntentVariant')?.value || 'nli-deberta-v3-small';
+    }
+
+    async function onSttVariantChange() {
+      const variant = _getCurrentSttVariant();
+      try {
+        await fetch('/api/ai/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ localSttModel: variant })
+        });
+      } catch (e) {}
+      const sttMode    = document.querySelector('input[name="transcriptionMode"]:checked')?.value || 'local';
+      const intentMode = document.querySelector('input[name="intentMode"]:checked')?.value || 'local';
+      refreshAiModelButtonState(sttMode, intentMode);
+    }
+
+    async function onIntentVariantChange() {
+      const variant = _getCurrentIntentVariant();
+      try {
+        await fetch('/api/ai/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ localIntentModel: variant })
+        });
+      } catch (e) {}
+      const sttMode    = document.querySelector('input[name="transcriptionMode"]:checked')?.value || 'local';
+      const intentMode = document.querySelector('input[name="intentMode"]:checked')?.value || 'local';
+      refreshAiModelButtonState(sttMode, intentMode);
+    }
+
+    async function downloadAiModel(type, source = 'huggingface', variant) {
+      // For STT, use the currently selected radio if no explicit variant passed
+      if (type === 'stt' && !variant) variant = _getCurrentSttVariant();
+      // For intent, use the currently selected radio if no explicit variant passed
+      if (type === 'intent' && !variant) variant = _getCurrentIntentVariant();
+      const effectiveVariant = variant || (type === 'intent' ? 'nli-deberta-v3-small' : 'base');
+
       const statusEl = type === 'stt' ? $('sttModelStatus') : $('intentModelStatus');
-      const btnEl    = type === 'stt' ? $('downloadSttModelBtn') : $('downloadIntentModelBtn');
-      const hintEl   = type === 'stt' ? $('sttManualInstallHint') : $('intentManualInstallHint');
-      if (statusEl) statusEl.textContent = 'Starting download…';
+      const btnEl    = type === 'stt' ? $('downloadSttBtn') : $('downloadIntentBtn');
+      const hintEl   = type === 'stt' ? null : $('intentManualInstallHint');
+      if (statusEl) statusEl.textContent = source === 'github' ? 'Starting GitHub download…' : 'Starting download…';
       if (hintEl) hintEl.style.display = 'none';
       if (btnEl) btnEl.disabled = true;
 
@@ -5413,7 +5870,7 @@
         const r = await fetch('/api/ai/download-model', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type, job_id: jobId })
+          body: JSON.stringify({ type, job_id: jobId, variant: effectiveVariant, source })
         });
         const data = await r.json();
         if (!data.ok) {
@@ -5438,12 +5895,15 @@
               const lc = $('logContent');
               if (lc) { lc.appendChild(entry); lc.scrollTop = lc.scrollHeight; }
               // Mirror last message in the AI panel status chip
-              if (statusEl) statusEl.textContent = d.message.replace(/^\[AI\]\s*/, '');
+              if (statusEl) statusEl.textContent = (d.message || '').replace(/^\[AI\]\s*/, '');
             } else if (d.type === 'progress') {
               if (d.status === 'complete') {
                 const label = type === 'stt' ? '✅ Whisper model ready' : '✅ Intent model ready';
                 if (statusEl) statusEl.textContent = label;
-                if (btnEl) { btnEl.disabled = false; btnEl.textContent = type === 'stt' ? 'Re-download Whisper Model' : 'Re-download Intent Model'; }
+                // Re-check all button states now that a new model is cached
+                const sttMode = document.querySelector('input[name="transcriptionMode"]:checked')?.value || 'local';
+                const iMode = document.querySelector('input[name="intentMode"]:checked')?.value || 'local';
+                refreshAiModelButtonState(sttMode, iMode);
                 cleanup(true);
               } else if (d.status === 'error') {
                 showFailure('❌ Download failed — see app log');
@@ -5460,20 +5920,10 @@
     }
 
     async function checkAiModelStatus() {
-      try {
-        const r = await fetch('/api/ai/model-status');
-        if (r.ok) {
-          const data = await r.json();
-          if ($('sttModelStatus') && data.stt?.downloaded) {
-            $('sttModelStatus').textContent = '✅ Whisper model ready';
-            if ($('downloadSttModelBtn')) $('downloadSttModelBtn').textContent = 'Re-download Whisper Model';
-          }
-          if ($('intentModelStatus') && data.intent?.downloaded) {
-            $('intentModelStatus').textContent = '✅ Intent model ready';
-            if ($('downloadIntentModelBtn')) $('downloadIntentModelBtn').textContent = 'Re-download Intent Model';
-          }
-        }
-      } catch (e) {}
+      // Delegate to refreshAiModelButtonState which now handles all variants
+      const sttMode    = document.querySelector('input[name="transcriptionMode"]:checked')?.value || 'local';
+      const intentMode = document.querySelector('input[name="intentMode"]:checked')?.value || 'local';
+      refreshAiModelButtonState(sttMode, intentMode);
     }
 
     // ============================================================================
@@ -5493,6 +5943,8 @@
         if (s.searchType) {
           $('searchTypeDropdown').value = s.searchType;
           $('searchTypeDescription').textContent = searchTypeDescriptions[s.searchType] || "";
+          const linkEl = $('searchTypeLink');
+          if (linkEl) linkEl.innerHTML = searchTypeLinks[s.searchType] || '';
           $('phoneInputContainer').classList.toggle('visible', s.searchType === 'phone');
           $('trendAnalyzerContainer').classList.toggle('visible', s.searchType === 'combine');
 
@@ -5518,9 +5970,26 @@
         if (s.minConsecUnsuccessful) $('minConsecUnsuccessful').value = s.minConsecUnsuccessful;
         if (s.minRunSpanDays) $('minRunSpanDays').value = s.minRunSpanDays;
 
-        if ($('includeTabTnHealth'))      $('includeTabTnHealth').checked      = s.includeTabTnHealth      || false;
-        if ($('includeTabVariability'))   $('includeTabVariability').checked   = s.includeTabVariability   || false;
-        if ($('includeTabNumberSummary')) $('includeTabNumberSummary').checked = s.includeTabNumberSummary || false;
+        if ($('includeTabTnHealth'))              $('includeTabTnHealth').checked              = s.includeTabTnHealth              || false;
+        if ($('includeTabVariability'))           $('includeTabVariability').checked           = s.includeTabVariability           || false;
+        if ($('includeTabNumberSummary'))         $('includeTabNumberSummary').checked         = s.includeTabNumberSummary         || false;
+        if ($('includeTabSuppressionCandidates')) $('includeTabSuppressionCandidates').checked = s.includeTabSuppressionCandidates ?? true;
+
+        if ($('includeTabReAttemptSummary')) $('includeTabReAttemptSummary').checked = s.includeTabReAttemptSummary || false;
+        if ($('includeTabReAttemptMatrix'))  $('includeTabReAttemptMatrix').checked  = s.includeTabReAttemptMatrix  || false;
+        if ($('includeTabReAttemptFunnel'))  $('includeTabReAttemptFunnel').checked  = s.includeTabReAttemptFunnel  || false;
+        if ($('includeTabReAttemptTiming'))  $('includeTabReAttemptTiming').checked  = s.includeTabReAttemptTiming  || false;
+
+        if ($('slideDdecayCurve'))      $('slideDdecayCurve').checked      = s.includeSlideDecayCurve        ?? false;
+        if ($('slideReAttemptCadence')) $('slideReAttemptCadence').checked = s.includeSlideReAttemptCadence  ?? true;
+        if ($('slideOpportunities'))    $('slideOpportunities').checked    = s.includeSlideOpportunities     ?? true;
+
+        if (s.overviewCards && Array.isArray(s.overviewCards) && s.overviewCards.length > 0) {
+          const ALLOWED = ['firstAttemptSuccessRate','avgAttemptsPerNumber','impliedCallbackOppty','dateSpan'];
+          const allowedCards = s.overviewCards.filter(k => ALLOWED.includes(k)).slice(0, 4);
+          document.querySelectorAll('.card-check').forEach(cb => { cb.checked = allowedCards.includes(cb.value); });
+          if (typeof window.updateCardCount === 'function') window.updateCardCount();
+        }
 
         if (s.outputMode) setOutputMode(s.outputMode);
         if (s.clientPrefix && $('clientPrefix')) $('clientPrefix').value = s.clientPrefix;
@@ -5538,6 +6007,19 @@
           const radio = document.querySelector(`input[name="intentMode"][value="${s.intentMode}"]`);
           if (radio) radio.checked = true;
         }
+        // Restore STT variant
+        if (s.localSttModel && $('localSttVariant')) {
+          // Clamp saved value — only lite (base) and standard (small) offered now
+          const sttAllowed = ['base', 'small'];
+          $('localSttVariant').value = sttAllowed.includes(s.localSttModel) ? s.localSttModel : 'small';
+        }
+        // Restore intent variant
+        if (s.localIntentModel && $('localIntentVariant')) {
+          const intentAllowed = ['nli-deberta-v3-small', 'nli-deberta-v3-base'];
+          $('localIntentVariant').value = intentAllowed.includes(s.localIntentModel) ? s.localIntentModel : 'nli-deberta-v3-small';
+        }
+        // Restore OpenAI API key
+        if (s.openaiApiKey && $('openaiApiKey')) $('openaiApiKey').value = s.openaiApiKey;
         // Sync AI mode visibility after restoring radio values
         onAiModeChange();
       } catch (e) {}
@@ -5559,9 +6041,21 @@
         includeTabTnHealth: $('includeTabTnHealth')?.checked || false,
         includeTabVariability: $('includeTabVariability')?.checked || false,
         includeTabNumberSummary: $('includeTabNumberSummary')?.checked || false,
+        includeTabSuppressionCandidates: $('includeTabSuppressionCandidates')?.checked ?? true,
+        includeTabReAttemptSummary: $('includeTabReAttemptSummary')?.checked || false,
+        includeTabReAttemptMatrix: $('includeTabReAttemptMatrix')?.checked || false,
+        includeTabReAttemptFunnel: $('includeTabReAttemptFunnel')?.checked || false,
+        includeTabReAttemptTiming: $('includeTabReAttemptTiming')?.checked || false,
+        includeSlideDecayCurve: $('slideDdecayCurve')?.checked ?? false,
+        includeSlideReAttemptCadence: $('slideReAttemptCadence')?.checked ?? true,
+        includeSlideOpportunities: $('slideOpportunities')?.checked ?? true,
+        overviewCards: Array.from(document.querySelectorAll('.card-check:checked')).map(cb => cb.value),
         enableAiAnalysis: $('enableAiAnalysis')?.checked || false,
         transcriptionMode: document.querySelector('input[name="transcriptionMode"]:checked')?.value || 'local',
         intentMode: document.querySelector('input[name="intentMode"]:checked')?.value || 'local',
+        localSttModel:    _getCurrentSttVariant(),
+        localIntentModel: _getCurrentIntentVariant(),
+        openaiApiKey: $('openaiApiKey')?.value || '',
         outputMode: outputMode,
         clientPrefix: $('clientPrefix')?.value || ''
       };
@@ -5728,6 +6222,12 @@
       }
 
       loadSettings();
+
+      // Persist column checkbox state immediately on change (not just on run)
+      document.querySelectorAll('.col-check').forEach(cb => {
+        cb.addEventListener('change', saveSettings);
+      });
+
       initLogFilter();
       initHomeResizeHandle();
       initTrendSourceUI();

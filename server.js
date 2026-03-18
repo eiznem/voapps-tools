@@ -208,17 +208,31 @@ async function getXenovaMod(log, fallbackEntryPath = null) {
   }
 }
 
-const AI_MODEL_STATUS = { stt: { downloaded: false }, intent: { downloaded: false } };
+const AI_MODEL_STATUS = {
+  stt:         { downloaded: false }, // whisper-base
+  sttSmall:    { downloaded: false }, // whisper-small
+  sttMedium:   { downloaded: false }, // whisper-medium
+  sttLarge:    { downloaded: false }, // whisper-large
+  intent:      { downloaded: false }, // nli-deberta-v3-small
+  intentBase:  { downloaded: false }, // nli-deberta-v3-base
+  intentLarge: { downloaded: false }, // nli-deberta-v3-large
+};
 
 function getAiModelStatus() {
   // Check the @xenova/transformers FileCache directory for downloaded model folders.
   // The FileCache stores files as: <cacheDir>/Xenova/<model-name>/<files>
   // (NOT the Python HuggingFace Hub format at ~/.cache/huggingface/hub/models--...)
   const cacheRoot = xenovaCacheDir();
-  const sttModelDir    = path.join(cacheRoot, 'Xenova', 'whisper-base');
-  const intentModelDir = path.join(cacheRoot, 'Xenova', 'nli-deberta-v3-small');
-  AI_MODEL_STATUS.stt.downloaded    = fs.existsSync(sttModelDir);
-  AI_MODEL_STATUS.intent.downloaded = fs.existsSync(intentModelDir);
+  // Check for the onnx/ subfolder (not just the parent dir) so a partial download
+  // that only fetched config files doesn't falsely report as ready.
+  const hasOnnx = (modelName) => fs.existsSync(path.join(cacheRoot, 'Xenova', modelName, 'onnx'));
+  AI_MODEL_STATUS.stt.downloaded         = hasOnnx('whisper-base');
+  AI_MODEL_STATUS.sttSmall.downloaded    = hasOnnx('whisper-small');
+  AI_MODEL_STATUS.sttMedium.downloaded   = hasOnnx('whisper-medium');
+  AI_MODEL_STATUS.sttLarge.downloaded    = hasOnnx('whisper-large');
+  AI_MODEL_STATUS.intent.downloaded      = hasOnnx('nli-deberta-v3-small');
+  AI_MODEL_STATUS.intentBase.downloaded  = hasOnnx('nli-deberta-v3-base');
+  AI_MODEL_STATUS.intentLarge.downloaded = hasOnnx('nli-deberta-v3-large');
   return AI_MODEL_STATUS;
 }
 
@@ -302,115 +316,175 @@ function installXenovaTransformers(log) {
   });
 }
 
-async function downloadAiModelBackground(type, log = (msg, isError = false) => isError ? console.error(msg) : console.log(msg)) {
-  const label = type === 'stt' ? 'Whisper (STT)' : 'Intent (nli-deberta-v3-small)';
-  const modelId = type === 'stt' ? 'Xenova/whisper-base' : 'Xenova/nli-deberta-v3-small';
-  log(`[AI] Starting ${label} model download: ${modelId}`);
+async function downloadModelFromGitHub(type, variant = 'base', log = (msg, isError = false) => isError ? console.error(msg) : console.log(msg)) {
+  const modelKey = type === 'stt' ? `whisper-${variant}` : variant;
+  const url = `https://github.com/eiznem/voapps-tools/releases/latest/download/${modelKey}.zip`;
+  const targetDir = xenovaCacheDir();
+  log(`[AI] Downloading ${modelKey}.zip from GitHub Releases…`);
+  log(`[AI] URL: ${url}`);
+  const response = await crossPlatformFetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status} — check that ${modelKey}.zip exists in the latest release`);
+  const unzipper = require('unzipper');
+  const { Readable } = require('stream');
+  log(`[AI] Extracting ${modelKey}.zip to ${targetDir}…`);
+  await new Promise((resolve, reject) => {
+    const src = Readable.fromWeb ? Readable.fromWeb(response.body) : response.body;
+    src.pipe(unzipper.Extract({ path: targetDir })).on('close', resolve).on('error', reject);
+  });
+  log(`[AI] ✅ ${modelKey} extracted to ${targetDir}`);
+}
 
-  // Import @xenova/transformers — auto-install if missing.
-  // IMPORTANT: After installation we import via explicit file URL rather than the bare specifier,
-  // because Node.js/Electron caches the "not found" result for bare specifiers at startup and
-  // that cache entry persists even after npm installs the package in the same session.
-  // File URL imports have a separate cache key and always resolve fresh from disk.
-  let pipeline;
+/**
+ * Stream model files directly from HuggingFace Hub to the local cache directory.
+ * Unlike pipeline(), this never loads weights into memory — it just writes files
+ * to disk — so it works for any model size without crashing.
+ */
+async function streamHuggingFaceModel(modelId, cacheDir, log) {
+  const modelName = modelId.split('/').pop();
 
-  const tryBareImport = async () => {
-    try { return (await getXenovaMod(log)).pipeline; }
-    catch (e) {
-      if (e.code === 'ERR_MODULE_NOT_FOUND' || e.message?.includes('Cannot find package')) {
-        return null; // not installed — fall through to auto-install path
-      }
-      // Module found but failed to initialize (e.g. onnxruntime-node DLL issue on Windows).
-      // Log the full stack for diagnosis, then return null so the file-URL fallback is tried.
-      log(`[AI] ⚠️  @xenova/transformers init error: ${e.message}`, true);
-      if (e.stack) log(`[AI]    Stack: ${e.stack}`, true);
-      if (process.platform === 'win32') {
-        log('[AI]    Windows: if this is a DLL error, the app will retry via file-URL import.', true);
-      }
-      return null;
-    }
-  };
+  // 1. Get file list from Hub API
+  log(`[AI] Fetching file list from HuggingFace Hub…`);
+  const apiData = await new Promise((resolve, reject) => {
+    const doGet = (url, hops = 0) => {
+      if (hops > 5) return reject(new Error('Too many redirects on Hub API'));
+      https.get(url, { headers: { 'User-Agent': 'voapps-tools/1.0' } }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          res.resume();
+          let next = res.headers.location;
+          try { next = new URL(next, url).href; } catch (e) { return reject(new Error(`Bad Hub API redirect: ${next}`)); }
+          return doGet(next, hops + 1);
+        }
+        if (res.statusCode !== 200) { res.resume(); return reject(new Error(`Hub API HTTP ${res.statusCode}`)); }
+        let d = ''; res.on('data', c => d += c); res.on('end', () => resolve(d));
+      }).on('error', reject);
+    };
+    doGet(`https://huggingface.co/api/models/${modelId}`);
+  });
 
-  pipeline = await tryBareImport();
+  const info = JSON.parse(apiData);
+  const files = (info.siblings || [])
+    .map(s => s.rfilename)
+    .filter(f => f !== '.gitattributes' && !f.startsWith('.'));
 
-  if (!pipeline) {
-    const pkgDir = xenovaPkgDir();
-    const alreadyOnDisk = fs.existsSync(path.join(pkgDir, 'package.json'));
+  if (!files.length) throw new Error(`No files found for ${modelId} on HuggingFace Hub`);
+  log(`[AI] ${files.length} file(s) to download for ${modelId}`);
 
-    if (!alreadyOnDisk) {
-      // Package not installed at all — auto-install it
-      try {
-        await installXenovaTransformers(log);
-      } catch (installErr) {
-        log(`[AI] ❌ Install failed: ${installErr.message}`, true);
-        return;
-      }
-    }
-    // Package is on disk (either just installed, or was present but the bare
-    // import failed due to an init error like the sharp stub issue).
-    // Import via file URL to bypass the ESM specifier cache.
-    try {
-      const { pathToFileURL } = require('url');
-      const pkgJson = JSON.parse(await fsp.readFile(path.join(pkgDir, 'package.json'), 'utf8'));
-      const exp = pkgJson.exports?.['.'];
-      const mainFile = (typeof exp === 'string' ? exp
-        : exp?.import || exp?.default || exp?.require
-          || pkgJson.module || pkgJson.main
-          || 'src/transformers.js');
-      const entryPath = path.join(pkgDir, mainFile.replace(/^\.\//, ''));
-      log('[AI] Loading module from disk…');
-      ({ pipeline } = await getXenovaMod(log, pathToFileURL(entryPath).href));
-    } catch (retryErr) {
-      log(`[AI] ❌ Failed to load: ${retryErr.message}`, true);
-      if (!alreadyOnDisk) log('[AI] Please restart VoApps Tools and try again.', true);
-      return;
-    }
+  const modelDir = path.join(cacheDir, 'Xenova', modelName);
+
+  // 2. Stream each file straight to disk — no memory loading, no timeout
+  for (const filename of files) {
+    const targetPath = path.join(modelDir, filename);
+    await fsp.mkdir(path.dirname(targetPath), { recursive: true });
+    log(`[AI] Fetching: ${filename}`);
+
+    await new Promise((resolve, reject) => {
+      const MAX_RETRIES = 8;
+      let attempt = 0;
+
+      const attempt_download = () => {
+        attempt++;
+        // Check how many bytes we already have (for resume)
+        let startByte = 0;
+        try { startByte = fs.statSync(targetPath).size; } catch (_) {}
+
+        const doGet = (url, hops = 0) => {
+          if (hops > 10) return tryRetry(new Error(`Too many redirects for ${filename}`));
+          const reqHeaders = { 'User-Agent': 'voapps-tools/1.0' };
+          if (startByte > 0) reqHeaders['Range'] = `bytes=${startByte}-`;
+          const req = https.get(url, { headers: reqHeaders }, (res) => {
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+              res.resume();
+              let next = res.headers.location;
+              try { next = new URL(next, url).href; } catch (e) { return tryRetry(new Error(`Bad redirect URL for ${filename}: ${next}`)); }
+              return doGet(next, hops + 1);
+            }
+            // 206 = resumed, 200 = fresh start (server ignored Range)
+            if (res.statusCode === 200 && startByte > 0) {
+              // Server sent full file again — truncate and restart from 0
+              startByte = 0;
+            }
+            if (res.statusCode !== 200 && res.statusCode !== 206) {
+              res.resume(); return tryRetry(new Error(`HTTP ${res.statusCode} for ${filename}`));
+            }
+            const contentLen = parseInt(res.headers['content-length'] || '0', 10);
+            const total = contentLen + startByte;
+            let downloaded = startByte, lastPct = startByte > 0 ? Math.round(startByte / (total || 1) * 100) : -1;
+            const out = fs.createWriteStream(targetPath, startByte > 0 ? { flags: 'a' } : {});
+            res.on('data', chunk => {
+              downloaded += chunk.length;
+              if (total > 0) {
+                const pct = Math.round(downloaded / total * 100);
+                if (pct - lastPct >= 5 || pct === 100) { lastPct = pct; log(`[AI] ${filename}: ${pct}%`); }
+              }
+            });
+            res.pipe(out);
+            out.on('finish', () => { log(`[AI] ✅ ${filename} ready`); resolve(); });
+            out.on('error', tryRetry);
+            res.on('error', (err) => { out.destroy(); tryRetry(err); });
+          });
+          req.setTimeout(30000, () => { req.destroy(); tryRetry(new Error(`Timeout on ${filename}`)); });
+          req.on('error', tryRetry);
+        };
+
+        const tryRetry = (err) => {
+          if (attempt < MAX_RETRIES) {
+            const delay = Math.min(2000 * attempt, 15000);
+            log(`[AI] ${filename}: retry ${attempt}/${MAX_RETRIES} in ${delay/1000}s (${err.message})`);
+            setTimeout(attempt_download, delay);
+          } else {
+            reject(err);
+          }
+        };
+
+        doGet(`https://huggingface.co/${modelId}/resolve/main/${filename}`);
+      };
+
+      attempt_download();
+    });
   }
+}
+
+async function downloadAiModelBackground(type, log = (msg, isError = false) => isError ? console.error(msg) : console.log(msg), variant = 'base') {
+  const sttVariantNames   = { base: 'Whisper Base', small: 'Whisper Small', medium: 'Whisper Medium', large: 'Whisper Large' };
+  const intentVariantNames = {
+    'nli-deberta-v3-small': 'Intent Small (nli-deberta-v3-small)',
+    'nli-deberta-v3-base':  'Intent Base (nli-deberta-v3-base)',
+    'nli-deberta-v3-large': 'Intent Large (nli-deberta-v3-large)',
+  };
+  const variantLabel = type === 'stt'
+    ? `${sttVariantNames[variant] || `Whisper ${variant}`} (whisper-${variant})`
+    : (intentVariantNames[variant] || `Intent (${variant})`);
+  const label   = variantLabel;
+  const modelId = type === 'stt' ? `Xenova/whisper-${variant}` : `Xenova/${variant}`;
+
+  const sttSizes    = { base: '~142 MB', small: '~244 MB', medium: '~769 MB', large: '~1.5 GB' };
+  const intentSizes = { 'nli-deberta-v3-small': '~86 MB', 'nli-deberta-v3-base': '~270 MB', 'nli-deberta-v3-large': '~840 MB' };
+  const sizeLabel   = type === 'stt' ? sttSizes[variant] || '' : intentSizes[variant] || '';
+  log(`[AI] Starting ${label} model download${sizeLabel ? ` (${sizeLabel})` : ''}: ${modelId}`);
 
   try {
-    // Track last reported % per file to avoid flooding the log
-    const lastPct = {};
-    const progress_callback = (data) => {
-      if (data.status === 'initiate') {
-        log(`[AI] Fetching: ${data.file}`);
-      } else if (data.status === 'progress' && data.file) {
-        const pct = Math.round(data.progress || 0);
-        const prev = lastPct[data.file] ?? -1;
-        if (pct - prev >= 10 || pct === 100) {
-          lastPct[data.file] = pct;
-          log(`[AI] ${data.file}: ${pct}%`);
-        }
-      } else if (data.status === 'done' && data.file) {
-        log(`[AI] ✅ ${data.file} ready`);
-      }
-    };
+    // Stream files directly to disk — avoids loading model into memory (which crashes on large models)
+    await streamHuggingFaceModel(modelId, xenovaCacheDir(), log);
 
-    if (type === 'stt') {
-      log('[AI] Loading Whisper base model (~142 MB)…');
-      await pipeline('automatic-speech-recognition', modelId, { progress_callback });
-    } else {
-      log('[AI] Loading nli-deberta-v3-small model (~85 MB)…');
-      await pipeline('zero-shot-classification', modelId, { progress_callback });
+    // Verify the onnx/ weights folder was written
+    const onnxDir = path.join(xenovaCacheDir(), 'Xenova', modelId.replace('Xenova/', ''), 'onnx');
+    if (!fs.existsSync(onnxDir)) {
+      throw new Error(`Model files incomplete — onnx/ folder missing after download. Try "Download via GitHub (VPN-friendly)" instead.`);
     }
+
     log(`[AI] ✅ ${label} model downloaded and cached`);
   } catch (e) {
-    // "Unsupported model type: whisper" is a misleading error that surfaces on
-    // Windows when the real cause is a network failure.  What actually happens:
-    //   1. AutoModelForSpeechSeq2Seq.from_pretrained() fails → network error
-    //   2. Falls through to AutoModelForCTC.from_pretrained()
-    //   3. AutoModelForCTC has no 'whisper' mapping → throws "Unsupported model type"
-    //   4. The last error wins, hiding the real network error
-    // Similarly, "fetch failed" on any model = huggingface.co is unreachable.
-    const isNetworkMasked = e.message?.includes('Unsupported model type');
-    const isFetchFailed   = e.message?.toLowerCase().includes('fetch failed')
-                         || e.message?.toLowerCase().includes('network')
-                         || e.message?.toLowerCase().includes('enotfound')
-                         || e.message?.toLowerCase().includes('econnrefused');
-    if (isNetworkMasked || isFetchFailed) {
+    const isFetchFailed = e.message?.toLowerCase().includes('fetch failed')
+                       || e.message?.toLowerCase().includes('network')
+                       || e.message?.toLowerCase().includes('enotfound')
+                       || e.message?.toLowerCase().includes('econnrefused')
+                       || e.message?.toLowerCase().includes('hub api http');
+    if (isFetchFailed) {
       log(`[AI] ❌ Failed to download ${label} model: could not reach huggingface.co`, true);
       log(`[AI]    Likely cause: the network is blocking huggingface.co (firewall, proxy, or no internet).`, true);
-      log(`[AI]    Option 1: switch Transcription and Intent modes to "OpenAI" in Settings.`, true);
-      log(`[AI]    Option 2: download VoApps-Tools-Models.zip from GitHub Releases and extract to:`, true);
+      log(`[AI]    Option 1: use the "Download via GitHub (VPN-friendly)" button in AI Message Analysis settings.`, true);
+      log(`[AI]    Option 2: switch Transcription and Intent modes to "OpenAI" in Settings.`, true);
+      log(`[AI]    Option 3: download the model ZIP from GitHub Releases and extract to:`, true);
       if (process.platform === 'win32') {
         log(`[AI]       %APPDATA%\\voapps-tools\\models\\`, true);
       } else {
@@ -427,11 +501,12 @@ async function downloadAiModelBackground(type, log = (msg, isError = false) => i
  * Results are cached in message_transcriptions DuckDB table.
  * Returns transcriptMap: { "accountId:messageId" -> {transcript, intent, intent_summary, mentioned_phone, mentions_url} }
  */
-async function transcribeAndAnalyzeMessages(messageInfo, aiSettings, log) {
+async function transcribeAndAnalyzeMessages(messageInfo, aiSettings, log, onProgress = null) {
   const transcriptMap = {};
   if (!dbReady) log('[AI] Note: Database not ready — transcripts will run but will not be cached this session');
 
-  const { transcriptionMode = 'local', intentMode = 'local', openaiApiKey = '', notify = null } = aiSettings;
+  const { transcriptionMode = 'local', intentMode = 'local', openaiApiKey = '', notify = null,
+          localSttModel = 'base', localIntentModel = 'nli-deberta-v3-small' } = aiSettings;
   let quotaExceeded = false;   // set to true on first 429 — skip remaining messages
 
   // Collect unique messages that have a file_url
@@ -452,7 +527,10 @@ async function transcribeAndAnalyzeMessages(messageInfo, aiSettings, log) {
   const intentLabel = intentMode === 'openai' ? 'GPT-4o-mini' : 'local nli-deberta';
   log(`[AI] Analyzing ${uniqueMessages.size} unique message(s) — STT: ${sttLabel}, intent: ${intentLabel}`);
 
+  let _aiProcessed = 0;
   for (const [key, { messageId, accountId, file_url }] of uniqueMessages) {
+    _aiProcessed++;
+    if (onProgress) onProgress(_aiProcessed, uniqueMessages.size, messageInfo[key]?.name || messageId);
     try {
       // Check cache (skip when DB not available — e.g. Windows)
       let cached = null;
@@ -519,7 +597,7 @@ async function transcribeAndAnalyzeMessages(messageInfo, aiSettings, log) {
         if (transcript === '__QUOTA_EXCEEDED__') transcript = '';
       } else {
         // transcribeWithLocalWhisper returns { transcript, durationSec }
-        ({ transcript, durationSec } = await transcribeWithLocalWhisper(tmpFile, log));
+        ({ transcript, durationSec } = await transcribeWithLocalWhisper(tmpFile, log, localSttModel));
       }
 
       // Clean up temp file
@@ -550,9 +628,9 @@ async function transcribeAndAnalyzeMessages(messageInfo, aiSettings, log) {
           intentModelLabel = 'openai-gpt4o-mini';
         }
       } else {
-        const result = await classifyIntentLocal(transcript, log, msgName, durationSec);
+        const result = await classifyIntentLocal(transcript, log, msgName, durationSec, localIntentModel);
         intent = result.intent;
-        intentModelLabel = 'nli-deberta-v3-local';
+        intentModelLabel = `${localIntentModel}-local`;
       }
 
       // Final fallback: if neither AI path returned an intent, derive it from
@@ -977,147 +1055,60 @@ function stitchTranscriptSegments(texts) {
   return result.trim();
 }
 
-async function transcribeWithLocalWhisper(audioPath, log) {
-  try {
-    // Import @xenova/transformers — auto-install if missing, file-URL fallback if specifier
-    // cache is stale (e.g. package was just installed in this session).
-    // getXenovaMod() also configures ONNX log severity to suppress optimizer noise.
-    let pipelineFn;
-    try {
-      ({ pipeline: pipelineFn } = await getXenovaMod(log));
-    } catch (e) {
-      const isNotFound = e.code === 'ERR_MODULE_NOT_FOUND' || e.message?.includes('Cannot find package');
-      const pkgDir = xenovaPkgDir();
-      const alreadyOnDisk = fs.existsSync(path.join(pkgDir, 'package.json'));
+/**
+ * Run Whisper inference in an isolated child_process (aiTranscribeChild.js).
+ *
+ * ONNX Runtime can crash with a SIGTRAP or OOM when loaded inside Electron's
+ * main process.  By forking a separate process, a crash in ONNX only kills
+ * the child — Electron itself keeps running and we return a graceful error.
+ */
+async function transcribeWithLocalWhisper(audioPath, log, variant = 'base') {
+  return new Promise((resolve) => {
+    const { fork } = require('child_process');
+    const childPath = path.join(__dirname, 'aiTranscribeChild.js');
+    const child = fork(childPath, [], {
+      // Give the child its own Node.js heap — ONNX needs headroom
+      execArgv: ['--max-old-space-size=2048'],
+      stdio: ['ignore', 'ignore', 'inherit', 'ipc']
+    });
 
-      if (!isNotFound) {
-        log(`[AI]   ⚠️  @xenova/transformers init error: ${e.message}`, true);
-        if (e.stack) log(`[AI]      ${e.stack.split('\n').slice(1, 4).join(' | ')}`, true);
-      } else if (!alreadyOnDisk) {
-        log('[AI]   Installing @xenova/transformers…');
-        await installXenovaTransformers(log);
+    let settled = false;
+    const done = (result) => {
+      if (settled) return;
+      settled = true;
+      try { child.kill(); } catch (_) {}
+      resolve(result);
+    };
+
+    child.on('message', (msg) => {
+      if (msg.log) {
+        log(msg.log);
+      } else if (msg.ok === true) {
+        done({ transcript: msg.transcript, durationSec: msg.durationSec });
+      } else {
+        log(`[AI]   ⚠️  Local Whisper failed: ${msg.error}`);
+        done({ transcript: '', durationSec: null });
       }
-      // File-URL import bypasses the ESM specifier cache — also sets ONNX log severity.
-      try {
-        const { pathToFileURL } = require('url');
-        const pkgJson = JSON.parse(await fsp.readFile(path.join(pkgDir, 'package.json'), 'utf8'));
-        const exp = pkgJson.exports?.['.'];
-        const mainFile = (typeof exp === 'string' ? exp
-          : exp?.import || exp?.default || exp?.require
-            || pkgJson.module || pkgJson.main
-            || 'src/transformers.js');
-        const entryPath = path.join(pkgDir, mainFile.replace(/^\.\//, ''));
-        ({ pipeline: pipelineFn } = await getXenovaMod(log, pathToFileURL(entryPath).href));
-      } catch (retryErr) {
-        log(`[AI]   ❌ File-URL import also failed: ${retryErr.message}`, true);
-        return { transcript: '', durationSec: null };
+    });
+
+    child.on('exit', (code, signal) => {
+      if (!settled) {
+        if (signal) {
+          log(`[AI]   ⚠️  Whisper process terminated unexpectedly (signal: ${signal}) — skipping message`);
+        } else if (code !== 0) {
+          log(`[AI]   ⚠️  Whisper process exited with code ${code} — skipping message`);
+        }
+        done({ transcript: '', durationSec: null });
       }
-    }
+    });
 
-    // Node.js / Electron main process has no AudioContext — passing a file path to the
-    // pipeline would fail with "Unable to load audio … AudioContext is not available".
-    // Instead: decode the MP3 ourselves to a 16 kHz mono Float32Array and pass that directly.
-    const audioData = await decodeMp3File(audioPath, log);
+    child.on('error', (err) => {
+      log(`[AI]   ⚠️  Failed to spawn Whisper process: ${err.message}`);
+      done({ transcript: '', durationSec: null });
+    });
 
-    // --- Amplitude checks on the FULL resampled audio --------------------------------
-    // The earlier diagnostic only covers the first 1000 samples (≈62 ms), which is often
-    // silence/intro.  We need the full-file peak for two reasons:
-    //
-    //   1. Some MP3 encoders / decoders produce values outside [-1, 1].  Whisper's
-    //      WhisperFeatureExtractor computes a log-mel spectrogram that is calibrated for
-    //      audio in that range.  Amplitude 10× too large shifts every log-mel bin by
-    //      log₁₀(10) = 1, producing feature vectors completely outside the training
-    //      distribution → the model hallucinates "(chiming)" / "(whistling)" etc.
-    //
-    //   2. Genuinely silent files (blank templates, unrecorded placeholders) should be
-    //      skipped rather than wasting Whisper time producing noise-hallucinations.
-    // ---------------------------------------------------------------------------------
-    let peakAmp = 0;
-    for (let i = 0; i < audioData.length; i++) {
-      const abs = Math.abs(audioData[i]);
-      if (abs > peakAmp) peakAmp = abs;
-    }
-    log(`[AI]   🔍 Peak amplitude (full resampled audio): ${peakAmp.toFixed(4)}`);
-
-    if (peakAmp < 0.001) {
-      log('[AI]   ⚠️  Audio is silent — no transcription');
-      return { transcript: '', durationSec: audioDurationSec };
-    }
-    if (peakAmp > 1.0) {
-      // Peak-normalize: bring the loudest sample to exactly ±1.0
-      for (let i = 0; i < audioData.length; i++) audioData[i] /= peakAmp;
-      log(`[AI]   🔍 Normalized amplitude from ${peakAmp.toFixed(4)} → 1.0`);
-    }
-
-    // Log audio duration for diagnostics
-    const audioDurationSec = audioData.length / 16000;
-    log(`[AI]   🔍 Audio duration: ${audioDurationSec.toFixed(1)}s (${audioData.length} samples @ 16kHz)`);
-
-    const transcriber = await pipelineFn('automatic-speech-recognition', 'Xenova/whisper-base');
-    // Pass the Float32Array directly — @xenova/transformers v2.x WhisperFeatureExtractor
-    // requires a raw Float32Array, not a { data, sampling_rate } wrapper object.
-    //
-    // no_repeat_ngram_size: 3 — prevents Whisper's decoder from entering a repetition loop
-    // (e.g. "registros" → "rosrosros...") that silently truncates the transcript.
-    //
-    // For audio > 30s we do NOT use the library's built-in chunk_length_s/stride_length_s.
-    // That creates a very short final chunk (audio_len − 30s) padded with lots of silence,
-    // which destabilises the decoder and causes the repetition loop even with no_repeat_ngram.
-    // Instead we split manually with a generous 8s overlap so every segment is ≥ 18s of real
-    // audio (well within Whisper-base's sweet spot), then stitch the segments at the text level.
-    const WHISPER_SR      = 16000;
-    const MANUAL_CHUNK_S  = 30;  // each audio segment fed to Whisper
-    const MANUAL_OVERLAP_S = 8;  // overlap between consecutive segments for reliable stitching
-    const passOpts = { no_repeat_ngram_size: 3 };
-
-    let rawText;
-    if (audioDurationSec > 30) {
-      const segTexts = [];
-      let segStart = 0;
-      let segIdx   = 0;
-      while (segStart < audioData.length) {
-        const segEnd   = Math.min(segStart + MANUAL_CHUNK_S * WHISPER_SR, audioData.length);
-        const segAudio = audioData.slice(segStart, segEnd);
-        const segSec   = segAudio.length / WHISPER_SR;
-        const segRes   = await transcriber(segAudio, passOpts);
-        const segText  = (segRes.text || '')
-          .replace(/(\s*\[S\])+/g, '')
-          .replace(/\[BLANK_AUDIO\]/gi, '')
-          .trim();
-        log(`[AI]   🔍 Segment ${++segIdx} (${(segStart/WHISPER_SR)|0}–${(segEnd/WHISPER_SR)|0}s, ${segSec.toFixed(1)}s): ${JSON.stringify(segText.slice(0, 120))}`);
-        segTexts.push(segText);
-        if (segEnd >= audioData.length) break;
-        segStart += (MANUAL_CHUNK_S - MANUAL_OVERLAP_S) * WHISPER_SR;
-      }
-      rawText = stitchTranscriptSegments(segTexts);
-    } else {
-      const result = await transcriber(audioData, passOpts);
-      rawText = result.text || '';
-    }
-    log(`[AI]   🔍 Raw Whisper output: ${JSON.stringify(rawText.slice(0, 200))}`);
-
-    // Strip Whisper silence/padding tokens — [S] appears when a chunk contains silence
-    // after the speech ends (common at chunk boundaries or end of short audio padded to 30s).
-    // Also strip [BLANK_AUDIO] and similar filler tokens that add no transcript value.
-    const cleanText = rawText
-      .replace(/(\s*\[S\])+/g, '')
-      .replace(/\[BLANK_AUDIO\]/gi, '')
-      .trim();
-
-    // Discard hallucination-only output (e.g. "[Music] (chiming) [Music]" with no real words)
-    if (isWhisperHallucination(cleanText)) {
-      log(`[AI]   ⚠️  Whisper produced only non-speech tokens ("${rawText.slice(0, 80).trim()}") — discarding`);
-      return { transcript: '', durationSec: audioDurationSec };
-    }
-    return { transcript: cleanText, durationSec: audioDurationSec };
-  } catch (e) {
-    if (e.code === 'ERR_MODULE_NOT_FOUND' || e.message?.includes('Cannot find')) {
-      log('[AI]   ⚠️  @xenova/transformers not installed. Use OpenAI Whisper mode or download the model first.');
-    } else {
-      log(`[AI]   ⚠️  Local Whisper failed: ${e.message}`);
-    }
-    return { transcript: '', durationSec: null };
-  }
+    child.send({ audioPath, variant });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1272,7 +1263,7 @@ Respond with only valid JSON, no markdown.`
   }
 }
 
-async function classifyIntentLocal(transcript, log, messageName = '', durationSec = null) {
+async function classifyIntentLocal(transcript, log, messageName = '', durationSec = null, variant = 'nli-deberta-v3-small') {
   // Pattern-detect before running the model (deterministic, no model needed)
   if (detectLCM(transcript, durationSec))  return { intent: 'LCM' };
   if (detectModifiedZortman(transcript))   return { intent: 'Modified Zortman' };
@@ -1282,7 +1273,7 @@ async function classifyIntentLocal(transcript, log, messageName = '', durationSe
 
   try {
     const { pipeline } = await getXenovaMod(log);
-    const classifier = await pipeline('zero-shot-classification', 'Xenova/nli-deberta-v3-small');
+    const classifier = await pipeline('zero-shot-classification', `Xenova/${variant}`);
     const result = await classifier(normalizeSttText(transcript).slice(0, 500), INTENT_LABELS);
     const topLabel = result.labels?.[0] || '';
     const topScore = result.scores?.[0] || 0;
@@ -1412,14 +1403,18 @@ function detectUrlMention(transcript) {
 /**
  * Run generateTrendAnalysis in a worker thread so the main/UI thread stays responsive.
  */
-function runAnalysisInWorker(inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel, includeDetailTabs = true, transcriptMap = {}) {
+function runAnalysisInWorker(inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel, includeDetailTabs = true, transcriptMap = {}, includeReAttemptTabs = false, pptxOptions = {}, includeSuppressionCandidates = true, jobId = null) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(path.join(__dirname, 'analysisWorker.js'), {
-      workerData: { inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel, includeDetailTabs, transcriptMap },
+      workerData: { inputData, outputPath, minConsec, minSpan, messageMap, callerMap, accountMap, userTz, userTzLabel, includeDetailTabs, transcriptMap, includeReAttemptTabs, pptxOptions, includeSuppressionCandidates, jobId },
       // Allow up to 6GB heap for large dataset analysis
       resourceLimits: { maxOldGenerationSizeMb: 6144 }
     });
     worker.on('message', (msg) => {
+      if (msg.type === 'progress') {
+        if (jobId) sendProgress(jobId, { current: -1, total: 0, message: msg.message });
+        return;
+      }
       if (msg.ok) resolve();
       else reject(new Error(msg.error || 'Worker analysis failed'));
     });
@@ -1688,6 +1683,7 @@ async function initDatabase() {
         campaign_url VARCHAR,
         target_date VARCHAR,
         voapps_voice_append VARCHAR,
+        account_number VARCHAR,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -1702,6 +1698,12 @@ async function initDatabase() {
     // Migration: add voapps_voice_append column if it doesn't exist (for existing DBs)
     try {
       await runQuery(`ALTER TABLE campaign_results ADD COLUMN IF NOT EXISTS voapps_voice_append VARCHAR`);
+    } catch (e) {
+      // Ignore if already exists or not supported
+    }
+    // Migration: add account_number column if it doesn't exist (for existing DBs)
+    try {
+      await runQuery(`ALTER TABLE campaign_results ADD COLUMN IF NOT EXISTS account_number VARCHAR`);
     } catch (e) {
       // Ignore if already exists or not supported
     }
@@ -2022,9 +2024,9 @@ async function insertRows(rows, logger = null) {
     for (let i = 0; i < rows.length; i += BATCH_SIZE) {
       const batch = rows.slice(i, i + BATCH_SIZE);
 
-      // Build "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?), ..." for this batch
+      // Build "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?), ..." for this batch
       const placeholders = batch.map(() =>
-        '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+        '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
       ).join(',');
 
       const params = [];
@@ -2046,7 +2048,8 @@ async function insertRows(rows, logger = null) {
           row.voapps_timestamp   || '',
           row.campaign_url       || '',
           row.target_date        || '',
-          row.voapps_voice_append|| ''
+          row.voapps_voice_append|| '',
+          row.account_number     || ''
         );
       }
 
@@ -2055,7 +2058,7 @@ async function insertRows(rows, logger = null) {
           row_id, number, account_id, account_name, campaign_id, campaign_name,
           caller_number, caller_number_name, message_id, message_name, message_description,
           voapps_result, voapps_code, voapps_timestamp, campaign_url, target_date,
-          voapps_voice_append
+          voapps_voice_append, account_number
         ) VALUES ${placeholders}
         ON CONFLICT (row_id) DO NOTHING
       `, params);
@@ -2090,8 +2093,8 @@ async function insertRows(rows, logger = null) {
             row_id, number, account_id, account_name, campaign_id, campaign_name,
             caller_number, caller_number_name, message_id, message_name, message_description,
             voapps_result, voapps_code, voapps_timestamp, campaign_url, target_date,
-            voapps_voice_append
-          ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            voapps_voice_append, account_number
+          ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
           ON CONFLICT (row_id) DO NOTHING
         `, [
           generateRowId(row),
@@ -2110,7 +2113,8 @@ async function insertRows(rows, logger = null) {
           row.voapps_timestamp   || '',
           row.campaign_url       || '',
           row.target_date        || '',
-          row.voapps_voice_append|| ''
+          row.voapps_voice_append|| '',
+          row.account_number     || ''
         ]);
         inserted++;
       } catch (rowErr) {
@@ -2536,16 +2540,20 @@ function getAiSettings() {
     enabled: settings.enableAiAnalysis || false,
     transcriptionMode: settings.aiTranscriptionMode || 'local',
     intentMode: settings.aiIntentMode || 'local',
-    openaiApiKey: settings.openaiApiKey || ''
+    openaiApiKey: settings.openaiApiKey || '',
+    localSttModel:    settings.aiLocalSttModel    || 'base',
+    localIntentModel: settings.aiLocalIntentModel || 'nli-deberta-v3-small'
   };
 }
 
 function setAiSettings(updates) {
   const settings = loadSettings();
-  if (updates.enabled !== undefined) settings.enableAiAnalysis = updates.enabled;
+  if (updates.enabled !== undefined)          settings.enableAiAnalysis    = updates.enabled;
   if (updates.transcriptionMode !== undefined) settings.aiTranscriptionMode = updates.transcriptionMode;
-  if (updates.intentMode !== undefined) settings.aiIntentMode = updates.intentMode;
-  if (updates.openaiApiKey !== undefined) settings.openaiApiKey = updates.openaiApiKey;
+  if (updates.intentMode !== undefined)        settings.aiIntentMode        = updates.intentMode;
+  if (updates.openaiApiKey !== undefined)      settings.openaiApiKey        = updates.openaiApiKey;
+  if (updates.localSttModel !== undefined)     settings.aiLocalSttModel     = updates.localSttModel;
+  if (updates.localIntentModel !== undefined)  settings.aiLocalIntentModel  = updates.localIntentModel;
   return saveSettings(settings);
 }
 
@@ -2619,6 +2627,59 @@ function createLogger(logPath, errorPath, verbosity = "normal", jobId = null) {
 // =============================================================================
 // CSV PARSING AND WRITING (from v2.4.1)
 // =============================================================================
+
+/**
+ * Look up a field value from a parsed CSV row using case-insensitive, trimmed key matching.
+ * Returns the first match found, or '' if none.
+ */
+function pickField(row, candidates) {
+  const keys = Object.keys(row);
+  for (const c of candidates) {
+    const norm = c.toLowerCase().trim();
+    const match = keys.find(k => k.toLowerCase().trim() === norm);
+    if (match !== undefined && row[match] !== undefined) return row[match] || '';
+  }
+  return '';
+}
+
+/** Extract voapps_voice_append, tolerating header casing variations */
+function resolveVoiceAppend(row) {
+  return pickField(row, ['voapps_voice_append', 'voice_append', 'VoApps_Voice_Append', 'Voapps_voice_append']);
+}
+
+/**
+ * Extract account number from a parsed CSV row.
+ * Checks ~35 known header aliases (case-insensitive).
+ */
+const ACCOUNT_NUMBER_ALIASES = [
+  'account_number', 'Account Number', 'AccountNumber', 'account number',
+  'acct_number', 'acct_num', 'AcctNumber', 'AcctNum', 'acct number',
+  'account_num', 'account num', 'AccountNum',
+  'account_no', 'account no', 'AccountNo', 'acct_no', 'acct no',
+  'account_ref', 'account ref', 'AccountRef',
+  'account_id_client', 'client_account', 'client account', 'client_acct',
+  'reference_number', 'reference number', 'ref_number', 'ref number', 'ref_num', 'ref num',
+  'loan_number', 'loan number', 'LoanNumber',
+  'member_number', 'member number', 'MemberNumber',
+  'policy_number', 'policy number', 'PolicyNumber',
+  'customer_number', 'customer number', 'CustomerNumber', 'customer_no', 'customer no',
+  'client_number', 'client number', 'ClientNumber',
+  'case_number', 'case number', 'CaseNumber',
+  'file_number', 'file number', 'FileNumber',
+  'id', 'ID', 'external_id', 'external id', 'ExternalId', 'ext_id',
+  'record_id', 'record id', 'RecordId',
+  'order_number', 'order number', 'OrderNumber',
+  'invoice_number', 'invoice number', 'InvoiceNumber',
+  'debtor_number', 'debtor number', 'DebtorNumber',
+  'borrower_number', 'borrower number', 'BorrowerNumber',
+];
+
+function resolveAccountNumber(row) {
+  return pickField(row, ACCOUNT_NUMBER_ALIASES);
+}
+
+// Columns always written to CSV regardless of user selection (identity columns)
+const ALWAYS_INCLUDED_COLS = new Set(['number', 'account_id', 'campaign_id', 'voapps_result', 'voapps_code', 'voapps_timestamp']);
 
 function parseCsv(text) {
   const lines = text.split(/\r?\n/);
@@ -3121,7 +3182,8 @@ async function runNumberSearch(config) {
     include_message_meta = true,
     output_mode = "csv", // NEW: "csv", "database", or "both"
     job_id = null,
-    client_prefix = "" // Optional prefix for output files
+    client_prefix = "", // Optional prefix for output files
+    selected_columns = [] // Optional column filter for CSV output (empty = all)
   } = config;
 
   // Build filename prefix
@@ -3352,7 +3414,9 @@ async function runNumberSearch(config) {
               voapps_code: row.voapps_code || '',
               voapps_timestamp: normalizeToVoAppsTime(row.voapps_timestamp || ''),
               campaign_url: `https://directdropvoicemail.voapps.com/accounts/${accountId}/campaigns/${campaignId}`,
-              target_date: campaign.target_date || ''
+              target_date: campaign.target_date || '',
+              voapps_voice_append: resolveVoiceAppend(row),
+              account_number: resolveAccountNumber(row)
             });
           }
         }
@@ -3366,6 +3430,7 @@ async function runNumberSearch(config) {
     // Save to database if requested
     if (output_mode === "database" || output_mode === "both") {
       log(`\n💾 Saving to database...`);
+      if (job_id) sendProgress(job_id, { current: -1, total: 0, message: `Saving ${allMatches.length.toLocaleString()} records to database...` });
       const dbResult = await insertRows(allMatches, log);
       log(`   ✅ Database: ${dbResult.inserted} inserted, ${dbResult.updated} updated`);
     }
@@ -3382,8 +3447,9 @@ async function runNumberSearch(config) {
       const headers = [
         'number', 'account_id', 'account_name', 'campaign_id', 'campaign_name',
         'caller_number', 'caller_number_name', 'message_id', 'message_name', 'message_description',
-        'voapps_result', 'voapps_code', 'voapps_timestamp', 'campaign_url'
-      ];
+        'voapps_result', 'voapps_code', 'voapps_timestamp', 'campaign_url',
+        'voapps_voice_append', 'account_number'
+      ].filter(h => selected_columns.length === 0 || selected_columns.includes(h) || ALWAYS_INCLUDED_COLS.has(h));
 
       const csvResult = await writeCsv(csvPath, allMatches, headers, log, MAX_ROWS_PER_FILE);
       allCsvFiles = csvResult.files;
@@ -3707,14 +3773,23 @@ async function runCombineCampaigns(config) {
     min_consec_unsuccessful = 4,
     min_run_span_days = 30,
     include_detail_tabs = false, // TN Health, Variability Analysis, Number Summary tabs
+    include_suppression_candidates = true,
+    include_re_attempt_tabs = false,
+    pptx_include_slide_decay_curve = false,
+    pptx_include_slide_cadence = true,
+    pptx_include_slide_opportunities = true,
+    pptx_overview_cards = null,
     output_mode = "csv", // "csv", "database", or "both"
     job_id = null,
     client_prefix = "", // Optional prefix for output files
+    selected_columns = [], // Optional column filter for CSV output (empty = all)
     // AI settings come from the frontend request payload (UI/localStorage).
     // getAiSettings() reads from disk and never sees the UI toggle state.
     ai_enabled = false,
     ai_transcription_mode = 'local',
-    ai_intent_mode = 'local'
+    ai_intent_mode = 'local',
+    local_stt_model = 'base',
+    local_intent_model = 'nli-deberta-v3-small'
   } = config;
 
   // Build filename prefix
@@ -3887,7 +3962,9 @@ async function runCombineCampaigns(config) {
             voapps_code: row.voapps_code || '',
             voapps_timestamp: normalizeToVoAppsTime(row.voapps_timestamp || ''),
             campaign_url: `https://directdropvoicemail.voapps.com/accounts/${accountId}/campaigns/${campaignId}`,
-            target_date: campaign.target_date || ''
+            target_date: campaign.target_date || '',
+            voapps_voice_append: resolveVoiceAppend(row),
+            account_number: resolveAccountNumber(row)
           });
         }
 
@@ -3941,6 +4018,7 @@ async function runCombineCampaigns(config) {
     // Save to database if requested
     if (output_mode === "database" || output_mode === "both") {
       log(`\n💾 Saving to database...`);
+      if (job_id) sendProgress(job_id, { current: -1, total: 0, message: `Saving ${allRows.length.toLocaleString()} records to database...` });
       const dbResult = await insertRows(allRows, log);
       log(`   ✅ Database: ${dbResult.inserted} inserted, ${dbResult.updated} updated`);
     }
@@ -3952,11 +4030,15 @@ async function runCombineCampaigns(config) {
     let fileCount = 1;
     let tempAnalysisCsvFiles = []; // temp files created only for analysis in database-only mode
 
-    const CSV_HEADERS = [
+    const ALL_CSV_HEADERS = [
       'number', 'account_id', 'account_name', 'campaign_id', 'campaign_name',
       'caller_number', 'caller_number_name', 'message_id', 'message_name', 'message_description',
-      'voapps_result', 'voapps_code', 'voapps_timestamp', 'campaign_url'
+      'voapps_result', 'voapps_code', 'voapps_timestamp', 'campaign_url',
+      'voapps_voice_append', 'account_number'
     ];
+    const CSV_HEADERS = selected_columns.length === 0
+      ? ALL_CSV_HEADERS
+      : ALL_CSV_HEADERS.filter(h => selected_columns.includes(h) || ALWAYS_INCLUDED_COLS.has(h));
 
     if (output_mode === "csv" || output_mode === "both") {
       csvPath = path.join(folders.combineCampaigns, `${filePrefix}combined_${suffix}.csv`);
@@ -4016,6 +4098,8 @@ async function runCombineCampaigns(config) {
         enabled: ai_enabled,
         transcriptionMode: ai_transcription_mode,
         intentMode: ai_intent_mode,
+        localSttModel:    local_stt_model    || getAiSettings().localSttModel    || 'base',
+        localIntentModel: local_intent_model || getAiSettings().localIntentModel || 'nli-deberta-v3-small',
         openaiApiKey: getAiSettings().openaiApiKey,
         notify: (message, actionLabel, url) => sendNotify(jobId, message, actionLabel, url)
       };
@@ -4083,7 +4167,9 @@ async function runCombineCampaigns(config) {
             log(`[AI] Scoped to ${usedCount} message(s) used in this dataset (${totalCount - usedCount} available but unused — skipped)`);
           }
           if (usedCount > 0) {
-            transcriptMap = await transcribeAndAnalyzeMessages(filteredAiMessageInfo, aiSettings, log);
+            if (job_id) sendProgress(job_id, { current: 0, total: usedCount, message: `Analyzing message audio with AI (0 / ${usedCount})...` });
+            transcriptMap = await transcribeAndAnalyzeMessages(filteredAiMessageInfo, aiSettings, log,
+              job_id ? (cur, tot, name) => sendProgress(job_id, { current: cur, total: tot, message: `Analyzing audio: "${name}" (${cur} / ${tot})` }) : null);
           } else {
             log('[AI] No messages from this dataset have audio URLs — skipping transcription');
           }
@@ -4092,6 +4178,17 @@ async function runCombineCampaigns(config) {
         }
       }
 
+      const VALID_CARD_KEYS = new Set(['firstAttemptSuccessRate','avgAttemptsPerNumber','impliedCallbackOppty','dateSpan']);
+      const pptxOptions = {
+        includeSlideDecayCurve: !!pptx_include_slide_decay_curve,
+        includeSlideReAttemptCadence: pptx_include_slide_cadence !== false,
+        includeSlideOpportunities: pptx_include_slide_opportunities !== false,
+        overviewCards: Array.isArray(pptx_overview_cards)
+          ? pptx_overview_cards.filter(k => VALID_CARD_KEYS.has(k)).slice(0, 4)
+          : null,
+        clientPrefix: client_prefix || '',
+      };
+      if (job_id) sendProgress(job_id, { current: -1, total: 0, message: 'Generating Delivery Intelligence Report...' });
       await runAnalysisInWorker(
         allCsvFiles,
         analysisPath,
@@ -4103,7 +4200,11 @@ async function runCombineCampaigns(config) {
         userTimezone,
         userTimezoneLabel,
         include_detail_tabs,
-        transcriptMap
+        transcriptMap,
+        include_re_attempt_tabs,
+        pptxOptions,
+        include_suppression_candidates,
+        job_id || null
       );
 
       lastArtifacts.analysisPath = analysisPath;
@@ -4574,7 +4675,7 @@ function createHttpServer() {
     if (req.method === "POST" && pathname === "/api/ai/download-model") {
       try {
         const body = await readJson(req);
-        const { type, job_id } = body; // 'stt' or 'intent'
+        const { type, job_id, variant = 'base', source = 'huggingface' } = body; // 'stt' or 'intent'
         if (type !== 'stt' && type !== 'intent') {
           return sendJson(res, 400, { ok: false, error: 'type must be stt or intent' });
         }
@@ -4590,14 +4691,19 @@ function createHttpServer() {
         };
 
         // Fire-and-forget — logs stream live via SSE; on finish signal complete/error
-        downloadAiModelBackground(type, log).then(() => {
+        const downloadFn = source === 'github'
+          ? downloadModelFromGitHub(type, variant, log)
+          : downloadAiModelBackground(type, log, variant);
+
+        downloadFn.then(() => {
           sendProgress(jobId, { status: 'complete', progress: 100 });
         }).catch(e => {
           sendLog(jobId, `[AI] Unexpected error: ${e.message}`, true);
           sendProgress(jobId, { status: 'error', progress: 0 });
         });
 
-        return sendJson(res, 200, { ok: true, job_id: jobId, message: `${type === 'stt' ? 'Whisper' : 'Intent'} model download started.` });
+        const srcLabel = source === 'github' ? 'GitHub' : 'HuggingFace';
+        return sendJson(res, 200, { ok: true, job_id: jobId, message: `${type === 'stt' ? 'Whisper' : 'Intent'} model download started (${srcLabel}).` });
       } catch (e) {
         return sendJson(res, 500, { ok: false, error: e.message });
       }
@@ -4607,6 +4713,29 @@ function createHttpServer() {
     if (req.method === "GET" && pathname === "/api/ai/model-status") {
       const status = getAiModelStatus();
       return sendJson(res, 200, { ok: true, ...status });
+    }
+
+    // AI - Delete a cached model
+    if (req.method === "POST" && pathname === "/api/ai/delete-model") {
+      try {
+        const body = await readJson(req);
+        const { type, variant } = body;
+        const cacheRoot = xenovaCacheDir();
+        let modelDir;
+        if (type === 'stt') {
+          modelDir = path.join(cacheRoot, 'Xenova', `whisper-${variant}`);
+        } else {
+          modelDir = path.join(cacheRoot, 'Xenova', variant);
+        }
+        if (fs.existsSync(modelDir)) {
+          fs.rmSync(modelDir, { recursive: true, force: true });
+          console.log(`[AI] Deleted model: ${modelDir}`);
+        }
+        getAiModelStatus(); // refresh status
+        return sendJson(res, 200, { ok: true });
+      } catch (e) {
+        return sendJson(res, 500, { ok: false, error: e.message });
+      }
     }
 
     // AI - Transcript cache stats
@@ -4960,7 +5089,8 @@ function createHttpServer() {
           include_message_meta: !!(body.include_message_meta ?? true),
           output_mode: body.output_mode || "csv",
           job_id: body.job_id || null,
-          client_prefix: body.client_prefix || ""
+          client_prefix: body.client_prefix || "",
+          selected_columns: Array.isArray(body.selected_columns) ? body.selected_columns : []
         });
 
         return sendJson(res, 200, {
@@ -4998,15 +5128,24 @@ function createHttpServer() {
           min_consec_unsuccessful: body.min_consec_unsuccessful,
           min_run_span_days: body.min_run_span_days,
           include_detail_tabs: !!body.include_detail_tabs,
+          include_suppression_candidates: body.include_suppression_candidates !== false,
+          include_re_attempt_tabs: !!body.include_re_attempt_tabs,
+          pptx_include_slide_decay_curve: !!body.pptx_include_slide_decay_curve,
+          pptx_include_slide_cadence: body.pptx_include_slide_cadence !== false,
+          pptx_include_slide_opportunities: body.pptx_include_slide_opportunities !== false,
+          pptx_overview_cards: Array.isArray(body.pptx_overview_cards) ? body.pptx_overview_cards : null,
           output_mode: body.output_mode || "csv",
           job_id: body.job_id || null,
           client_prefix: body.client_prefix || "",
+          selected_columns: Array.isArray(body.selected_columns) ? body.selected_columns : [],
           // AI settings come from the frontend payload (UI / localStorage).
           // The enable toggle and mode radios are only stored in localStorage,
           // so getAiSettings() (disk-based) would always return enabled:false.
           ai_enabled: body.ai_enabled === true,
           ai_transcription_mode: body.ai_transcription_mode || 'local',
-          ai_intent_mode: body.ai_intent_mode || 'local'
+          ai_intent_mode: body.ai_intent_mode || 'local',
+          local_stt_model: body.local_stt_model || 'base',
+          local_intent_model: body.local_intent_model || 'nli-deberta-v3-small'
         });
 
         const artifacts = {
@@ -5086,6 +5225,14 @@ function createHttpServer() {
         let csvAiEnabled = false;
         let csvAiTranscriptionMode = 'local';
         let csvAiIntentMode = 'local';
+        let csvLocalSttModel = 'base';
+        let csvLocalIntentModel = 'nli-deberta-v3-small';
+        let csvIncludeSuppressionCandidates = true;
+        let csvIncludeReAttemptTabs = false;
+        let csvPptxIncludeSlideDecayCurve = false;
+        let csvPptxIncludeSlideCadence = true;
+        let csvPptxIncludeSlideOpportunities = true;
+        let csvPptxOverviewCards = null;
 
         let searchStart = 0;
         while (searchStart < bodyBuf.length) {
@@ -5116,6 +5263,22 @@ function createHttpServer() {
             csvAiTranscriptionMode = bodyBuf.slice(contentStart, contentEnd).toString().trim() || 'local';
           } else if (header.includes('name="ai_intent_mode"')) {
             csvAiIntentMode = bodyBuf.slice(contentStart, contentEnd).toString().trim() || 'local';
+          } else if (header.includes('name="local_stt_model"')) {
+            csvLocalSttModel = bodyBuf.slice(contentStart, contentEnd).toString().trim() || 'base';
+          } else if (header.includes('name="local_intent_model"')) {
+            csvLocalIntentModel = bodyBuf.slice(contentStart, contentEnd).toString().trim() || 'nli-deberta-v3-small';
+          } else if (header.includes('name="include_suppression_candidates"')) {
+            csvIncludeSuppressionCandidates = bodyBuf.slice(contentStart, contentEnd).toString().trim() !== 'false';
+          } else if (header.includes('name="include_re_attempt_tabs"')) {
+            csvIncludeReAttemptTabs = bodyBuf.slice(contentStart, contentEnd).toString().trim() === 'true';
+          } else if (header.includes('name="pptx_include_slide_decay_curve"')) {
+            csvPptxIncludeSlideDecayCurve = bodyBuf.slice(contentStart, contentEnd).toString().trim() === 'true';
+          } else if (header.includes('name="pptx_include_slide_cadence"')) {
+            csvPptxIncludeSlideCadence = bodyBuf.slice(contentStart, contentEnd).toString().trim() !== 'false';
+          } else if (header.includes('name="pptx_include_slide_opportunities"')) {
+            csvPptxIncludeSlideOpportunities = bodyBuf.slice(contentStart, contentEnd).toString().trim() !== 'false';
+          } else if (header.includes('name="pptx_overview_cards"')) {
+            try { csvPptxOverviewCards = JSON.parse(bodyBuf.slice(contentStart, contentEnd).toString()); } catch (_) {}
           }
         }
 
@@ -5217,6 +5380,8 @@ function createHttpServer() {
                     enabled: true,
                     transcriptionMode: csvAiTranscriptionMode,
                     intentMode: csvAiIntentMode,
+                    localSttModel:    csvLocalSttModel    || getAiSettings().localSttModel    || 'base',
+                    localIntentModel: csvLocalIntentModel || getAiSettings().localIntentModel || 'nli-deberta-v3-small',
                     openaiApiKey: getAiSettings().openaiApiKey,
                   };
                   const newTranscripts = await transcribeAndAnalyzeMessages(aiMessageInfo, aiSettings, csvLog);
@@ -5236,11 +5401,22 @@ function createHttpServer() {
         const targetBytesPerFile = 50 * 1024 * 1024; // 50MB
         const dynamicRowLimit = Math.max(50000, Math.min(MAX_ROWS_PER_FILE, Math.floor(targetBytesPerFile / avgBytesPerRow)));
 
+        const CSV_VALID_CARD_KEYS = new Set(['firstAttemptSuccessRate','avgAttemptsPerNumber','impliedCallbackOppty','dateSpan']);
+        const csvPptxOptions = {
+          includeSlideDecayCurve: csvPptxIncludeSlideDecayCurve,
+          includeSlideReAttemptCadence: csvPptxIncludeSlideCadence,
+          includeSlideOpportunities: csvPptxIncludeSlideOpportunities,
+          overviewCards: Array.isArray(csvPptxOverviewCards)
+            ? csvPptxOverviewCards.filter(k => CSV_VALID_CARD_KEYS.has(k)).slice(0, 4)
+            : null,
+          clientPrefix: client_prefix || '',
+        };
+
         if (allRows.length > dynamicRowLimit) {
           const tempCsvPath = path.join(outDir, `UploadedCSV_${suffix}.csv`);
           const csvResult = await writeCsv(tempCsvPath, allRows, headers, null, dynamicRowLimit);
 
-          await runAnalysisInWorker(csvResult.files, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel, false, csvTranscriptMap);
+          await runAnalysisInWorker(csvResult.files, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel, false, csvTranscriptMap, csvIncludeReAttemptTabs, csvPptxOptions, csvIncludeSuppressionCandidates);
 
           lastArtifacts.analysisPath = analysisPath;
           const pptxPath1 = analysisPath.replace(/\.xlsx$/i, '_Business_Review.pptx');
@@ -5254,7 +5430,7 @@ function createHttpServer() {
           });
         }
 
-        await runAnalysisInWorker(allRows, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel, false, csvTranscriptMap);
+        await runAnalysisInWorker(allRows, analysisPath, minConsec, minSpan, {}, {}, {}, userTz, userTzLabel, false, csvTranscriptMap, csvIncludeReAttemptTabs, csvPptxOptions, csvIncludeSuppressionCandidates);
 
         lastArtifacts.analysisPath = analysisPath;
         const pptxPath2 = analysisPath.replace(/\.xlsx$/i, '_Business_Review.pptx');
@@ -5283,10 +5459,18 @@ function createHttpServer() {
           min_run_span_days = 30,
           client_prefix = "",
           include_detail_tabs = false,
+          include_suppression_candidates: dbIncludeSuppressionCandidates = true,
+          include_re_attempt_tabs: dbIncludeReAttemptTabs = false,
+          pptx_include_slide_decay_curve: dbPptxIncludeSlideDecayCurve = false,
+          pptx_include_slide_cadence: dbPptxIncludeSlideCadence = true,
+          pptx_include_slide_opportunities: dbPptxIncludeSlideOpportunities = true,
+          pptx_overview_cards: dbPptxOverviewCards = null,
           api_key: dbApiKey = '',
           ai_enabled: dbAiEnabled = false,
           ai_transcription_mode: dbAiTranscriptionMode = 'local',
-          ai_intent_mode: dbAiIntentMode = 'local'
+          ai_intent_mode: dbAiIntentMode = 'local',
+          local_stt_model: dbLocalSttModel = 'base',
+          local_intent_model: dbLocalIntentModel = 'nli-deberta-v3-small'
         } = body;
 
         if (!dbReady) {
@@ -5475,6 +5659,8 @@ function createHttpServer() {
                   enabled: true,
                   transcriptionMode: dbAiTranscriptionMode,
                   intentMode: dbAiIntentMode,
+                  localSttModel:    dbLocalSttModel    || getAiSettings().localSttModel    || 'base',
+                  localIntentModel: dbLocalIntentModel || getAiSettings().localIntentModel || 'nli-deberta-v3-small',
                   openaiApiKey: getAiSettings().openaiApiKey,
                 };
                 const newTranscripts = await transcribeAndAnalyzeMessages(aiMessageInfo, aiSettings, dbLog);
@@ -5490,6 +5676,16 @@ function createHttpServer() {
           console.warn('[AI DB] AI analysis failed (non-fatal):', aiErr.message);
         }
 
+        const DB_VALID_CARD_KEYS = new Set(['firstAttemptSuccessRate','avgAttemptsPerNumber','impliedCallbackOppty','dateSpan']);
+        const dbPptxOptions = {
+          includeSlideDecayCurve: !!dbPptxIncludeSlideDecayCurve,
+          includeSlideReAttemptCadence: dbPptxIncludeSlideCadence !== false,
+          includeSlideOpportunities: dbPptxIncludeSlideOpportunities !== false,
+          overviewCards: Array.isArray(dbPptxOverviewCards)
+            ? dbPptxOverviewCards.filter(k => DB_VALID_CARD_KEYS.has(k)).slice(0, 4)
+            : null,
+          clientPrefix: client_prefix || '',
+        };
         await runAnalysisInWorker(
           tempCsvFiles,
           analysisPath,
@@ -5501,7 +5697,10 @@ function createHttpServer() {
           userTz,
           userTzLabel,
           include_detail_tabs,
-          dbTranscriptMap
+          dbTranscriptMap,
+          dbIncludeReAttemptTabs,
+          dbPptxOptions,
+          dbIncludeSuppressionCandidates
         );
 
         // Clean up temp CSV files

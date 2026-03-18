@@ -2,7 +2,7 @@
 // VoApps Tools Version Management
 //
 // Notes:
-// - Current version reflects the newest release (4.2.3).
+// - Current version reflects the newest release (4.3.0).
 // - Keeps feature flags + author from the original "DuckDB Edition" file.
 // - Changelog is unified so each version can include: changes/features, fixes, and breaking changes.
 
@@ -10,9 +10,9 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '4.2.3',
-  VERSION_NAME: 'Call Center Intelligence',
-  RELEASE_DATE: '2026-03-13',
+  VERSION: '4.3.0',
+  VERSION_NAME: 'Delivery Intelligence Suite',
+  RELEASE_DATE: '2026-03-17',
   AUTHOR: 'Brett Menzie',
 
   // -----------------------------
@@ -50,6 +50,64 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '4.3.0': {
+      date: '2026-03-17',
+      title: 'Delivery Intelligence Suite',
+      changes: [
+        'Report Output drawer restructured: Analysis Tabs and Business Review Slides tabs merged into a new "Delivery Intelligence" tab with Number Analysis (Excel) and Business Review (PowerPoint) sub-tabs — cleaner two-tab layout alongside CSV Columns',
+        'Hover tooltips added to every checkbox in the Report Output drawer (both Number Analysis and Business Review sub-tabs) — hover any option to see a plain-language explanation of what it adds to the report',
+        'Whisper quality tiers: choose Lite (whisper-base, ~142 MB) or Standard (whisper-small, ~244 MB, higher accuracy) with inline per-variant download buttons in AI Message Analysis',
+        'GitHub Releases download fallback for AI models — "Download via GitHub (VPN-friendly)" button bypasses huggingface.co for users where the primary download fails due to VPN/firewall restrictions',
+        'OpenAI API key moved out of AI Message Analysis panel and into a unified API Keys drawer — both VoApps and OpenAI keys are now shown at equal visual weight with matching input/save/toggle controls',
+        'API Keys drawer renamed from "API Key" to "API Keys"; VoApps key section updated with label, description, and "Get API key ↗" link; OpenAI section added with "Get API key ↗" linking to platform.openai.com/api-keys',
+        'AI Message Analysis enable toggle subtitle updated to: "Transcribes DDVM recordings and classifies message intent. Results appear in the Delivery Intelligence Report (Number Analysis tab)."',
+        'Combine Campaigns search type description updated to describe the full Delivery Intelligence Report output (Excel Analysis + PowerPoint Business Review)',
+        'Home page Generate From section clarified: Combine Campaigns uses Search Type data; Uploaded CSV and Local Database are ad-hoc; link added to open Report Output settings',
+        'CSV Columns tab subtitle updated to clarify it applies only to Combine Campaigns and Phone Number Search types',
+        'DST-aware timezone mismatch detection: timezone warning suppressed when the offset difference is exactly 60 minutes and the dataset spans a US DST boundary (second Sunday of March or first Sunday of November) — eliminates false-positive warnings for accounts using raw UTC offset strings during DST transitions'
+      ],
+      features: [
+        'Delivery Intelligence tab with Number Analysis / Business Review sub-tabs in Report Output drawer',
+        'Whisper Standard tier (whisper-small, ~244 MB) with per-variant inline download buttons',
+        'GitHub Releases fallback download for all AI models (VPN-friendly)',
+        'Unified API Keys drawer with VoApps and OpenAI keys at equal visual weight',
+        'DST-aware timezone mismatch suppression in trendAnalyzer.js'
+      ],
+      fixes: [
+        'DST false-positive timezone mismatch warning: accounts configured with raw UTC offset strings (e.g. -08:00) no longer trigger a warning when dataset spans a spring-forward or fall-back boundary',
+        'Delivery Performance Snapshot: speedometer and Agent Hours card vertically centered in the body area',
+        'Delivery Re-Attempt Cadence: subtitle width clamped to match table bounds; table itself vertically and horizontally centered',
+        'Multi-Touch Delivery Funnel: light-colored bars (3+/4+/5+ Attempts) now use dark text so labels are readable; legend text clarified to "result code 200"',
+        'Business Review High-Level Overview: FIRST ATTEMPT SUCCESS RATE card underline removed; single-touch % centered in left zone; each card now has a unique accent color',
+        'CSV Columns tooltips: voapps_result and voapps_code corrected to use real result names (Successfully Delivered, Unsuccessful Delivery Attempt, Not in Service, Voicemail Full, Voicemail Not Setup, Duplicate Number, Expired) and accurate code-to-name mappings — previous tooltip incorrectly stated 408 = expired'
+      ]
+    },
+    '4.2.4': {
+      date: '2026-03-16',
+      title: 'Re-attempt Intelligence',
+      changes: [
+        'New Re-attempt Analysis Excel tabs (optional, in Report Output → Analysis Tabs): Re-attempt Summary, Outcome Transition Matrix, Attempt Funnel by Code, Retry Timing Analysis — surfaces actionable retry patterns across all delivery result codes',
+        'Outcome Transition Matrix: 5×5 heatmap showing From→To result code transitions with color-coded cells (green for →Delivered, red for →Not in Service, amber for high →Unsuccessful); most actionable tab for evaluating whether retrying a specific code is worth it',
+        'Attempt Funnel by Code: for multi-touch numbers, shows at which attempt number first successful delivery occurred (or never) grouped by initial result code — both % and raw count tables',
+        'Retry Timing Analysis: gap-to-success correlation across 5 time buckets (same day through 8+ days) grouped by From code; green highlighting for 2–7 day sweet spot',
+        'Re-attempt Summary: multi-touch funnel overview, eventually-delivered rate by initial code, avg attempts and span to delivery, Code Persistence Score (how often a code repeats on multi-attempt never-delivered numbers)',
+        'Business Review Slides control panel added to Report Output drawer (third tab): select which PPTX slides to include and which metric cards appear on the High-Level Overview slide',
+        'High-Level Overview metric card selection: 11 available cards, up to 6 selectable — Unique Phone Numbers, Total DDVM Attempts, Overall Success Rate, Successful Deliveries, Numbers Connecting Well, Date Span (default 6); plus Agent Hours Saved, Unsuccessful Attempts, First Attempt Success Rate, Avg Attempts per Number, Non-Deliverable Numbers (optional)',
+        'Optional PPTX slides: Success Probability by Attempt (default off), Delivery Re-Attempt Cadence (default on), Opportunities to Maximize Performance (default on)',
+        'PPTX slide 2 renamed Campaign Overview → High-Level Overview',
+        'Delivery Re-Attempt Cadence slide clarified to cover all result types — intro text now states coverage includes successful deliveries, unsuccessful, voicemail not setup, voicemail full, and not in service',
+        'All Report Output settings (including new Business Review Slides and Re-attempt tabs) persist via localStorage'
+      ],
+      features: [
+        'Re-attempt Analysis: 4 optional Excel tabs surfacing retry pattern intelligence',
+        'Outcome Transition Matrix: heatmap with inline cell color-coding for immediate pattern recognition',
+        'Business Review Slides control panel: per-slide and per-card selection with live counter',
+        'High-Level Overview metric card registry: dynamic selection of up to 6 cards from 11 options'
+      ],
+      fixes: [
+        'Date Span metric card font size corrected from 32pt to 28pt on High-Level Overview slide'
+      ]
+    },
     '4.2.3': {
       date: '2026-03-13',
       title: 'Call Center Intelligence',
