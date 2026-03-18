@@ -12,7 +12,7 @@ module.exports = {
   // -----------------------------
   VERSION: '4.3.0',
   VERSION_NAME: 'Delivery Intelligence Suite',
-  RELEASE_DATE: '2026-03-16',
+  RELEASE_DATE: '2026-03-17',
   AUTHOR: 'Brett Menzie',
 
   // -----------------------------
@@ -51,7 +51,7 @@ module.exports = {
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
     '4.3.0': {
-      date: '2026-03-16',
+      date: '2026-03-17',
       title: 'Delivery Intelligence Suite',
       changes: [
         'Report Output drawer restructured: Analysis Tabs and Business Review Slides tabs merged into a new "Delivery Intelligence" tab with Number Analysis (Excel) and Business Review (PowerPoint) sub-tabs — cleaner two-tab layout alongside CSV Columns',
@@ -74,7 +74,12 @@ module.exports = {
         'DST-aware timezone mismatch suppression in trendAnalyzer.js'
       ],
       fixes: [
-        'DST false-positive timezone mismatch warning: accounts configured with raw UTC offset strings (e.g. -08:00) no longer trigger a warning when dataset spans a spring-forward or fall-back boundary'
+        'DST false-positive timezone mismatch warning: accounts configured with raw UTC offset strings (e.g. -08:00) no longer trigger a warning when dataset spans a spring-forward or fall-back boundary',
+        'Delivery Performance Snapshot: speedometer and Agent Hours card vertically centered in the body area',
+        'Delivery Re-Attempt Cadence: subtitle width clamped to match table bounds; table itself vertically and horizontally centered',
+        'Multi-Touch Delivery Funnel: light-colored bars (3+/4+/5+ Attempts) now use dark text so labels are readable; legend text clarified to "result code 200"',
+        'Business Review High-Level Overview: FIRST ATTEMPT SUCCESS RATE card underline removed; single-touch % centered in left zone; each card now has a unique accent color',
+        'CSV Columns tooltips: voapps_result and voapps_code corrected to use real result names (Successfully Delivered, Unsuccessful Delivery Attempt, Not in Service, Voicemail Full, Voicemail Not Setup, Duplicate Number, Expired) and accurate code-to-name mappings — previous tooltip incorrectly stated 408 = expired'
       ]
     },
     '4.2.4': {
