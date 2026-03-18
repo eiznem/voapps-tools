@@ -2672,6 +2672,7 @@ const ACCOUNT_NUMBER_ALIASES = [
   'invoice_number', 'invoice number', 'InvoiceNumber',
   'debtor_number', 'debtor number', 'DebtorNumber',
   'borrower_number', 'borrower number', 'BorrowerNumber',
+  'classaccount', 'ClassAccount', 'class_account', 'class account',
 ];
 
 function resolveAccountNumber(row) {
