@@ -4339,7 +4339,7 @@ async function runBulkCampaignExport(config) {
       fs.mkdirSync(campaignDir, { recursive: true });
 
       const safeName = (campaign.name || 'Unnamed').replace(/[^a-zA-Z0-9-_ ]/g, '_').substring(0, 100);
-      const filename = `${safeName}_${targetDate}.csv`;
+      const filename = `${safeName}_${targetDate}.csv`.replace(/[<>:"\/\\|?*]/g, '-');
       const filePath = path.join(campaignDir, filename);
 
       log(`\n[${i + 1}/${campaigns.length}] ${campaign.name || 'Unnamed'}`);
