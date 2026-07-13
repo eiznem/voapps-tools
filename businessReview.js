@@ -1137,7 +1137,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   const s4SinglePct = s4TotalNumbers > 0 ? (cadence.cadenceSingleTouch / s4TotalNumbers * 100).toFixed(1) : '0.0';
   const s4MultiPct  = s4TotalNumbers > 0 ? (cadence.cadenceMultiTouchCount / s4TotalNumbers * 100).toFixed(1) : '0.0';
   s4.addText(
-    `${cadence.cadenceMultiTouchCount.toLocaleString()} numbers (${s4MultiPct}%) had 2+ delivery attempts – across all result types (successfully delivered, unsuccessful, voicemail not setup, voicemail full, and not in service). ${cadence.cadenceSingleTouch.toLocaleString()} numbers (${s4SinglePct}%) were contacted only once – each a potential opportunity for an additional touch. Breakdown by median interval between consecutive attempts:`,
+    `${cadence.cadenceMultiTouchCount.toLocaleString()} numbers (${s4MultiPct}%) had 2+ delivery attempts – across all result types (successfully delivered, unsuccessful, voicemail not setup, voicemail full, and not in service). ${cadence.cadenceSingleTouch.toLocaleString()} numbers (${s4SinglePct}%) were contacted only once – each a potential opportunity for an additional touch. Breakdown by median interval between consecutive attempts (Same-day reflects any pair on the same calendar date):`,
     {
       x: 1.8, y: s4CY + 0.08,
       w: SLIDE_W - 3.6, h: 0.44,
@@ -1147,7 +1147,7 @@ async function generateBusinessReviewSlides(stats, outputPath, logoPath, squareL
   );
 
   const cadenceRows = [
-    { label: 'Same-day re-attempt  (< 1 day)', count: cadence.cadenceBucket_sameDay,  ideal: false, warn: true,  note: false, long: false },
+    { label: 'Same-day re-attempt (same calendar date)', count: cadence.cadenceBucket_sameDay,   ideal: false, warn: true,  note: false, long: false },
     { label: '1–2 days',                       count: cadence.cadenceBucket_1to2,      ideal: false, warn: true,  note: false, long: false },
     { label: '3–5 days',                       count: cadence.cadenceBucket_3to5,      ideal: true,  warn: false, note: false, long: false },
     { label: '6–10 days',                      count: cadence.cadenceBucket_6to10,     ideal: true,  warn: false, note: false, long: false },
