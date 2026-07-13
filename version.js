@@ -10,9 +10,9 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-  VERSION: '4.3.0',
-  VERSION_NAME: 'Delivery Intelligence Suite',
-  RELEASE_DATE: '2026-03-17',
+    VERSION: '4.3.1',
+    VERSION_NAME: 'Reliability & Accuracy Fixes',
+    RELEASE_DATE: '2026-07-13',
   AUTHOR: 'Brett Menzie',
 
   // -----------------------------
@@ -50,6 +50,19 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '4.3.1': {
+        date: '2026-07-13',
+        title: 'Reliability & Accuracy Fixes',
+        changes: [
+              'electron dependency updated to v39 (from v28) for platform and security updates',
+              'xmldom dependency patched to address a known security advisory'
+            ],
+        fixes: [
+                  'Bulk Campaign Export: fixed "no such file or directory" error on Windows when a campaign\'s target_date came back as a full ISO timestamp instead of YYYY-MM-DD — the full generated filename (not just the campaign name) is now sanitized against Windows-reserved filename characters',
+              'Re-Attempt timing analysis: same-day re-attempts are now classified by comparing local calendar date directly instead of a less-than-24-hour window — previously 11pm/1am attempts on different calendar days were miscounted as same-day while 9am/11pm attempts on the same calendar day were not',
+              'Delivery Cadence "Same-day re-attempt" stat (Excel report + Business Review slide): now flags a number if ANY consecutive attempt pair fell on the same calendar date, instead of relying on the median interval across all of a number\'s attempts, which could mask same-day patterns'
+            ]
+    },
     '4.3.0': {
       date: '2026-03-17',
       title: 'Delivery Intelligence Suite',
