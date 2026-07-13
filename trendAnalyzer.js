@@ -1273,7 +1273,7 @@ async function generateTrendAnalysis(
   // ============================================================================
   log('Computing delivery cadence stats...');
   let cadenceSingleTouch = 0;
-  let cadenceBucket_sameDay = 0; // < 1 day
+  let cadenceBucket_sameDay = 0; // any pair on the same calendar date
   let cadenceBucket_1to2    = 0; // 1–2 days
   let cadenceBucket_3to5    = 0; // 3–5 days
   let cadenceBucket_6to10   = 0; // 6–10 days
@@ -1288,9 +1288,11 @@ async function generateTrendAnalysis(
     // Ensure time-ordered – streaming path already sorted in place; row-array path may not be
     if (atts[0].ts > atts[atts.length - 1].ts) atts.sort((a, b) => a.ts - b.ts);
     const intervals = [];
+    let hasSameDayPair = false; // true if any consecutive pair fell on the same calendar date
     for (let i = 1; i < atts.length; i++) {
       const diff = (atts[i].ts - atts[i - 1].ts) / 86400000; // ms → days
       if (diff >= 0) intervals.push(diff);
+      if (atts[i].dateStr && atts[i].dateStr === atts[i - 1].dateStr) hasSameDayPair = true;
     }
     if (intervals.length === 0) { cadenceSingleTouch++; continue; }
     intervals.sort((a, b) => a - b);
@@ -1299,7 +1301,7 @@ async function generateTrendAnalysis(
       ? (intervals[cMid - 1] + intervals[cMid]) / 2
       : intervals[cMid];
     _cadenceMedians.push(med);
-    if      (med < 1)   cadenceBucket_sameDay++;
+    if (hasSameDayPair)   cadenceBucket_sameDay++;
     else if (med <= 2)  cadenceBucket_1to2++;
     else if (med <= 5)  cadenceBucket_3to5++;
     else if (med <= 10) cadenceBucket_6to10++;
@@ -2097,10 +2099,10 @@ async function generateTrendAnalysis(
         'Numbers reached with a single DDVM during this period. Consumers often need 2–3 touches before taking action – a callback, a payment, or a response rarely happens the first time a message is heard. These numbers represent real follow-up opportunity: adding a second or third DDVM attempt at the right cadence (3–10 days) typically produces meaningful incremental results without diminishing returns.'],
       ['Re-attempted (2+ attempts)',
         `${cadenceMultiTouchCount.toLocaleString()} (${cadenceTotalNumbers > 0 ? (cadenceMultiTouchCount / cadenceTotalNumbers * 100).toFixed(1) : '0.0'}%)`,
-        'Numbers with multiple attempts. Cadence breakdown below is based on the median interval between consecutive attempts for each number.'],
-      ['  Same-day re-attempt (< 1 day)',
+        'Numbers with multiple attempts. Cadence tiers below are based on the median interval between consecutive attempts for each number, except Same-day re-attempt, which flags any number with at least one re-attempt pair on the same calendar date.'],
+      [' Same-day re-attempt (same calendar date)',
         `${cadenceBucket_sameDay.toLocaleString()} (${(cadenceBucket_sameDay / cadenceMultiTouchCount * 100).toFixed(1)}% of re-attempted)`,
-        'Numbers typically re-attempted on the same calendar day. Same-day re-attempts are rarely effective and may indicate a campaign configuration issue.'],
+        'Numbers with at least one re-attempt pair on the same calendar date, regardless of the median interval for that number. Same-day re-attempts are rarely effective and may indicate a campaign configuration issue.'],
       ['  1–2 days',
         `${cadenceBucket_1to2.toLocaleString()} (${(cadenceBucket_1to2 / cadenceMultiTouchCount * 100).toFixed(1)}% of re-attempted)`,
         'Very short interval after a successful delivery. Re-attempting a number the day after a successful drop does not give the consumer time to respond and can accelerate list fatigue. Note: re-attempting a number the day after an unsuccessful delivery attempt is perfectly acceptable – this flag is relevant only when the prior attempt succeeded.'],
