@@ -888,7 +888,8 @@ async function generateTrendAnalysis(
                   ts:          pdOk ? parsedDate.getTime() : 0,
                   isSuccess,
                   result:      resultNorm,
-                  attemptIndex: nd.attemptIndex   // already incremented above
+                  attemptIndex: nd.attemptIndex, // already incremented above
+                      dateStr: parsed ? parsed.localDateStr : (pdOk ? parsedDate.toISOString().slice(0, 10) : null)
                 });
               }
               if (isDelivery) {
@@ -1152,7 +1153,8 @@ async function generateTrendAnalysis(
           ts:          row.parsedMs || 0,
           isSuccess:   row.isSuccess,
           result:      row.voapps_result_normalized,
-          attemptIndex: nd.attemptIndex   // already incremented above
+          attemptIndex: nd.attemptIndex,   // already incremented above
+          dateStr: row.localDateStr
         });
       }
 
@@ -1426,7 +1428,7 @@ async function generateTrendAnalysis(
         // Timing bucket
         if (timingMatrix[from]) {
           const diffDays = (atts[i + 1].ts - atts[i].ts) / 86400000;
-          const bucket = diffDays < 1      ? 'sameDay'
+          const bucket = (atts[i].dateStr && atts[i].dateStr === atts[i + 1].dateStr) ? 'sameDay'
                        : diffDays <= 2     ? 'day1to2'
                        : diffDays <= 3     ? 'day2to3'
                        : diffDays <= 7     ? 'day4to7'
