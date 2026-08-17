@@ -2841,8 +2841,14 @@
                   Test
                 </button>
               </div>
-              <div style="text-align:right; margin-top:4px; margin-bottom:8px;">
-                <a href="#" onclick="openExternalUrl('https://platform.openai.com/api-keys'); return false;" style="font-size: 11px; color: #1976d2; text-decoration: none;">Get API key ↗</a>
+              <div style="margin-top:8px; margin-bottom:8px; padding:8px 10px; background:#f0f4ff; border:1px solid #c5d3f0; border-radius:6px; font-size:11px; color:#444; line-height:1.6;">
+                <strong>How to get an API key:</strong>
+                <ol style="margin:4px 0 4px 16px; padding:0;">
+                  <li>Create a paid OpenAI account at <a href="#" onclick="openExternalUrl('https://platform.openai.com'); return false;" style="color:#1976d2;">platform.openai.com</a></li>
+                  <li>Add billing credits at <a href="#" onclick="openExternalUrl('https://platform.openai.com/settings/billing'); return false;" style="color:#1976d2;">Settings → Billing</a></li>
+                  <li>Generate a key at <a href="#" onclick="openExternalUrl('https://platform.openai.com/api-keys'); return false;" style="color:#1976d2;">API Keys ↗</a></li>
+                </ol>
+                <span style="color:#888;">Note: a free account without billing credits will fail when running analysis.</span>
               </div>
               <!-- Save + Clear buttons -->
               <div style="display:flex; gap:8px; align-items:center;">
@@ -3209,6 +3215,7 @@
         <ul style="margin-left: 16px;">
           <li><strong>Phone Number Search:</strong> Find all campaign interactions for specific phone numbers. Enter numbers (one per line or comma-separated) and get a complete history.</li>
           <li><strong>Combine Campaigns:</strong> Merge all campaign data from selected accounts into a single CSV. Optionally generate a Delivery Intelligence Report for Excel insights.</li>
+          <li><strong>Executive Summary:</strong> Aggregate campaign-level statistics into a high-level deliverability report for a selected date range. Useful for monthly or period-end reporting without exporting raw data.</li>
           <li><strong>Bulk Export:</strong> Export each campaign as a separate CSV file, organized by year/month folders. Useful for archiving.</li>
         </ul>
 

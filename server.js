@@ -588,9 +588,9 @@ async function transcribeAndAnalyzeMessages(messageInfo, aiSettings, log, onProg
           quotaExceeded = true;
           if (notify) {
             notify(
-              'OpenAI quota exceeded — add credits to your account and run the analysis again.',
+              'OpenAI account has no credits — add billing credits at platform.openai.com/settings/billing, then run the analysis again.',
               'Add Credits',
-              'https://platform.openai.com/docs/guides/error-codes/api-errors'
+              'https://platform.openai.com/settings/billing'
             );
           }
         });
@@ -764,9 +764,16 @@ async function transcribeWithOpenAI(audioPath, apiKey, log, onQuotaExceeded = nu
         res.on('data', chunk => data += chunk);
         res.on('end', () => {
           if (res.statusCode === 429) {
-            log(`[AI]   ⚠️  OpenAI STT quota exceeded (429) — add credits and retry`);
-            if (onQuotaExceeded) onQuotaExceeded();
-            resolve('__QUOTA_EXCEEDED__');
+            let errType = '';
+            try { errType = JSON.parse(data)?.error?.type || ''; } catch (_) {}
+            if (errType === 'insufficient_quota') {
+              log(`[AI]   ⚠️  OpenAI STT failed: no credits on account — add billing credits and retry`);
+              if (onQuotaExceeded) onQuotaExceeded('insufficient_quota');
+              resolve('__QUOTA_EXCEEDED__');
+            } else {
+              log(`[AI]   ⚠️  OpenAI STT rate limited (429) — skipping message`);
+              resolve('');
+            }
           } else if (res.statusCode < 200 || res.statusCode >= 300) {
             log(`[AI]   ⚠️  OpenAI STT failed: OpenAI STT error ${res.statusCode}: ${data}`);
             resolve('');
