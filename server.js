@@ -2907,6 +2907,13 @@ async function retryableApiCall(endpoint, apiKey, logger = null, verbosity = "no
     try {
       return await callVoAppsApi(endpoint, apiKey, logger, verbosity);
     } catch (err) {
+      // 4xx client errors (except 429 Too Many Requests) are not retryable
+      const httpStatus = err.message.match(/^HTTP (\d+)/)?.[1];
+      if (httpStatus && Number(httpStatus) >= 400 && Number(httpStatus) < 500 && httpStatus !== '429') {
+        if (logger) logger(`❌ API call failed: ${err.message}`, true);
+        throw err;
+      }
+
       if (logger) {
         logger(`❌ API call failed (attempt ${attempt + 1}/${delays.length}): ${err.message}`, true);
       }
@@ -3171,8 +3178,14 @@ async function fetchAllCampaigns(apiKey, accountIds, startDate, endDate, logger 
 }
 
 async function fetchCampaignDetail(apiKey, accountId, campaignId, signal) {
-  const url = `${VOAPPS_API_BASE}/accounts/${accountId}/campaigns/${campaignId}`;
-  return await retryableApiCall(`/accounts/${accountId}/campaigns/${campaignId}`, apiKey, null, "minimal");
+  try {
+    return await retryableApiCall(`/accounts/${accountId}/campaigns/${campaignId}`, apiKey, null, "minimal");
+  } catch (err) {
+    if (err.message.startsWith('HTTP 404')) {
+      throw new Error(`Campaign ${campaignId} not found — it may still be processing or has been deleted`);
+    }
+    throw err;
+  }
 }
 
 // =============================================================================
