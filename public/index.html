@@ -5307,6 +5307,20 @@
     window.downloadUpdate = async (url) => {
       if (window.voapps?.openUpdateUrl) await window.voapps.openUpdateUrl(url);
       else window.open(url, '_blank');
+
+      // After triggering the download, prompt the user to quit before installing
+      const body = $('updateModalBody');
+      if (!body) return;
+      const isMac = navigator.platform.toLowerCase().includes('mac');
+      const installNote = isMac
+        ? 'Open the downloaded DMG, drag <strong>VoApps Tools</strong> to Applications, then launch from Applications.'
+        : 'Run the downloaded installer to complete the update.';
+      body.innerHTML = `
+        <p style="margin-bottom:10px;">⬇️ Download started in your browser.</p>
+        <p style="font-size:11px; color:#555; margin-bottom:10px;">${installNote}</p>
+        <p style="font-size:11px; color:#555; margin-bottom:14px;">Close VoApps Tools before running the installer so the new version can replace the running app cleanly.</p>
+        <button onclick="if(window.voapps?.quit) window.voapps.quit();" class="btn btn-primary" style="width:100%;">Quit VoApps Tools</button>
+      `;
     };
 
     // ============================================================================
