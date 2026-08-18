@@ -20,6 +20,7 @@
     "appId": "com.voapps.tools",
     "productName": "VoApps Tools",
     "npmRebuild": false,
+    "afterPack": "scripts/afterPack.js",
     "asarUnpack": [
       "node_modules/onnxruntime-node/**/*",
       "node_modules/sharp/build/Release/**/*",
@@ -42,9 +43,10 @@
       "scripts/**/*",
       "public/**/*",
       "assets/**/*",
-      "node_modules/**/*",
       "package.json",
-      "FIRST_TIME_SETUP.html"
+      "FIRST_TIME_SETUP.html",
+      "!node_modules/@xenova/transformers/.cache/**/*",
+      "!node_modules/@xenova/transformers/.cache"
     ],
     "mac": {
       "category": "public.app-category.business",
@@ -53,7 +55,8 @@
         "dmg",
         "zip"
       ],
-      "hardenedRuntime": true,
+      "identity": null,
+      "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "entitlements": "entitlements.mac.plist",
       "entitlementsInherit": "entitlements.mac.plist"
