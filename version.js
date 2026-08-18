@@ -10,9 +10,9 @@ module.exports = {
   // -----------------------------
   // Current Release Metadata
   // -----------------------------
-    VERSION: '4.3.1',
-    VERSION_NAME: 'Reliability & Accuracy Fixes',
-    RELEASE_DATE: '2026-07-13',
+    VERSION: '4.3.2',
+    VERSION_NAME: 'Error Handling & Help Improvements',
+    RELEASE_DATE: '2026-08-17',
   AUTHOR: 'Brett Menzie',
 
   // -----------------------------
@@ -50,6 +50,19 @@ module.exports = {
   // - You had two different historical formats; keeping both prevents downstream
   //   code/UI from breaking if it expects either key.
   CHANGELOG: {
+    '4.3.2': {
+      date: '2026-08-17',
+      title: 'Error Handling & Help Improvements',
+      changes: [
+        'Help modal Search Modes section now includes Executive Summary with a description of its purpose',
+        'OpenAI API Keys section now shows step-by-step instructions for obtaining an API key, including a note that a paid account with billing credits is required'
+      ],
+      fixes: [
+        'OpenAI 429 errors are now correctly distinguished: insufficient_quota (no billing credits) stops analysis and opens the billing page, while rate_limit_exceeded skips the affected message and continues — previously both were treated as quota exceeded and halted all processing',
+        'API calls no longer retry on 4xx errors (except 429 rate limiting) — a 404 or 403 means the resource is inaccessible and retrying wastes 73+ seconds before surfacing the error',
+        'Campaign detail 404 errors now show a clear message ("Campaign X not found — it may still be processing or has been deleted") instead of the raw HTTP status'
+      ]
+    },
     '4.3.1': {
         date: '2026-07-13',
         title: 'Reliability & Accuracy Fixes',
